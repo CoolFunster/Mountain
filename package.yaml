@@ -1,0 +1,45 @@
+name:                MTPL
+version:             0.1.0.0
+github:              "githubuser/MTPL"
+license:             BSD3
+author:              "Priam Mukundan"
+maintainer:          "mpriam@gmail.com"
+copyright:           "2021 Priam Mukundan"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/githubuser/MTPL#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- hspec
+- QuickCheck
+
+library:
+  source-dirs: src
+
+executables:
+  MTPL-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - MTPL
+
+tests:
+    spec:
+      defaults: hspec/hspec@master
+      dependencies:
+      - MTPL
