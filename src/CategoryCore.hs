@@ -1,16 +1,11 @@
 module CategoryCore where
 
 import CategoryData
+
 import Debug.Trace
+import Data.Monoid hiding (Sum, Product)
 
-{- Some basic category types -}
-valid :: Category
-valid = Composite "valid" Product []
-
-empty :: Category
-empty = Composite "empty" Sum []
-
-{- Category Properties and Functions -}
+{- Category Functions -}
 
 level :: Category -> Int
 level (Thing t) = 0
@@ -24,12 +19,13 @@ has :: Category -> Category -> Bool
 has big_category small_category 
     | big_category == small_category = True
     | level big_category < level small_category = False
+    | Placeholder{ph_level=ph_level, ph_category=ph_category} <- small_category = (ph_level <= level big_category) && has big_category ph_category
+    | (Composite _ _ [category]) <- big_category = has category small_category
+    | (Composite _ _ [category]) <- small_category = has big_category category
     | otherwise = has_inner big_category small_category
         where 
-            {- length 1 algebraic identity rules -}
-            has_inner (Composite _ _ [category]) other_category = has category other_category
-            has_inner category (Composite _ _ [other_category]) = has category other_category
             {- Things -}
+            -- equality is checked above only here if 2 things not eq
             has_inner (Thing t) _ = False
             {- Morphisms -}
             has_inner m1@Morphism{input=input1,output=output1} m2@Morphism{input=input2,output=output2} = m1 == m2 || (has input1 input2 && skip_intermediate_has output1 output2)
@@ -63,7 +59,7 @@ freeVariables (Composite _ _ inner) = concatMap freeVariables inner
 freeVariables ph@(Placeholder _ _ ph_category) = ph : freeVariables ph_category
 
 -- replace :: base_expr -> old -> new -> new_expr 
--- idea compare base expr to old. if same replace with new. otherwise return old
+-- idea compare base expr to old. if same replace with new. otherwise return old. recurse
 replace :: Category -> Category -> Category -> Category
 replace base_expr old new 
     | base_expr == old = new
@@ -71,15 +67,22 @@ replace base_expr old new
     | Morphism id input output <- base_expr = Morphism id (replace input old new) (replace output old new)
     | Placeholder id ph_level ph_category <- base_expr = Placeholder id ph_level (replace ph_category old new)
 
-call :: Category -> Category -> Category
+call :: Category -> Category -> Maybe Category
 call (Morphism id input output) input_category
-    | input == input_category = output
-    | isPlaceholder input && not (isPlaceholder input_category) && has (ph_category input) input_category = replace (output) input input_category
-    | isPlaceholder input && isPlaceholder input_category && level input >= level input_category && has (ph_category input) input_category = Morphism id input_category (replace (output) input input_category)
-
+    | input == input_category = Just output
+    | isPlaceholder input && not (isPlaceholder input_category) && has (ph_category input) input_category = Just (replace (output) input input_category)
+    | isPlaceholder input && isPlaceholder input_category && level input >= level input_category && has (ph_category input) input_category = Just (Morphism id input_category (replace (output) input input_category))
+call c@(Composite _ Composition _) input_category = call (compositionAsMorphism c) input_category
+call (Composite _ Sumposition inner_functions) input_category = tryFunctions input_category (map call inner_functions) 
+    where
+        tryFunctions x = getFirst . mconcat . map (First . ($ x))
+call non_morphism _ = Nothing
 
 validCategory :: Category -> Bool
 validCategory (Thing _) = True
 validCategory (Morphism _ input output) = validCategory input && validCategory output
+validCategory (Composite _ Composition inner) = not (null inner) && all validCategory inner
+validCategory (Composite _ Sumposition inner) = not (null inner) && all validCategory inner
+validCategory (Composite _ Higher inner) = not (null inner) && all validCategory inner
 validCategory (Composite _ _ inner) = all validCategory inner
 validCategory ph@(Placeholder _ ph_level ph_category) = ph_level >= 0 && ph_level <= level ph_category && validCategory ph_category

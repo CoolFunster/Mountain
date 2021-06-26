@@ -8,7 +8,8 @@ import MTPLExpressionData
 {- MTPLExpression Properties and Functions -}
 categoryType :: MTPLExpression -> Category
 categoryType (Object category_object) = category_object
-
+categoryType (MorphismChain chain_name (Object{category_object=ph@Placeholder{}}:tail)) = Morphism chain_name ph (categoryType tail)
+categoryType (MorphismChain chain_name (Object{category_object=ph@Placeholder{}}:tail)) = Morphism chain_name ph (categoryType tail)
 
 isValidInput :: MTPLExpression -> MTPLExpression -> Bool
 isValidInput (Object category_object) (Object input_arg) = isMorphism category_object && has (input category_object) input_arg
@@ -18,7 +19,7 @@ isValidInput base_expression input_arg = isValidInput (Object (categoryType base
 
 validExpr :: MTPLExpression -> Bool
 validExpr (Object category) = validCategory category
-validExpr (MorphismChain inner) = all validExpr inner
+validExpr (MorphismChain _ inner) = not (null inner) && all validExpr inner
 validExpr (Call base_expression input_arg) = validExpr base_expression && validExpr input_arg && isValidInput base_expression input_arg
 validExpr (Dereference base_expression category_name) = validExpr base_expression && elem category_name (map name (inner (categoryType base_expression)))
 

@@ -8,11 +8,12 @@ data MTPLExpression =
         category_object::Category
     } |
     MorphismChain {
+        chain_name::Id,
         chain::[MTPLExpression]
     } |
     Dereference {
-        base_expression::MTPLExpression, 
-        category_name::Id 
+        dereference_name::Id, 
+        base_expression::MTPLExpression
     } |
     Call {
         base_expression::MTPLExpression, 
