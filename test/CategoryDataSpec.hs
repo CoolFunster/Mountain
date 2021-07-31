@@ -1,42 +1,35 @@
 module CategoryDataSpec (spec) where
 
 import Test.Hspec
-import Test.QuickCheck
 import CategoryData
 import CategoryCore
-
-instance Arbitrary Category where
-    arbitrary = oneof [arbitraryThing]
-        where arbitraryThing = do
-                  name <- arbitrary
-                  return $ Thing name
 
 spec :: Spec
 spec = do
   describe "level" $ do
     it "(things) should have a level of zero" $ do
         let thing = Thing "thing"
-        level thing `shouldBe` (0 :: Int)
+        level thing `shouldBe` Just (0 :: Int)
     it "(higher categories) should have a level of 1 more than their parts" $ do
         let thing = Thing "thing"
         let thing2 = Thing "thing2"
         let higher_category = Composite "all" Higher [thing, thing2]
-        level higher_category `shouldBe` (1 :: Int)
+        level higher_category `shouldBe` Just (1 :: Int)
     it "(Product categories) should have a level of their components" $ do
         let thing = Thing "thing"
         let thing2 = Thing "thing2"
         let product_category = Composite "all" Product [thing, thing2]
-        level product_category `shouldBe` (0 :: Int)
+        level product_category `shouldBe` Just (0 :: Int)
     it "(Sum categories) should have a level of their components" $ do
         let thing = Thing "thing"
         let thing2 = Thing "thing2"
         let sum_category = Composite "all" Sum [thing, thing2]
-        level sum_category `shouldBe` (0 :: Int)
+        level sum_category `shouldBe` Just (0 :: Int)
     it "(Morphisms) should have a level of their components" $ do
         let thing = Thing "thing"
         let thing2 = Thing "thing2"
         let morphism = Morphism "1_2" thing thing2
-        level morphism `shouldBe` (0 :: Int)
+        level morphism `shouldBe` Just (0 :: Int)
   describe "has" $ do
     it "(things) should make equal things have each other" $ do
         let thing = Thing "thing"
@@ -164,7 +157,7 @@ spec = do
         let a_c = Morphism "a_c" a c
 
         let higher_category = Composite "all" Higher [a,b,a_b,b_c]
-        let ph_hc = Placeholder "ph-all" 0 higher_category
+        let ph_hc = Placeholder "ph-all" (Just 0) higher_category
 
         has higher_category ph_hc `shouldBe` True
         has ph_hc higher_category  `shouldBe` False
@@ -207,5 +200,59 @@ spec = do
             call sumposite_morphism a `shouldBe` Just b
             call sumposite_morphism b `shouldBe` Just c
             call sumposite_morphism c `shouldBe` Nothing
+    describe "validCategory" $ do
+        it "(Composite) should return False for empty sumposition/composition" $ do
+            let bad_category = Composite "bad" Composition []
+            validCategory bad_category `shouldBe` False
+            let bad_category2 = Composite "bad" Sumposition []
+            validCategory bad_category2 `shouldBe` False
+    describe "execute" $ do
+        it "(Thing) should just return the thing" $ do
+            let a = Thing "a"
+            execute a `shouldBe` a
+        it "(Composite) should just return the composite" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let ab = Composite "ab" Product [a,b]
+            execute ab `shouldBe` ab
+        it "(Morphism) should just return the morphism" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let a2b = Morphism "a->b" a b
+            execute a2b `shouldBe` a2b
+        it "(Placeholder) should just return the placeholder" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let a_b = Composite "<ab>" Higher [a,b]
+            let x_elem_a_b = Placeholder "x" (Just 0) a_b
+            execute x_elem_a_b `shouldBe` x_elem_a_b
+        it "(Placeholder) should just return the placeholder" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let a_b = Composite "<ab>" Higher [a,b]
+            let x_elem_a_b = Placeholder "x" (Just 0) a_b
+            execute x_elem_a_b `shouldBe` x_elem_a_b
+        it "(MorphismCall) should just call the morphism" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let a2b = Morphism "a->b" a b
+            let a2b_on_a = MorphismCall a2b a
+            execute a2b_on_a `shouldBe` b
+        it "(RecursiveCategory) should just return itself" $ do
+            let nat = makeRecursiveCategory "self" (Composite "Nat" Sum [Thing "0", Morphism "succ" valid (FlexibleCategory "self")])
+            execute nat `shouldBe` unfold Recursive nat
+        it "(RecursiveCategory) should have all different elements" $ do
+            let nat = makeRecursiveCategory "self" (Composite "Nat" Sum [Thing "0", Morphism "succ" valid (FlexibleCategory "self")])
+            nat `has` Thing "0" `shouldBe` True
+            nat `has` Morphism "succ" valid (Thing "0") `shouldBe` True
+            nat `has` Morphism "succ" valid (Morphism "succ" valid (Thing "0")) `shouldBe` True
+        it "(RecursiveCategory) should be callable in a morphism call" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let simple_ab = makeRecursiveCategory "simple_ab" (Composite "ab" Sumposition [Morphism "ab1" a b, Morphism "ab2" b (MorphismCall FlexibleCategory{name="simple_ab"} a)])
+            simplify (MorphismCall simple_ab b) `shouldBe` MorphismCall simple_ab b
+            simplify (MorphismCall simple_ab a) `shouldBe` MorphismCall simple_ab a
+            execute (MorphismCall simple_ab a) `shouldBe` b
+            execute (MorphismCall simple_ab b) `shouldBe` b
 
---   quickCheck ((\s -> isThing s == isThing s) :: Category -> Bool)
+            

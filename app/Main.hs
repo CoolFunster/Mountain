@@ -7,4 +7,9 @@ import MTPLExpressionCore
 
 main :: IO ()
 main = do
-  print "Hello World"
+  let a = Thing "a"
+  let b = Thing "b"
+  let a_b = Morphism "a->b" a b
+
+  let expr = Call (Object a_b) (Object a)
+  putStr $ show (runMTPL expr)

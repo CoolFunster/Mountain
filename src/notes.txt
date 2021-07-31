@@ -1,0 +1,32 @@
+7/31
+
+Ok so recursion is done now. What's next
+
+- Higher category definition & fixes
+- refinement categories
+- fixing and deleting MTPLExpressionX
+- What is type operations?
+- How do we integrate specialized higher category solvers?
+
+I think we should focus on higher categories
+
+A higher category is the type operator. Its a thing which groups categories together into 
+something that is a higher level than the inner categories
+
+There are 3 ways to make a type (aka increase the level of objects):
+1 - define a recursive category (recursion)
+2 - Group specific things together (higher)
+3 - Define a property as a type (refined)
+
+So a higher category is a category which has any category whose basic building blocks are the elements of the higher category.
+
+That means if i can find a "proof" or a "function" from the elements of the higher category to the elements of the other, its an element
+
+But not every higher category is decidable. function calls and other things may be difficult. Which means that
+the user has to supply their own decidability thing or use the generic one. Also that the proof engine will have to
+be knowledgeable about those methods
+
+Ok so higher categories use proofs to determine whether they have something. 
+
+Ok so next step is to remove MTPL expression stuff and get the sequent proof engine working on the base category level,
+eventually so that it can be used in the has for higher categories

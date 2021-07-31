@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 65d77b71050c677ff386b3098ff61300aa9a85399725979ef3a63c15c1a828b4
+-- hash: 1e8f56b3cfc63a5a691c813ea30e4dfdcf888987b76e535862b53e0c234f8253
 
 name:           MTPL
 version:        0.1.0.0
@@ -31,13 +31,16 @@ library
       CategoryData
       MTPLExpressionCore
       MTPLExpressionData
+      SequentData
   other-modules:
       Paths_MTPL
   hs-source-dirs:
       src
   build-depends:
       QuickCheck
+    , algebraic-graphs
     , base >=4.7 && <5
+    , containers
     , hspec
   default-language: Haskell2010
 
@@ -51,7 +54,9 @@ executable MTPL-exe
   build-depends:
       MTPL
     , QuickCheck
+    , algebraic-graphs
     , base >=4.7 && <5
+    , containers
     , hspec
   default-language: Haskell2010
 
@@ -60,13 +65,17 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       CategoryDataSpec
+      MTPLExpressionDataSpec
+      SequentDataSpec
       Paths_MTPL
   hs-source-dirs:
       test
   build-depends:
       MTPL
     , QuickCheck
+    , algebraic-graphs
     , base >=4.7 && <5
+    , containers
     , hspec ==2.*
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover == 2.*
