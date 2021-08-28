@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1e8f56b3cfc63a5a691c813ea30e4dfdcf888987b76e535862b53e0c234f8253
+-- hash: daeab8c7124f9e5c38bd8ec0a540a7d2868b6836d45b414861e4c1f56ff8eb3f
 
 name:           MTPL
 version:        0.1.0.0
@@ -27,11 +27,14 @@ source-repository head
 
 library
   exposed-modules:
+      Categories.Base
+      Categories.Lists
+      Categories.Numbers
       CategoryCore
       CategoryData
-      MTPLExpressionCore
-      MTPLExpressionData
-      SequentData
+      CategorySynthesizer
+      Synthesizers.SequentSynthesizer
+      Synthesizers.Synthesizer
   other-modules:
       Paths_MTPL
   hs-source-dirs:
@@ -64,9 +67,9 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      CategoriesSpec.BaseSpec
       CategoryDataSpec
-      MTPLExpressionDataSpec
-      SequentDataSpec
+      SynthesizersSpec.SequentSynthesizerSpec
       Paths_MTPL
   hs-source-dirs:
       test

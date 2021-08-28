@@ -6,161 +6,165 @@ import CategoryCore
 
 spec :: Spec
 spec = do
-  describe "level" $ do
-    it "(things) should have a level of zero" $ do
-        let thing = Thing "thing"
-        level thing `shouldBe` Just (0 :: Int)
-    it "(higher categories) should have a level of 1 more than their parts" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
-        let higher_category = Composite "all" Higher [thing, thing2]
-        level higher_category `shouldBe` Just (1 :: Int)
-    it "(Product categories) should have a level of their components" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
-        let product_category = Composite "all" Product [thing, thing2]
-        level product_category `shouldBe` Just (0 :: Int)
-    it "(Sum categories) should have a level of their components" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
-        let sum_category = Composite "all" Sum [thing, thing2]
-        level sum_category `shouldBe` Just (0 :: Int)
-    it "(Morphisms) should have a level of their components" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
-        let morphism = Morphism "1_2" thing thing2
-        level morphism `shouldBe` Just (0 :: Int)
-  describe "has" $ do
-    it "(things) should make equal things have each other" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
+    describe "level" $ do
+        it "(things) should have a level of zero" $ do
+            let thing = Thing "thing"
+            level thing `shouldBe` Just (0 :: Int)
+        it "(higher categories) should have a level of 1 more than their parts" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
+            let higher_category = Composite "all" Higher [thing, thing2]
+            level higher_category `shouldBe` Just (1 :: Int)
+        it "(Product categories) should have a level of their components" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
+            let product_category = Composite "all" Product [thing, thing2]
+            level product_category `shouldBe` Just (0 :: Int)
+        it "(Sum categories) should have a level of their components" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
+            let sum_category = Composite "all" Sum [thing, thing2]
+            level sum_category `shouldBe` Just (0 :: Int)
+        it "(Morphisms) should have a level of their components" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
+            let morphism = Morphism "1_2" thing thing2
+            level morphism `shouldBe` Just (0 :: Int)
+    describe "has" $ do
+        it "(things) should make equal things have each other" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
 
-        has thing thing `shouldBe` True
-        has thing thing2 `shouldBe` False
-        has thing2 thing `shouldBe` False
-    it "(things) should make things have equal singular algebraic types" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
+            has thing thing `shouldBe` True
+            has thing thing2 `shouldBe` False
+            has thing2 thing `shouldBe` False
+        it "(things) should make things have equal singular algebraic types" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
 
-        let product_things = Composite "pThings" Product [thing]
-        has thing product_things `shouldBe` True
-        has thing2 product_things `shouldBe` False
-        let product_things = Composite "pThings" Product [thing]
-        has thing product_things `shouldBe` True
-        has thing2 product_things `shouldBe` False
-    it "(morphisms) properly checks simple morphisms" $ do
-        let a = Thing "a"
-        let b = Thing "b"
-        let c = Thing "c"
+            let product_things = Composite "pThings" Product [thing]
+            has thing product_things `shouldBe` True
+            has thing2 product_things `shouldBe` False
+            let product_things = Composite "pThings" Product [thing]
+            has thing product_things `shouldBe` True
+            has thing2 product_things `shouldBe` False
+        it "(morphisms) properly checks simple morphisms" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let c = Thing "c"
 
-        let a_b = Morphism "a_b" a b
-        let a_c = Morphism "a_c" a c
-        let b_c = Morphism "b_c" b c
+            let a_b = Morphism "a_b" a b
+            let a_c = Morphism "a_c" a c
+            let b_c = Morphism "b_c" b c
 
-        has a_b a_b `shouldBe` True
-        has a_b a_c `shouldBe` False
-        has a_b b_c `shouldBe` False
-    it "(morphisms) properly checks chain morphisms" $ do
-        let a = Thing "a"
-        let b = Thing "b"
-        let c = Thing "c"
+            has a_b a_b `shouldBe` True
+            has a_b a_c `shouldBe` False
+            has a_b b_c `shouldBe` False
+        it "(morphisms) does not allow intermediate morphisms" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let c = Thing "c"
 
-        let a_b = Morphism "a_b" a b
-        let a_c = Morphism "a_c" a c
-        let b_c = Morphism "b_c" b c
-        let a_b_c = Morphism "a_b_c" a b_c
+            let a_b = Morphism "a_b" a b
+            let a_c = Morphism "a_c" a c
+            let b_c = Morphism "b_c" b c
+            let a_b_c = Morphism "a_b_c" a b_c
 
-        has a_c a_b_c `shouldBe` True
-    it "(Product) should make product of things have only a product of those things" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
-        let thing3 = Thing "thing3"
+            has a_c a_b_c `shouldBe` False
+        it "(Product) should make product of things have only a product of those things" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
+            let thing3 = Thing "thing3"
 
-        let product_things = Composite "pThings" Product [thing, thing2]
-        has product_things thing `shouldBe` False
-        has product_things thing2 `shouldBe` False
-        has product_things thing3 `shouldBe` False
-        has product_things product_things `shouldBe` True
-        has product_things (Composite "pThings" Product [thing, thing3]) `shouldBe` False
-    it "(Product) should ignore products of length 1" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
+            let product_things = Composite "pThings" Product [thing, thing2]
+            has product_things thing `shouldBe` False
+            has product_things thing2 `shouldBe` False
+            has product_things thing3 `shouldBe` False
+            has product_things product_things `shouldBe` True
+            has product_things (Composite "pThings" Product [thing, thing3]) `shouldBe` False
+        it "(Product) should ignore products of length 1" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
 
-        let product_things = Composite "pThings" Product [thing]
-        has product_things thing `shouldBe` True
-        has product_things thing2 `shouldBe` False
-        has product_things product_things `shouldBe` True
-        has product_things (Composite "pThings" Product [thing, thing2]) `shouldBe` False
-    it "(Sum) should make a sum of things have each of those things" $ do
-        let thing = Thing "thing"
-        let thing2 = Thing "thing2"
-        let thing3 = Thing "thing3"
+            let product_things = Composite "pThings" Product [thing]
+            has product_things thing `shouldBe` True
+            has product_things thing2 `shouldBe` False
+            has product_things product_things `shouldBe` True
+            has product_things (Composite "pThings" Product [thing, thing2]) `shouldBe` False
+        it "(Sum) should make a sum of things have each of those things" $ do
+            let thing = Thing "thing"
+            let thing2 = Thing "thing2"
+            let thing3 = Thing "thing3"
 
-        let sum_things = Composite "pThings" Sum [thing, thing2]
-        has sum_things thing `shouldBe` True
-        has sum_things thing2 `shouldBe` True
-        has sum_things thing3 `shouldBe` False
-        has sum_things sum_things `shouldBe` True
-        has sum_things (Composite "pThings" Sum [thing, thing3]) `shouldBe` False
-        has sum_things (Composite "pThings" Sum [thing, thing2, thing3]) `shouldBe` True
-    it "(Composition) should only check input output of composite morphisms" $ do
-        let a = Thing "a"
-        let b = Thing "b"
-        let c = Thing "c"
+            let sum_things = Composite "pThings" Sum [thing, thing2]
+            has sum_things thing `shouldBe` True
+            has sum_things thing2 `shouldBe` True
+            has sum_things thing3 `shouldBe` False
+            has sum_things sum_things `shouldBe` True
+            has sum_things (Composite "pThings" Sum [thing, thing3]) `shouldBe` False
+            has sum_things (Composite "pThings" Sum [thing, thing2, thing3]) `shouldBe` True
+        it "(Composition) should only check input output of composite morphisms" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let c = Thing "c"
 
-        let a_b = Morphism "a_b" a b
-        let b_c = Morphism "b_c" b c
-        let a_c = Morphism "a_c" a c
+            let a_b = Morphism "a_b" a b
+            let b_c = Morphism "b_c" b c
+            let a_c = Morphism "a_c" a c
 
-        let composite_morphism = Composite "a_bb_c" Composition [a_b, b_c]
+            let composite_morphism = Composite "a_bb_c" Composition [a_b, b_c]
 
-        has composite_morphism a_c `shouldBe` True
-        has a_c composite_morphism `shouldBe` True
-    it "(Sumposition) should pass it on to any of the interal foos" $ do
-        let a = Thing "a"
-        let b = Thing "b"
-        let c = Thing "c"
+            has composite_morphism a_c `shouldBe` True
+            has a_c composite_morphism `shouldBe` True
+        it "(Sumposition) should pass it on to any of the interal foos" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let c = Thing "c"
 
-        let a_b = Morphism "a_b" a b
-        let b_c = Morphism "b_c" b c
-        let a_c = Morphism "a_c" a c
+            let a_b = Morphism "a_b" a b
+            let b_c = Morphism "b_c" b c
+            let a_c = Morphism "a_c" a c
 
-        let sumposite_morphism = Composite "a_bb_c" Sumposition [a_b, b_c]
+            let sumposite_morphism = Composite "a_bb_c" Sumposition [a_b, b_c]
 
-        has sumposite_morphism a_b `shouldBe` True
-        has sumposite_morphism b_c `shouldBe` True
-        has sumposite_morphism a_c `shouldBe` False
-    it "(Higher) should have each of its inner categories" $ do
-        let a = Thing "a"
-        let b = Thing "b"
-        let c = Thing "c"
+            has sumposite_morphism a_b `shouldBe` True
+            has sumposite_morphism b_c `shouldBe` True
+            has sumposite_morphism a_c `shouldBe` False
+        it "(Higher) should have each of its inner categories" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let c = Thing "c"
+            let d = Thing "d"
 
-        let a_b = Morphism "a_b" a b
-        let b_c = Morphism "b_c" b c
-        let a_c = Morphism "a_c" a c
+            let a_b = Morphism "a_b" a b
+            let b_c = Morphism "b_c" b c
+            let a_c = Morphism "a_c" a c
+            let a_d = Morphism "a_c" a d
 
-        let higher_category = Composite "all" Higher [a,b,a_b,b_c]
+            let higher_category = Composite "all" Higher [a,b,a_b,b_c]
 
-        has higher_category a `shouldBe` True
-        has higher_category b `shouldBe` True
-        has higher_category c `shouldBe` False
-        has higher_category a_b `shouldBe` True
-        has higher_category b_c `shouldBe` True
-        has higher_category a_c `shouldBe` False
-    it "(Placeholder) should be contained by its category" $ do
-        let a = Thing "a"
-        let b = Thing "b"
-        let c = Thing "c"
+            has higher_category a `shouldBe` True
+            has higher_category b `shouldBe` True
+            has higher_category c `shouldBe` True
+            has higher_category a_b `shouldBe` True
+            has higher_category b_c `shouldBe` True
+            has higher_category a_c `shouldBe` True
+            has higher_category d `shouldBe` False
+            has higher_category a_d `shouldBe` False
+        it "(Placeholder) should be contained by its category" $ do
+            let a = Thing "a"
+            let b = Thing "b"
+            let c = Thing "c"
 
-        let a_b = Morphism "a_b" a b
-        let b_c = Morphism "b_c" b c
-        let a_c = Morphism "a_c" a c
+            let a_b = Morphism "a_b" a b
+            let b_c = Morphism "b_c" b c
+            let a_c = Morphism "a_c" a c
 
-        let higher_category = Composite "all" Higher [a,b,a_b,b_c]
-        let ph_hc = Placeholder "ph-all" (Just 0) higher_category
+            let higher_category = Composite "all" Higher [a,b,a_b,b_c]
+            let ph_hc = Placeholder "ph-all" (Just 0) higher_category
 
-        has higher_category ph_hc `shouldBe` True
-        has ph_hc higher_category  `shouldBe` False
+            has higher_category ph_hc `shouldBe` True
+            has ph_hc higher_category  `shouldBe` False
     describe "call" $ do
         it "(NonMorphism) should return Nothing" $ do
             let a = Thing "a"
@@ -239,17 +243,18 @@ spec = do
             let a2b_on_a = MorphismCall a2b a
             execute a2b_on_a `shouldBe` b
         it "(RecursiveCategory) should just return itself" $ do
-            let nat = makeRecursiveCategory "self" (Composite "Nat" Sum [Thing "0", Morphism "succ" valid (FlexibleCategory "self")])
+            let nat = makeRecursiveCategory "self" (Composite "Nat" Sum [Thing "0", Morphism "succ" valid (Special "self" Reference)])
             execute nat `shouldBe` unfold Recursive nat
         it "(RecursiveCategory) should have all different elements" $ do
-            let nat = makeRecursiveCategory "self" (Composite "Nat" Sum [Thing "0", Morphism "succ" valid (FlexibleCategory "self")])
+            let nat = makeRecursiveCategory "self" (Composite "Nat" Sum [Thing "0", Morphism "succ" valid (Special "self" Reference)])
             nat `has` Thing "0" `shouldBe` True
             nat `has` Morphism "succ" valid (Thing "0") `shouldBe` True
             nat `has` Morphism "succ" valid (Morphism "succ" valid (Thing "0")) `shouldBe` True
         it "(RecursiveCategory) should be callable in a morphism call" $ do
             let a = Thing "a"
             let b = Thing "b"
-            let simple_ab = makeRecursiveCategory "simple_ab" (Composite "ab" Sumposition [Morphism "ab1" a b, Morphism "ab2" b (MorphismCall FlexibleCategory{name="simple_ab"} a)])
+            let simple_ab = makeRecursiveCategory "simple_ab" (Composite "ab" Sumposition [Morphism "ab1" a b, Morphism "ab2" b (MorphismCall Special{name="simple_ab", special_type=Reference} a)])
+            -- print $ inner_expr simple_ab
             simplify (MorphismCall simple_ab b) `shouldBe` MorphismCall simple_ab b
             simplify (MorphismCall simple_ab a) `shouldBe` MorphismCall simple_ab a
             execute (MorphismCall simple_ab a) `shouldBe` b

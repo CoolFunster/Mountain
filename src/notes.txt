@@ -7,6 +7,7 @@ Ok so recursion is done now. What's next
 - fixing and deleting MTPLExpressionX
 - What is type operations?
 - How do we integrate specialized higher category solvers?
+- Subtractive category
 
 I think we should focus on higher categories
 
@@ -30,3 +31,76 @@ Ok so higher categories use proofs to determine whether they have something.
 
 Ok so next step is to remove MTPL expression stuff and get the sequent proof engine working on the base category level,
 eventually so that it can be used in the has for higher categories
+
+
+A higher category should be isomorphic to a theory
+a theory has
+    - things 
+    - functions
+    - properties
+    - axioms
+
+a higher category will express these things by
+    - things =      categorical things
+    - functions =   categorical morphisms
+    - properties =  categorical morphisms of type (input) -> Bool
+    - axioms =      categorical refined categories & algebraic data types
+
+so its just a collection of categorical objects and not language constructs or flexible categories
+
+===========
+Grocery App
+===========
+    Ingredients <
+        Thing "Pepper"
+        Thing "Salt"
+        Thing "Egg"
+        Thing "Milk"
+        Thing "Flour"
+    >
+
+    Location : (long:Float, lat:Float) -- can be ints initially
+
+    Ingredient Store : ({Ingredients}, Location)
+
+    Recipe : [Ingredients]
+
+    Graphs : Sumposition (predecessor:Location -> Sumposition(successor:Location -> {dist:Float | dist > 0.0}))
+
+    Route
+        {r@(edges:[(pred:Location,succ:Location)], m:Map) | for each edge in edges : ((x:Any,y:Any) -> x `elem` m && y `elem` m(x)}
+
+    Length: r@Route -> Int :: foldr(0, r.edges,(state, (pred,succ)) -> state + r.m(pred)(succ))
+
+    Location -> RoutePlanner
+        map : Map -> locations:[Location] -> {r:Route | minimized(Length(r))}
+
+    GroceryRoute : [([Ingredients], IngredientStore)]
+
+    GroceryApp :
+        r:Recipe -> {r:GroceryRoute | recipe == foldr({}, r, (state, (ing:{Ingredients}, IngredientStore)) -> state insert ing)}
+
+    
+
+
+Notes:
+
+Key basic morphisms that need to be published to the language
+    has
+    morphism dereference with head/tail
+    Input valid for morphism
+    optimization objective
+Lists are critical to define (can be morphisms)
+    looping over Lists
+    foldr? foldl?
+    transformations, filtering?
+Graphs are also critical to the grocery app for the route planner
+    algebraic graphs
+
+Refinement is also critical to hold specifications. How to verify?
+
+Sets are also crucial to define as a basic data structure for performance
+
+How to populate types from databases
+
+placeholder and refinement = current placeholder

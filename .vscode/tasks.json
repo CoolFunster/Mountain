@@ -6,7 +6,7 @@
         {
             "label": "Build Project",
             "type": "shell",
-            "command": "stack build",
+            "command": "source ~/.bash_profile && stack build",
             "problemMatcher": [],
             "presentation": {
                 "echo": true,
@@ -20,7 +20,7 @@
         {
             "label": "Run Project",
             "type": "shell",
-            "command": "stack run",
+            "command": "source ~/.bash_profile && stack run",
             "problemMatcher": [],
             "presentation": {
                 "echo": true,
@@ -34,7 +34,7 @@
         {
             "label": "Test Project",
             "type": "shell",
-            "command": "stack test",
+            "command": "source ~/.bash_profile && stack test",
             "problemMatcher": [],
             "presentation": {
                 "echo": true,
@@ -46,9 +46,9 @@
             }
         },
         {
-            "label": "Ghci",
+            "label": "stack ghci",
             "type": "shell",
-            "command": "stack ghci",
+            "command": "source ~/.bash_profile && stack ghci",
             "problemMatcher": [],
             "presentation": {
                 "echo": true,
