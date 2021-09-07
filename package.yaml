@@ -25,6 +25,7 @@ dependencies:
 - QuickCheck
 - algebraic-graphs
 - containers
+- random
 
 library:
   source-dirs: src

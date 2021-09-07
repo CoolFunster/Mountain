@@ -2,40 +2,62 @@ module Categories.Numbers where
 
 import CategoryData
 
+{- Natural numbers -}
+natural :: Category
+natural = makeRecursiveCategory "self" Composite{
+    name="nat",
+    composition_type=Sum,
+    inner=[
+        Thing "zero",
+        Composite{
+            name="succ",
+            composition_type=Product,
+            inner=[Special{name="self", special_type=Reference}]
+        }
+    ]
+}
 
-nat :: Category
-nat = Morphism{
-        name="Int",
-        input=Special{name="Int_data_type", special_type=Universal},
-        output= makeRecursiveCategory "list_inner_def" Composite{
-            name="inner_list",
-            composition_type=Sum,
-            inner=[
-                Thing "empty",
-                Composite {
-                    name="recursive",
-                    composition_type=Product,
-                    inner=[
-                        Placeholder{
-                            name="data", 
-                            ph_level=Nothing,
-                            {- ph_level= MorphismCall{
-                                base_morphism=Special{
-                                    name="level data type - 1", 
-                                    special_type=Reference
-                                }, 
-                                argument=Special{
-                                    name="list_data_type", 
-                                    special_type=Reference
-                                }
-                            } -}
-                            ph_category=Special{
-                                name="list_inner_def", 
-                                special_type=Reference
-                            }
-                        }
-                    ]
-                }
-            ]
-        }        
+increment :: Category
+increment = Morphism{
+    name="increment",
+    input=Placeholder{name="x", ph_level=Just 0, ph_category=natural},
+    output=Composite{
+        name="succ",
+        composition_type=Product,
+        inner=[Special{name="x", special_type=Reference}]
     }
+}
+
+decrement :: Category
+decrement = Morphism{
+    name="increment",
+    input=Placeholder{name="x", ph_level=Just 0, ph_category=positiveNatural},
+    output=Dereference{base_category=Special{name="x", special_type=Reference}, category_id="x"}
+}
+
+zero :: Category
+zero = Dereference{base_category=natural, category_id="zero"}
+
+positiveNatural :: Category
+positiveNatural = Dereference{base_category=natural, category_id="succ"}
+{- END: Natural numbers -}
+
+{- Integer numbers -}
+integer :: Category
+integer = Composite{
+    name="integer",
+    composition_type=Sum,
+    inner=[
+        Composite{
+            name="+",
+            composition_type=Product,
+            inner=[positiveNatural]
+        },
+        zero,
+        Composite{
+            name="-",
+            composition_type=Product,
+            inner=[positiveNatural]
+        }
+    ]
+}

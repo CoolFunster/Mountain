@@ -3,6 +3,8 @@ module CategoryData where
 import Data.List (intercalate)
 import Data.Maybe (mapMaybe, catMaybes, fromJust)
 import Data.List (find)
+import Data.Dynamic
+import Data.Typeable
 
 import Debug.Trace (trace)
 
@@ -15,7 +17,10 @@ data CompositionType =
     Sumposition  -- if else statement
     deriving (Show, Eq)
 data SpecialCategoryType = Flexible | Reference | Universal | Any deriving (Show, Eq)
-newtype ForeignAttached = HaskellFunction (Category -> Maybe Category)
+data ForeignAttached = 
+    HaskellObject Dynamic |
+    HaskellType TypeRep |
+    HaskellFunction (Category -> Maybe Category)
 instance Eq ForeignAttached where
     (==) _ _ = True
 
@@ -181,6 +186,14 @@ isMorphic _ = False
 
 -- end checks for data constructor type
 
+-- higher constructors
+makeTuple :: Id -> [Category] -> Category
+makeTuple id = Composite id Product
+
+makeSumple :: Id -> [Category] -> Category
+makeSumple id = Composite id Sum
+-- end higher constructors
+
 -- some basic functionality on categories
 
 freeVariables :: Category -> [Category]
@@ -224,8 +237,8 @@ makeRecursiveCategory rec_ph_name rec_cat
 
 dereference :: Id -> Category -> Maybe Category
 dereference id category
-    | name category == id = Just category
-    | otherwise =
+        | isNamedCategory category && name category == id = Just category
+        | otherwise =
         case category of
             t@Thing{name=name} -> Nothing
             c@Composite{name=name, inner=inner} -> 
@@ -237,6 +250,7 @@ dereference id category
                     "input" -> Just input
                     "output" -> Just output
                     _ -> Nothing
+            m@RecursiveCategory{} -> dereference id (unfold Recursive m)
             ForeignCategory{category_type=ct} -> dereference id ct
             _ -> Nothing
 

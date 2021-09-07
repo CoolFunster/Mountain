@@ -256,9 +256,9 @@ spec = do
 
         let final_proof = solveCategorySequent seq_to_solve
         final_proof `shouldNotBe` noProof
-        -- putStrLn $ prettyPrintProofStr final_proof
+        putStrLn $ prettyPrintProofStr final_proof
         let program_from_proof = extractProgramFromSeqent final_proof seq_to_solve
-        -- print program_from_proof
+        print program_from_proof
         program_from_proof `shouldNotBe` Nothing
     -- it "(Placeholder left) same level" $ do
     --     let a = Thing "a"

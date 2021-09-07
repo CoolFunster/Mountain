@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: daeab8c7124f9e5c38bd8ec0a540a7d2868b6836d45b414861e4c1f56ff8eb3f
+-- hash: 48b4db3e8ffe2972734aec2bd316d1ea7c58f67c5b7425b563de2860c3209c5c
 
 name:           MTPL
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       Categories.Base
+      Categories.Foreign.Haskell.Numbers
       Categories.Lists
       Categories.Numbers
       CategoryCore
@@ -45,6 +46,7 @@ library
     , base >=4.7 && <5
     , containers
     , hspec
+    , random
   default-language: Haskell2010
 
 executable MTPL-exe
@@ -61,6 +63,7 @@ executable MTPL-exe
     , base >=4.7 && <5
     , containers
     , hspec
+    , random
   default-language: Haskell2010
 
 test-suite spec
@@ -68,6 +71,8 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       CategoriesSpec.BaseSpec
+      CategoriesSpec.ForeignSpec.HaskellSpec.NumbersSpec
+      CategoriesSpec.NumbersSpec
       CategoryDataSpec
       SynthesizersSpec.SequentSynthesizerSpec
       Paths_MTPL
@@ -80,5 +85,6 @@ test-suite spec
     , base >=4.7 && <5
     , containers
     , hspec ==2.*
+    , random
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover == 2.*

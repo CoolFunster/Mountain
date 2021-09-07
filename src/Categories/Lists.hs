@@ -7,7 +7,7 @@ list :: Category
 list = 
     Morphism{
         name="List",
-        input=Special{name="list_data_type", special_type=Universal},
+        input=Special{name="list_data_type", special_type=Any},
         output= makeRecursiveCategory "list_inner_def" Composite{
             name="inner_list",
             composition_type=Sum,

@@ -4,6 +4,12 @@ import Test.Hspec
 import CategoryData
 import CategoryCore
 
+import Categories.Numbers (natural)
+
+import Data.Maybe (fromJust)
+
+-- TODO Split into respective files
+
 spec :: Spec
 spec = do
     describe "level" $ do
@@ -259,5 +265,12 @@ spec = do
             simplify (MorphismCall simple_ab a) `shouldBe` MorphismCall simple_ab a
             execute (MorphismCall simple_ab a) `shouldBe` b
             execute (MorphismCall simple_ab b) `shouldBe` b
+    describe "sample" $ do
+        it "(Thing) requesting a thing of level 0 should return a thing" $ do
+            let a = Thing "a"
+            sample (Placeholder "something" (Just 0) a) `shouldBe` a
+        it "(Higher) requesting a thing of a recursive type should return that thing" $ do
+            sample (Placeholder "x" (Just 0) natural) `shouldBe` fromJust (dereference "zero" natural)
+            
 
             
