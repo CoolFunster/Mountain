@@ -7,37 +7,37 @@ import CategoryCore
 
 boolean :: Category
 boolean = Composite{
-    name="Boolean",
+    name=Name "Boolean",
     composition_type=Higher,
     inner=[
-        Thing "true",
-        Thing "false"
+        Thing (Name "true"),
+        Thing (Name "false")
     ]
 }
 
 boolToBoolean :: Bool -> Category
-boolToBoolean True = fromJust $ dereference "true" boolean 
-boolToBoolean False = fromJust $ dereference "false" boolean
+boolToBoolean True = fromJust $ dereference (Name "true") boolean 
+boolToBoolean False = fromJust $ dereference (Name "false") boolean
 
 base :: Category
 base = Composite{
-    name="Base",
+    name=Name "Base",
     composition_type=Higher,
     inner=[
         ForeignCategory{
-            name="has",
+            name=Name "has",
             category_type=Morphism{
-                name="has",
+                name=Name "has",
                 input=Composite{
-                    name="has_input",
+                    name=Name "has_input",
                     composition_type=Product,
                     inner=[
-                        Special{name="BigCategory",special_type=Any},
-                        Special{name="SmallCategory",special_type=Any}
+                        Special{name=Name "BigCategory",special_type=Any},
+                        Special{name=Name "SmallCategory",special_type=Any}
                     ]
                 },
                 output=Placeholder{
-                    name="has_output",
+                    name=Name "has_output",
                     ph_level=Just 0,
                     ph_category=boolean
                 }
@@ -51,23 +51,23 @@ base = Composite{
                     Just $ boolToBoolean $ has big_category small_category)
         },
         ForeignCategory{
-            name="isValidArgumentTo",
+            name=Name "isValidArgumentTo",
             category_type=Morphism{
-                name="isValidArgumentTo",
+                name=Name "isValidArgumentTo",
                 input=Composite{
-                    name="isValidArgumentTo_input",
+                    name=Name "isValidArgumentTo_input",
                     composition_type=Product,
                     inner=[
-                        Special{name="Argument",special_type=Any},
+                        Special{name=Name "Argument",special_type=Any},
                         Morphism{
-                            name="some_morphism",
-                            input=Special{name="morphism_input",special_type=Any},
-                            output=Special{name="morphism_output",special_type=Any}
+                            name=Name "some_morphism",
+                            input=Special{name=Name "morphism_input",special_type=Any},
+                            output=Special{name=Name "morphism_output",special_type=Any}
                         }
                     ]
                 },
                 output=Placeholder{
-                    name="has_output",
+                    name=Name "has_output",
                     ph_level=Just 0,
                     ph_category=boolean
                 }

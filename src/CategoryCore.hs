@@ -16,23 +16,23 @@ has big_category small_category
     | big_category == small_category = True
     | Special{} <- big_category = True
     | Special{} <- small_category = True
-    | ForeignCategory{category_type=cat_type} <- big_category = has cat_type small_category
-    | ForeignCategory{category_type=cat_type} <- small_category = has big_category cat_type 
-    | RecursiveCategory{} <- small_category, RecursiveCategory{} <- big_category = has (unfold Flat big_category) (unfold Flat small_category)
-    | RecursiveCategory{} <- small_category = has big_category (unfold Recursive small_category)
-    | RecursiveCategory{} <- big_category = has (unfold Recursive big_category) small_category
+    | ForeignCategory{category_type=cat_type} <- big_category = CategoryCore.has cat_type small_category
+    | ForeignCategory{category_type=cat_type} <- small_category = CategoryCore.has big_category cat_type 
+    | RecursiveCategory{} <- small_category, RecursiveCategory{} <- big_category = CategoryCore.has (unfold Flat big_category) (unfold Flat small_category)
+    | RecursiveCategory{} <- small_category = CategoryCore.has big_category (unfold Recursive small_category)
+    | RecursiveCategory{} <- big_category = CategoryCore.has (unfold Recursive big_category) small_category
     | isJust (level big_category) && isJust (level small_category) && level big_category < level small_category = False
-    | Placeholder{ph_level=ph_level, ph_category=ph_category} <- small_category = (ph_level <= level big_category) && has big_category ph_category
-    | (Composite _ _ [category]) <- big_category = has category small_category
-    | (Composite _ _ [category]) <- small_category = has big_category category
+    | Placeholder{ph_level=ph_level, ph_category=ph_category} <- small_category = (ph_level <= level big_category) && CategoryCore.has big_category ph_category
+    | (Composite _ _ [category]) <- big_category = CategoryCore.has category small_category
+    | (Composite _ _ [category]) <- small_category = CategoryCore.has big_category category
     | otherwise = has_inner big_category small_category
         where 
             {- Things -}
             -- equality is checked above only here if 2 things not eq
             has_inner (Thing t) _ = False
             {- Morphisms -}
-            has_inner Morphism{input=input1,output=output1} Morphism{input=input2,output=output2} = has input1 input2 && has output1 output2
-            has_inner m_big@Morphism{} c_small@Composite{} = has m_big (asMorphism c_small)
+            has_inner Morphism{input=input1,output=output1} Morphism{input=input2,output=output2} = CategoryCore.has input1 input2 && CategoryCore.has output1 output2
+            has_inner m_big@Morphism{} c_small@Composite{} = CategoryCore.has m_big (asMorphism c_small)
             has_inner Morphism{} _ = False
             {- Composite Categories -}
             has_inner (Composite _ big_type []) (Composite _ small_type []) = big_type == small_type
@@ -40,20 +40,22 @@ has big_category small_category
             has_inner (Composite _ Product product_inner) other_category
                 | not (isCompositeType Product other_category) = False
                 | isCompositeType Product other_category && length product_inner /= length (inner other_category) = False
-                | otherwise = and $ zipWith has product_inner (inner other_category)
-            has_inner (Composite _ Sum sum_inner) other_category@(Composite _ Sum _) = all (has other_category) sum_inner   
-            has_inner (Composite _ Sum sum_inner) other_category = or (sequence (map has sum_inner) other_category)
+                | otherwise = and $ zipWith CategoryCore.has product_inner (inner other_category)
+            has_inner (Composite _ Sum sum_inner) other_category@(Composite _ Sum _) = all (CategoryCore.has other_category) sum_inner   
+            has_inner (Composite _ Sum sum_inner) other_category = or (sequence (map CategoryCore.has sum_inner) other_category)
             {- Higher Categories -}
             has_inner h@Composite{composition_type=Higher} other_category = isAnswered $ synthesizeCategory h other_category
             has_inner big_category h@Composite{composition_type=Higher,inner=inner_terms} = all (has_inner big_category) inner_terms
             {- Composite Morphism -}
-            has_inner c_big@Composite{composition_type=Composition} other_category = has (asMorphism c_big) other_category
-            has_inner (Composite _ Sumposition sump_inner) other_category = or (sequence (map has sump_inner) other_category)
+            has_inner c_big@Composite{composition_type=Composition} other_category = CategoryCore.has (asMorphism c_big) other_category
+            has_inner (Composite _ Sumposition sump_inner) other_category = or (sequence (map CategoryCore.has sump_inner) other_category)
             {- Placeholders -}
             has_inner Placeholder{ph_level=ph_level,ph_category=ph_category} other_category = 
                 case (ph_level, level other_category) of
-                    (Just level, Just other_level) -> level <= other_level && has other_category ph_category
+                    (Just level, Just other_level) -> level <= other_level && CategoryCore.has other_category ph_category
                     _ -> error "Bad leveling!"
+            has inner RefinedCategory {base_category=_base_category, predicate=_predicate} other = error "Not implemented yet"
+            has inner other RefinedCategory {base_category=_base_category, predicate=_predicate} = error "Not implemented yet"
 
 sample :: Category -> Category
 sample p@Placeholder{ph_level=Nothing, ph_category=category} = sample p{ph_level=Just 0}
@@ -61,6 +63,7 @@ sample p@Placeholder{ph_level=Just desired_level, ph_category=ph_category}
     | level ph_category == Just desired_level = ph_category
     | level ph_category < Just desired_level = error "bad synthesis question"
     | otherwise = sample p{ph_category=reduce ph_category}
+sample other = error "unsupported"
 
 reduce :: Category -> Category
 reduce t@Thing{} = error "Cannot reduce thing"
@@ -87,6 +90,7 @@ reduce RefinedCategory{} = error "not supported yet"
 reduce Special{special_type=Flexible} = valid
 reduce Special{special_type=Universal} = valid
 reduce Special{special_type=Reference} = error "can't sample references"
+reduce Special{special_type=CategoryData.Any} = valid
 reduce ForeignCategory{category_type=ct} = sample ct
 reduce r@RecursiveCategory{} = reduce $ unfold Recursive r
 reduce m@MorphismCall{base_morphism=bm, argument=a} = sample m{base_morphism=sample bm, argument=sample a}

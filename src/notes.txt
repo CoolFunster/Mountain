@@ -52,11 +52,11 @@ so its just a collection of categorical objects and not language constructs or f
 Grocery App
 ===========
     Ingredients <
-        Thing "Pepper"
-        Thing "Salt"
-        Thing "Egg"
-        Thing "Milk"
-        Thing "Flour"
+        Thing (Name "Pepper")
+        Thing (Name "Salt")
+        Thing (Name "Egg")
+        Thing (Name "Milk")
+        Thing (Name "Flour")
     >
 
     Location : (long:Float, lat:Float) -- can be ints initially

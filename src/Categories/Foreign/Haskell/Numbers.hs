@@ -9,14 +9,14 @@ import Data.Maybe (fromJust)
 
 haskellValid :: Category
 haskellValid = ForeignCategory{
-    name="haskellValid",
+    name=Name "haskellValid",
     category_type=valid,
     attached=HaskellObject (toDyn ())
 }
 
 haskellInt :: Category
 haskellInt = ForeignCategory{
-    name="haskellInt",
+    name=Name "haskellInt",
     category_type=integer,
     attached=HaskellType (typeRep (Proxy :: Proxy Int))
 }

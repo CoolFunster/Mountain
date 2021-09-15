@@ -7,8 +7,13 @@ import Data.Dynamic
 import Data.Typeable
 
 import Debug.Trace (trace)
+import Foreign.Marshal.Alloc (free)
 
-type Id = [Char]
+data Id = Name [Char] | Index Int deriving (Show, Eq)
+getNameStr :: Id -> [Char]
+getNameStr (Name n) = n
+getNameStr (Index idx) = show idx
+
 data CompositionType = 
     Product | -- tuple
     Sum | -- a or b, union
@@ -75,24 +80,26 @@ data Category =
     deriving (Eq)
 
 instance Show Category where
-    show Thing{name=name} = "`"++name++"`"
-    show Composite{name=name,composition_type=Product,inner=inner} = name++":("++intercalate "," (map show inner)++")"
-    show Composite{name=name,composition_type=Composition,inner=inner} = name++":("++intercalate "," (map show inner)++")"
-    show Composite{name=name,composition_type=Sum,inner=inner} = name++":|"++intercalate "," (map show inner)++"|"
-    show Composite{name=name,composition_type=Sumposition,inner=inner} = name++":|"++intercalate "," (map show inner)++"|"
-    show Composite{name=name,composition_type=Higher,inner=inner} = name++":<"++intercalate "," (map show inner)++">"
-    show Morphism{name=name,input=input,output=output} = "Morphism{"++name++","++show input++"->"++show output++"}"
-    show Placeholder{name=name,ph_level=Just ph_level,ph_category=ph_category} = name++"_"++show ph_level++"@"++show ph_category
-    show Placeholder{name=name,ph_level=Nothing,ph_category=ph_category} = name++"@"++show ph_category++"}"
+    show Thing{name=name} = "`"++ show name ++"`"
+    show Composite{name=name,composition_type=Product,inner=inner} = show name ++":("++intercalate "," (map show inner)++")"
+    show Composite{name=name ,composition_type=Composition,inner=inner} = show name ++":("++intercalate "," (map show inner)++")"
+    show Composite{name=name,composition_type=Sum,inner=inner} = show name ++":|"++intercalate "," (map show inner)++"|"
+    show Composite{name=name,composition_type=Sumposition,inner=inner} = show name ++":|"++intercalate "," (map show inner)++"|"
+    show Composite{name=name,composition_type=Higher,inner=inner} = show name ++":<"++intercalate "," (map show inner)++">"
+    show Morphism{name=name,input=input,output=output} = "Morphism{"++show name ++","++show input++"->"++show output++"}"
+    show Placeholder{name=name,ph_level=Just ph_level,ph_category=ph_category} = show name ++"_"++show ph_level++"@"++show ph_category
+    show Placeholder{name=name,ph_level=Nothing,ph_category=ph_category} = show name ++"@"++show ph_category++"}"
     show MorphismCall{base_morphism=m, argument=a} = show m ++ "(" ++ show a ++ ")"
-    show RecursiveCategory{inner_expr=Morphism{input=input}} = "$$" ++ name input
-    show Special{name=name, special_type=Reference} = "$" ++ name
-    show Special{name=name, special_type=Flexible} = "<~" ++ name ++ "~>"
-    show Special{name=name, special_type=Universal} = "**" ++ name ++ "**"
-    show Special{name=name, special_type=Any} = name ++ ":Any"
-    show Dereference{base_category=bc,category_id=id} = show bc ++ "." ++ id
+    show RecursiveCategory{inner_expr=Morphism{input=input}} = "$$" ++ show (name input)
+    show RecursiveCategory{} = error "not supported"
+    show Special{name=name, special_type=Reference} = "$" ++ show name
+    show Special{name=name, special_type=Flexible} = "<~" ++ show name ++ "~>"
+    show Special{name=name, special_type=Universal} = "**" ++ show name ++ "**"
+    show Special{name=name, special_type=Any} = show name ++ ":Any"
+    show Dereference{base_category=bc,category_id=id} = show bc ++ "." ++ show id
     show Membership{big_category=bc,small_category=sc} = "(" ++ show bc ++ " :: " ++ show sc ++ ")"
     show ForeignCategory{name=name,category_type=ct} = "External{" ++ show name ++ "," ++ show ct ++ "}"
+    show RefinedCategory{name=_name, base_category=_base_category, predicate=_predicate} = "{" ++ show _base_category ++ " | " ++ show _predicate ++ "}"
 
 -- checks for data constructor type
 isThing :: Category -> Bool
@@ -205,6 +212,9 @@ freeVariables rc@RecursiveCategory{} = freeVariables $ unfold Flat rc
 freeVariables MorphismCall{base_morphism=bm, argument=a} = freeVariables bm ++ freeVariables a
 freeVariables ForeignCategory{category_type=ct} = freeVariables ct
 freeVariables f@Special{} = [f]
+freeVariables RefinedCategory{base_category=bc} = freeVariables bc
+freeVariables Dereference{base_category=bc, category_id=_category_id} = error "not implemented yet"
+freeVariables Membership{small_category=sc} = freeVariables sc
 
 -- replace :: base_expr -> old -> new -> new_expr 
 -- idea compare base expr to old. if same replace with new. otherwise return old. recurse
@@ -223,6 +233,9 @@ replace base_expr old new
             Dereference base_category id -> Dereference (replace base_category old new) id
             rc@RecursiveCategory{} -> RecursiveCategory $ replace (inner_expr rc) old new
             Special{} -> base_expr
+            RefinedCategory {} -> error "not implemented"
+            ForeignCategory {} -> error "not implemented"
+            Membership {} -> error "not implemented"
 
 data UnfoldType = Flat | Recursive
 unfold :: UnfoldType -> Category -> Category
@@ -242,13 +255,16 @@ dereference id category
         case category of
             t@Thing{name=name} -> Nothing
             c@Composite{name=name, inner=inner} -> 
-                case mapMaybe (dereference id) inner of
-                    [] -> Nothing
-                    x:stuff -> Just x
+                case id of
+                    Index idx -> Just (inner!!idx)
+                    Name str_name ->
+                        case mapMaybe (dereference id) inner of
+                            [] -> Nothing
+                            x:stuff -> Just x
             m@Morphism{input=input, output=output} ->
                 case id of
-                    "input" -> Just input
-                    "output" -> Just output
+                    Name "input" -> Just input
+                    Name "output" -> Just output
                     _ -> Nothing
             m@RecursiveCategory{} -> dereference id (unfold Recursive m)
             ForeignCategory{category_type=ct} -> dereference id ct
@@ -260,10 +276,10 @@ asMorphism input_category
     | otherwise =
         case input_category of
             m@Morphism{} -> m
-            (Composite _ Composition comp_inner) -> Morphism "" (input (head morphised_comp_inner)) (output (last morphised_comp_inner))
+            (Composite _ Composition comp_inner) -> Morphism (Name "") (input (head morphised_comp_inner)) (output (last morphised_comp_inner))
                 where  
                     morphised_comp_inner = map asMorphism comp_inner
-            (Composite _ Sumposition comp_inner) -> Morphism "" (Composite "" Sum (map (input . asMorphism) comp_inner)) (Composite "" Sum (map (output . asMorphism) comp_inner))
+            (Composite _ Sumposition comp_inner) -> Morphism (Name "") (Composite (Name "") Sum (map (input . asMorphism) comp_inner)) (Composite (Name "") Sum (map (output . asMorphism) comp_inner))
             MorphismCall{base_morphism=bm} -> asMorphism $ output bm
             f@Special{name=f_name, special_type=Flexible} -> Morphism f_name f f
             rc@RecursiveCategory{} -> asMorphism $ unfold Recursive rc
@@ -290,11 +306,13 @@ level input_category =
             Special{} -> Nothing
             ForeignCategory{category_type=ct} -> level ct
             Dereference{base_category=bc,category_id=id} -> level bc
+            RefinedCategory {name=_name, base_category=_base_category, predicate=_predicate} -> level _base_category
+            Membership {} -> error "Not implemented"
 
 -- useful categories
 
 valid :: Category
-valid = Composite "valid" Product []
+valid = Composite (Name "valid") Product []
 
 empty :: Category
-empty = Composite "empty" Sum []
+empty = Composite (Name "empty") Sum []

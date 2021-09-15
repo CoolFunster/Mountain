@@ -117,7 +117,7 @@ instance Monoid ProofEdgeData where
     mempty = Edge {rule=[],inner_term_id=[]}
 
 instance Show ProofEdgeData where
-    show Edge{rule=rule,inner_term_id=inner_id} = show rule ++ "," ++ "[" ++ intercalate "," inner_id ++ "]"
+    show Edge{rule=rule,inner_term_id=inner_id} = show rule ++ "," ++ "[" ++ intercalate "," (map show inner_id) ++ "]"
 -- end instances
 
 type Proof = Algra.Graph ProofEdgeData ProofNode
@@ -267,8 +267,8 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     inner_solved_expr
                             MorphismLeft ->
                                 let
-                                    input_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == "input") related_preds_and_edges)
-                                    morphism_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == "morphism") related_preds_and_edges)
+                                    input_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == Name "input") related_preds_and_edges)
+                                    morphism_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == Name "morphism") related_preds_and_edges)
                                 in
                                     Just $ CategoryData.MorphismCall {
                                         CategoryData.base_morphism=morphism_solved_expr,
@@ -276,8 +276,8 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     }
                             MorphismRight ->
                                 let
-                                    assumed_node = fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == "assumed") related_preds_and_edges)
-                                    derived_node = fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == "to_prove") related_preds_and_edges)
+                                    assumed_node = fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == Name "assumed") related_preds_and_edges)
+                                    derived_node = fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == Name "to_prove") related_preds_and_edges)
                                     derived_output = fromJust $ extractProgram proof_graph (assumed_node:source_nodes) derived_node
                                 in
                                     Just $ CategoryData.Morphism {
@@ -305,8 +305,8 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     }
                             CompositionLeft ->
                                 let
-                                    input_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == "input") related_preds_and_edges)
-                                    morphism_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == "morphism") related_preds_and_edges)
+                                    input_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == Name "input") related_preds_and_edges)
+                                    morphism_solved_expr = fromJust $ extractProgram proof_graph source_nodes $ fst $ fromJust (find (\(pred,edge) -> (head . inner_term_id) edge == Name "morphism") related_preds_and_edges)
                                 in
                                     Just $ CategoryData.MorphismCall {
                                         base_morphism=morphism_solved_expr,
@@ -385,7 +385,7 @@ categorySolverRules = [
     ]
 
 -- utility
-proofEdgeCreator :: SequentRule -> [Char] -> SequentTerm -> SequentTerm -> Proof
+proofEdgeCreator :: SequentRule -> Id -> SequentTerm -> SequentTerm -> Proof
 proofEdgeCreator rule edge_label input_term output_term = 
     Algra.edge 
         Edge{rule=[rule],inner_term_id=[edge_label]}
@@ -530,12 +530,12 @@ morphismLeftTermApplier sequent input_category@CategoryData.Morphism{CategoryDat
     let 
         input_edge = 
             Algra.edge 
-                Edge{rule=[morphismLeft],inner_term_id=["input"]}
+                Edge{rule=[morphismLeft],inner_term_id=[Name "input"]}
                 Node{sequent_term=morphism_input}
                 Node{sequent_term=morphism_output}
         morphism_edge = 
             Algra.edge 
-                Edge{rule=[morphismLeft],inner_term_id=["morphism"]}
+                Edge{rule=[morphismLeft],inner_term_id=[Name "morphism"]}
                 Node{sequent_term=input_category}
                 Node{sequent_term=morphism_output}
         filtered_left_terms = filter (/= input_category) (left_terms sequent)
@@ -592,12 +592,12 @@ morphismRightTermApplier sequent input_category@CategoryData.Morphism{CategoryDa
     let 
         input_edge = 
             Algra.edge 
-                Edge{rule=[morphismRight],inner_term_id=["assumed"]}
+                Edge{rule=[morphismRight],inner_term_id=[Name "assumed"]}
                 Node{sequent_term=morphism_input}
                 Node{sequent_term=input_category}
         output_edge = 
             Algra.edge 
-                Edge{rule=[morphismRight],inner_term_id=["to_prove"]}
+                Edge{rule=[morphismRight],inner_term_id=[Name "to_prove"]}
                 Node{sequent_term=morphism_output}
                 Node{sequent_term=input_category}
     in
@@ -674,12 +674,12 @@ compositionLeftTermApplier sequent input_category@CategoryData.Composite{Categor
         morphism_output = output morphized_input_category
         input_edge = 
             Algra.edge 
-                Edge{rule=[compositionLeft],inner_term_id=["input"]}
+                Edge{rule=[compositionLeft],inner_term_id=[Name "input"]}
                 Node{sequent_term=morphism_input}
                 Node{sequent_term=morphism_output}
         morphism_edge = 
             Algra.edge 
-                Edge{rule=[compositionLeft],inner_term_id=["morphism"]}
+                Edge{rule=[compositionLeft],inner_term_id=[Name "morphism"]}
                 Node{sequent_term=input_category}
                 Node{sequent_term=morphism_output}
         proof_terms = Algra.overlay input_edge morphism_edge
@@ -838,7 +838,7 @@ placeholderLeftTermApplier sequent input_category@CategoryData.Placeholder{ph_le
                     else
                         let
                             create_placeholder some_input_category = Placeholder{
-                                name="ph_" ++ CategoryData.name some_input_category, 
+                                name=Name ("ph_" ++ getNameStr (CategoryData.name some_input_category)), 
                                 ph_level = ph_level,
                                 ph_category = some_input_category
                             }

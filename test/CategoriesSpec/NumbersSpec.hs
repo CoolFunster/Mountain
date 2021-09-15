@@ -13,9 +13,12 @@ spec = do
     it "Should have a level of 1" $ do
         level natural `shouldBe` Just 1
     it "Should have zero" $ do
-        natural `has` Thing "zero"
+        natural `has` Thing (Name "zero")
     it "Should have one" $ do
-        natural `has` Composite{name="succ", composition_type=Product, inner=[Thing "zero"]}
+        natural `has` Composite{name=Name "succ", composition_type=Product, inner=[Thing (Name "zero")]}
     it "Should increment properly" $ do
-        call increment (Thing "zero") `shouldBe` Just Composite{name="succ", composition_type=Product, inner=[Thing "zero"]}
-        call increment Composite{name="succ", composition_type=Product, inner=[Thing "zero"]} `shouldBe` Just Composite{name="succ", composition_type=Product, inner=[Composite{name="succ", composition_type=Product, inner=[Thing "zero"]}]}
+        call increment (Thing (Name "zero")) `shouldBe` Just Composite{name=Name "succ", composition_type=Product, inner=[Thing (Name "zero")]}
+        call increment Composite{name=Name "succ", composition_type=Product, inner=[Thing (Name "zero")]} `shouldBe` Just Composite{name=Name "succ", composition_type=Product, inner=[Composite{name=Name "succ", composition_type=Product, inner=[Thing (Name "zero")]}]}
+    it "Should decrement properly" $ do
+        let expr = call decrement Composite{name=Name "succ", composition_type=Product, inner=[Thing (Name "zero")]}
+        evaluate (fromJust expr) `shouldBe` Thing (Name "zero")

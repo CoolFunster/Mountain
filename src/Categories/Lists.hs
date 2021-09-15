@@ -6,32 +6,32 @@ import CategoryData
 list :: Category
 list = 
     Morphism{
-        name="List",
-        input=Special{name="list_data_type", special_type=Any},
-        output= makeRecursiveCategory "list_inner_def" Composite{
-            name="inner_list",
+        name=Name "List",
+        input=Special{name=Name "list_data_type", special_type=Any},
+        output= makeRecursiveCategory (Name "list_inner_def") Composite{
+            name=Name "inner_list",
             composition_type=Sum,
             inner=[
-                Thing "empty",
+                Thing (Name "empty"),
                 Composite {
-                    name="recursive",
+                    name=Name "recursive",
                     composition_type=Product,
                     inner=[
                         Placeholder{
-                            name="data", 
+                            name=Name "data", 
                             ph_level=Nothing,
                             -- ph_level=MorphismCall{
                             --     base_morphism=Special{
-                            --         name="level data type - 1", 
+                            --         name=Name "level data type - 1", 
                             --         special_type=Reference
                             --     }, 
                             --     argument=Special{
-                            --         name="list_data_type", 
+                            --         name=Name "list_data_type", 
                             --         special_type=Reference
                             --     }
                             -- },
                             ph_category=Special{
-                                name="list_inner_def", 
+                                name=Name "list_inner_def", 
                                 special_type=Reference
                             }
                         }

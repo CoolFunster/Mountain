@@ -15,11 +15,11 @@ spec = do
     it "Should have haskell 1" $ do
         1 `shouldBe` 1
         -- haskellInt `has` ForeignCategory{
-        --     name="haskellOne",
+        --     name=Name "haskellOne",
         --     category_type=Composite{
-        --         name="+",
+        --         name=Name "+",
         --         composition_type=Product,
-        --         inner=[Composite{name="succ", composition_type=Product, inner=[Thing "zero"]}]
+        --         inner=[Composite{name=Name "succ", composition_type=Product, inner=[Thing (Name "zero")]}]
         --     },
         --     attached=HaskellObject (toDyn (1::Int))
         -- }
