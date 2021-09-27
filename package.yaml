@@ -26,6 +26,10 @@ dependencies:
 - algebraic-graphs
 - containers
 - random
+- language-python
+- directory
+- megaparsec
+- text
 
 library:
   source-dirs: src

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 48b4db3e8ffe2972734aec2bd316d1ea7c58f67c5b7425b563de2860c3209c5c
+-- hash: bd8837476d84d97bbf844e0130845d91e626774e754803c1d8c7e7753b0a7445
 
 name:           MTPL
 version:        0.1.0.0
@@ -34,6 +34,8 @@ library
       CategoryCore
       CategoryData
       CategorySynthesizer
+      FrontEnds.Textual.CategoryParser
+      PythonCore
       Synthesizers.SequentSynthesizer
       Synthesizers.Synthesizer
   other-modules:
@@ -45,8 +47,12 @@ library
     , algebraic-graphs
     , base >=4.7 && <5
     , containers
+    , directory
     , hspec
+    , language-python
+    , megaparsec
     , random
+    , text
   default-language: Haskell2010
 
 executable MTPL-exe
@@ -62,8 +68,12 @@ executable MTPL-exe
     , algebraic-graphs
     , base >=4.7 && <5
     , containers
+    , directory
     , hspec
+    , language-python
+    , megaparsec
     , random
+    , text
   default-language: Haskell2010
 
 test-suite spec
@@ -74,6 +84,7 @@ test-suite spec
       CategoriesSpec.ForeignSpec.HaskellSpec.NumbersSpec
       CategoriesSpec.NumbersSpec
       CategoryDataSpec
+      PythonCoreSpec
       SynthesizersSpec.SequentSynthesizerSpec
       Paths_MTPL
   hs-source-dirs:
@@ -84,7 +95,11 @@ test-suite spec
     , algebraic-graphs
     , base >=4.7 && <5
     , containers
+    , directory
     , hspec ==2.*
+    , language-python
+    , megaparsec
     , random
+    , text
   default-language: Haskell2010
   build-tool-depends: hspec-discover:hspec-discover == 2.*
