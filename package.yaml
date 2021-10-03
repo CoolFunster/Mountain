@@ -22,6 +22,7 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 - hspec
+- hspec-megaparsec
 - QuickCheck
 - algebraic-graphs
 - containers
@@ -30,6 +31,7 @@ dependencies:
 - directory
 - megaparsec
 - text
+- parser-combinators
 
 library:
   source-dirs: src

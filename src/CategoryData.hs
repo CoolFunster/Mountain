@@ -9,10 +9,11 @@ import Data.Typeable
 import Debug.Trace (trace)
 import Foreign.Marshal.Alloc (free)
 
-data Id = Name [Char] | Index Int deriving (Show, Eq)
+data Id = Name [Char] | Index Int | Unnamed deriving (Show, Eq)
 getNameStr :: Id -> [Char]
 getNameStr (Name n) = n
 getNameStr (Index idx) = show idx
+getNameStr Unnamed = ""
 
 data CompositionType = 
     Product | -- tuple
@@ -28,6 +29,8 @@ data ForeignAttached =
     HaskellFunction (Category -> Maybe Category)
 instance Eq ForeignAttached where
     (==) _ _ = True
+instance Show ForeignAttached where
+    show any = ""
 
 data Category = 
     -- categories
@@ -77,29 +80,29 @@ data Category =
         big_category::Category,
         small_category::Category
     }
-    deriving (Eq)
+    deriving (Eq, Show)
 
-instance Show Category where
-    show Thing{name=name} = "`"++ show name ++"`"
-    show Composite{name=name,composition_type=Product,inner=inner} = show name ++":("++intercalate "," (map show inner)++")"
-    show Composite{name=name ,composition_type=Composition,inner=inner} = show name ++":("++intercalate "," (map show inner)++")"
-    show Composite{name=name,composition_type=Sum,inner=inner} = show name ++":|"++intercalate "," (map show inner)++"|"
-    show Composite{name=name,composition_type=Sumposition,inner=inner} = show name ++":|"++intercalate "," (map show inner)++"|"
-    show Composite{name=name,composition_type=Higher,inner=inner} = show name ++":<"++intercalate "," (map show inner)++">"
-    show Morphism{name=name,input=input,output=output} = "Morphism{"++show name ++","++show input++"->"++show output++"}"
-    show Placeholder{name=name,ph_level=Just ph_level,ph_category=ph_category} = show name ++"_"++show ph_level++"@"++show ph_category
-    show Placeholder{name=name,ph_level=Nothing,ph_category=ph_category} = show name ++"@"++show ph_category++"}"
-    show MorphismCall{base_morphism=m, argument=a} = show m ++ "(" ++ show a ++ ")"
-    show RecursiveCategory{inner_expr=Morphism{input=input}} = "$$" ++ show (name input)
-    show RecursiveCategory{} = error "not supported"
-    show Special{name=name, special_type=Reference} = "$" ++ show name
-    show Special{name=name, special_type=Flexible} = "<~" ++ show name ++ "~>"
-    show Special{name=name, special_type=Universal} = "**" ++ show name ++ "**"
-    show Special{name=name, special_type=Any} = show name ++ ":Any"
-    show Dereference{base_category=bc,category_id=id} = show bc ++ "." ++ show id
-    show Membership{big_category=bc,small_category=sc} = "(" ++ show bc ++ " :: " ++ show sc ++ ")"
-    show ForeignCategory{name=name,category_type=ct} = "External{" ++ show name ++ "," ++ show ct ++ "}"
-    show RefinedCategory{name=_name, base_category=_base_category, predicate=_predicate} = "{" ++ show _base_category ++ " | " ++ show _predicate ++ "}"
+-- instance Show Category where
+--     show Thing{name=name} = "`"++ show name ++"`"
+--     show Composite{name=name,composition_type=Product,inner=inner} = show name ++":("++intercalate "," (map show inner)++")"
+--     show Composite{name=name ,composition_type=Composition,inner=inner} = show name ++":("++intercalate "," (map show inner)++")"
+--     show Composite{name=name,composition_type=Sum,inner=inner} = show name ++":|"++intercalate "," (map show inner)++"|"
+--     show Composite{name=name,composition_type=Sumposition,inner=inner} = show name ++":|"++intercalate "," (map show inner)++"|"
+--     show Composite{name=name,composition_type=Higher,inner=inner} = show name ++":<"++intercalate "," (map show inner)++">"
+--     show Morphism{name=name,input=input,output=output} = "Morphism{"++show name ++","++show input++"->"++show output++"}"
+--     show Placeholder{name=name,ph_level=Just ph_level,ph_category=ph_category} = show name ++"_"++show ph_level++"@"++show ph_category
+--     show Placeholder{name=name,ph_level=Nothing,ph_category=ph_category} = show name ++"@"++show ph_category++"}"
+--     show MorphismCall{base_morphism=m, argument=a} = show m ++ "(" ++ show a ++ ")"
+--     show RecursiveCategory{inner_expr=Morphism{input=input}} = "$$" ++ show (name input)
+--     show RecursiveCategory{} = error "not supported"
+--     show Special{name=name, special_type=Reference} = "$" ++ show name
+--     show Special{name=name, special_type=Flexible} = "<~" ++ show name ++ "~>"
+--     show Special{name=name, special_type=Universal} = "**" ++ show name ++ "**"
+--     show Special{name=name, special_type=Any} = show name ++ ":Any"
+--     show Dereference{base_category=bc,category_id=id} = show bc ++ "." ++ show id
+--     show Membership{big_category=bc,small_category=sc} = "(" ++ show bc ++ " :: " ++ show sc ++ ")"
+--     show ForeignCategory{name=name,category_type=ct} = "External{" ++ show name ++ "," ++ show ct ++ "}"
+--     show RefinedCategory{name=_name, base_category=_base_category, predicate=_predicate} = "{" ++ show _base_category ++ " | " ++ show _predicate ++ "}"
 
 -- checks for data constructor type
 isThing :: Category -> Bool
