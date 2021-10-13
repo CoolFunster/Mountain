@@ -66,7 +66,7 @@ data Category =
     } |
     -- language constructs
     RecursiveCategory {
-        inner_expr::Category -- this is a morphism of reference -> rec_expr(ref)
+        inner_expr::Category
     } |
     MorphismCall {
         base_morphism::Category,

@@ -19,9 +19,9 @@ Placeholder -> Name@category or Name<Level>@category
 Flexible -> (%)
 Reference -> $Name
 Universal -> Any
-Recursive -> rec Name:category
+Recursive -> rec Name:category (TODO)
 Call -> Morphism[argument]
-SubCall -> Morphism[Name -> argument]
+SubCall -> Morphism[Name -> argument] (TODO)
 Dereference -> Category.Name
 Membership -> big_category :: small_category
 let binding -> let [Name:category] in Name:category
