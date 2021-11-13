@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 1c6f744ca3283462834a27e757d830d6ce6a36aaca037fa82cf6d6bcf9d136d4
+-- hash: 03d34cd824d2e687becbd74fc04bcb02f23e412277e21e35e48571d4ef6f6c72
 
 name:           MTPL
 version:        0.1.0.0
@@ -27,16 +27,11 @@ source-repository head
 
 library
   exposed-modules:
-      Categories.Base
-      Categories.Foreign.Haskell.Numbers
-      Categories.Lists
-      Categories.Numbers
       CategoryCore
       CategoryData
       CategorySynthesizer
       FrontEnds.Textual.CategoryParser
       FrontEnds.Textual.CategoryWriter
-      PythonCore
       Synthesizers.SequentSynthesizer
       Synthesizers.Synthesizer
   other-modules:
@@ -50,6 +45,7 @@ library
     , containers
     , directory
     , hspec
+    , hspec-discover
     , hspec-megaparsec
     , language-python
     , megaparsec
@@ -60,8 +56,6 @@ library
 
 executable MTPL-exe
   main-is: Main.hs
-  other-modules:
-      Paths_MTPL
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
@@ -73,6 +67,7 @@ executable MTPL-exe
     , containers
     , directory
     , hspec
+    , hspec-discover
     , hspec-megaparsec
     , language-python
     , megaparsec
@@ -85,13 +80,9 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      CategoriesSpec.BaseSpec
-      CategoriesSpec.ForeignSpec.HaskellSpec.NumbersSpec
-      CategoriesSpec.NumbersSpec
       CategoryDataSpec
       FrontEndsSpec.TextualSpec.CategoryParserSpec
       FrontEndsSpec.TextualSpec.CategoryWriterSpec
-      PythonCoreSpec
       SynthesizersSpec.SequentSynthesizerSpec
       Paths_MTPL
   hs-source-dirs:
@@ -104,6 +95,7 @@ test-suite spec
     , containers
     , directory
     , hspec ==2.*
+    , hspec-discover
     , hspec-megaparsec
     , language-python
     , megaparsec

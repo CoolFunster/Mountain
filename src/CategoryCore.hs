@@ -16,11 +16,6 @@ has big_category small_category
     | big_category == small_category = True
     | Special{} <- big_category = True
     | Special{} <- small_category = True
-    | ForeignCategory{category_type=cat_type} <- big_category = CategoryCore.has cat_type small_category
-    | ForeignCategory{category_type=cat_type} <- small_category = CategoryCore.has big_category cat_type 
-    | RecursiveCategory{} <- small_category, RecursiveCategory{} <- big_category = CategoryCore.has (unfold Flat big_category) (unfold Flat small_category)
-    | RecursiveCategory{} <- small_category = CategoryCore.has big_category (unfold Recursive small_category)
-    | RecursiveCategory{} <- big_category = CategoryCore.has (unfold Recursive big_category) small_category
     | isJust (level big_category) && isJust (level small_category) && level big_category < level small_category = False
     | Placeholder{ph_level=ph_level, ph_category=ph_category} <- small_category = (ph_level <= level big_category) && CategoryCore.has big_category ph_category
     | (Composite _ _ [category]) <- big_category = CategoryCore.has category small_category
@@ -75,7 +70,7 @@ reduce c@Composite{composition_type=Sumposition, inner=inner_cats} = asMorphism 
 reduce m@Morphism{input=input_cat, output=output_cat}
     | isNothing $ level m = error "bad morphism"
     | level m == Just 0 = m
-    | otherwise = m{input=reduce input_cat, output=reduce output_cat}
+    | otherwise = (unfold Recursive m){input=reduce input_cat, output=reduce output_cat}
 reduce p@Placeholder{ph_level=needed_level, ph_category=ph_cat}
     | isNothing needed_level || isNothing (level ph_cat) = error "No idea what usecase this is"
     | level ph_cat == needed_level = reduce ph_cat
@@ -90,9 +85,6 @@ reduce RefinedCategory{} = error "not supported yet"
 reduce Special{special_type=Flexible} = valid
 reduce Special{special_type=Universal} = valid
 reduce Special{special_type=Reference} = error "can't sample references"
-reduce Special{special_type=CategoryData.Any} = valid
-reduce ForeignCategory{category_type=ct} = sample ct
-reduce r@RecursiveCategory{} = reduce $ unfold Recursive r
 reduce m@MorphismCall{base_morphism=bm, argument=a} = sample m{base_morphism=sample bm, argument=sample a}
 reduce m@Dereference{base_category=bc, category_id=cid} = fromJust $ dereference cid (sample bc)
 reduce m@Membership{} = error "membership not implemented yet"
@@ -105,8 +97,6 @@ replaceReferences c@Composite{inner=inner} = c{inner=map replaceReferences inner
 replaceReferences p@Placeholder{ph_category=ph_category} = p{ph_category=replaceReferences ph_category}
 replaceReferences r@RefinedCategory{base_category=bc, predicate=p} = r{base_category=replaceReferences bc, predicate= replaceReferences p}
 replaceReferences s@Special{} = s
-replaceReferences fc@ForeignCategory{category_type=ct} = fc{category_type=replaceReferences ct}
-replaceReferences rc@RecursiveCategory{inner_expr=recursive_expr} = rc{inner_expr=replaceReferences recursive_expr}
 replaceReferences mc@MorphismCall{base_morphism=bm, argument=a} = mc{base_morphism=replaceReferences bm, argument= replaceReferences a}
 replaceReferences d@Dereference{base_category=bc} = d{base_category=replaceReferences bc}
 replaceReferences m@Membership{big_category=bc, small_category=sc} = m{big_category=replaceReferences bc, small_category=replaceReferences sc}
@@ -114,18 +104,17 @@ replaceReferences m@Membership{big_category=bc, small_category=sc} = m{big_categ
 -- Do not call this function on something that has references
 validCategory :: Category -> Bool
 validCategory (Thing _) = True
-validCategory (Morphism _ m_input m_output) = validCategory m_input && validCategory m_output
+validCategory Morphism{input=m_input, output=m_output} = validCategory m_input && validCategory m_output
 validCategory (Composite _ Composition inner) = not (null inner) && all validCategory inner
 validCategory (Composite _ Sumposition inner) = not (null inner) && all validCategory inner
 validCategory (Composite _ Higher inner) = not (null inner) && all validCategory inner && all isCategoricalObject inner
 validCategory (Composite _ _ inner) = all validCategory inner
 validCategory ph@(Placeholder _ (Just ph_level) ph_category) = ph_level >= 0 && ph_level <= fromJust (level ph_category) && validCategory ph_category
 validCategory (Placeholder _ Nothing ph_category) = empty == ph_category || valid == ph_category
-validCategory RecursiveCategory{inner_expr=Morphism{input=fc@Special{special_type=Reference}, output=other_expr}} = fc `elem` freeVariables other_expr
-validCategory RecursiveCategory{} = False
-validCategory MorphismCall{base_morphism=bm, argument=a} = validCategory bm && validCategory a && a `isValidArgumentTo` bm
+validCategory MorphismCall{base_morphism=bm, argument=a} = validCategory unfolded_flat_bm && validCategory a && a `isValidArgumentTo` unfolded_flat_bm
+    where
+        unfolded_flat_bm = unfold Flat bm
 validCategory Dereference{base_category=bc, category_id=id} = isJust $ dereference id bc
-validCategory ForeignCategory{category_type=ct} = validCategory ct
 validCategory Special{} = True
 validCategory other = error $ "validCategory Not implemented " ++ show other
 
@@ -152,12 +141,8 @@ call c@(Composite _ Composition _) input_category = call (asMorphism c) input_ca
 call (Composite _ Sumposition inner_functions) input_category = tryFunctions input_category (map call inner_functions) 
     where
         tryFunctions x = getFirst . mconcat . map (First . ($ x))
-call rc@RecursiveCategory{} input_category
-    | not $ isMorphic rc = Nothing
-    | otherwise = call (unfold Recursive rc) input_category
 call fc@Special{} input_category = Just $ MorphismCall fc input_category
 call base_category fc@Special{}  = Just $ MorphismCall base_category fc 
-call ForeignCategory{category_type=ct, attached=HaskellFunction attached_call} any_c = attached_call any_c
 call non_morphism _ = Nothing
 
 simplify :: Category -> Category
@@ -169,7 +154,6 @@ simplify ph@(Placeholder placeholder_name ph_level ph_category)
     | isNothing ph_level && ph_category == valid = ph
     | ph_level == level ph_category = simplify ph_category
     | otherwise = Placeholder placeholder_name ph_level (simplify ph_category)
-simplify RecursiveCategory{inner_expr=inner} = RecursiveCategory $ simplify inner
 simplify mc@MorphismCall{base_morphism=bm, argument=a}
     | not . isRecursiveCategory $ bm = fromJust $ call (simplify bm) (simplify a)
     | otherwise = MorphismCall (simplify bm) (simplify a)
@@ -181,10 +165,10 @@ evaluate t@Thing{} = t
 evaluate Composite{name=name, composition_type=ctype, inner=inner} = Composite name ctype (map evaluate inner)
 evaluate Morphism{name=name, input=input, output=output} = Morphism name (evaluate input) (evaluate output)
 evaluate Placeholder{name=name, ph_level=ph_level, ph_category=category} = Placeholder name ph_level (evaluate category)
-evaluate rc@RecursiveCategory{} = unfold Recursive rc
-evaluate MorphismCall{base_morphism=bm, argument=a} = evaluate (fromJust $ call (evaluate bm) (evaluate a))
+evaluate MorphismCall{base_morphism=bm, argument=a} = evaluate (fromJust $ call (evaluate unfolded_bm) (evaluate a))
+    where
+        unfolded_bm = unfold Recursive bm
 evaluate Dereference{base_category=bc, category_id=id} = evaluate $ fromJust $ dereference id bc
-evaluate fc@ForeignCategory{} = fc
 evaluate s@Special{} = s
 evaluate other = error $ "evaluate Not Implemented yet on " ++ show other
 

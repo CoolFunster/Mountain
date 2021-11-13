@@ -66,5 +66,5 @@ spec = do
             parseCategoryString "$base_ref.name.name" `shouldBe` Dereference{base_category=Dereference{base_category=Special{name=Name "base_ref", special_type=Reference}, category_id=Name "name"}, category_id=Name "name"}
         it "(Membership) should parse membership" $ do
             parseCategoryString "$base_category::$child_category" `shouldBe` Membership{big_category=Special (Name "base_category") Reference, small_category=Special (Name "child_category") Reference}
-        it "(Recursive) should parse recursion" $ do
-            print $ parseCategoryString "self:(`a -> $self[`b])"
+        -- it "(Recursive) should parse recursion" $ do
+        --     print $ parseCategoryString "self:(`a -> $self[`b])"

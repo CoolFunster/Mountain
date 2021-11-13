@@ -4,11 +4,21 @@ import Test.Hspec
 import CategoryData
 import CategoryCore
 
-import Categories.Numbers (natural)
+import FrontEnds.Textual.CategoryWriter (categoryToText)
 
 import Data.Maybe (fromJust)
 
 -- TODO Split into respective files
+
+nat::Category
+nat = Composite{
+    name=Name "Nat",
+    composition_type=Sum,
+    inner=[
+        Thing (Name "0"),
+        Morphism (Name "succ") valid (Special (Name "Nat") Reference)
+    ]
+}
 
 spec :: Spec
 spec = do
@@ -192,7 +202,7 @@ spec = do
             let a_c = Morphism (Name "a_c") a c
 
             let composite_morphism = Composite (Name "a_bb_c") Composition [a_b, b_c]
-            
+
             call composite_morphism a `shouldBe` Just c
             call composite_morphism b `shouldBe` Nothing
             call composite_morphism c `shouldBe` Nothing
@@ -206,7 +216,7 @@ spec = do
             let a_c = Morphism (Name "a_c") a c
 
             let sumposite_morphism = Composite (Name "a_bb_c") Sumposition [a_b, b_c, a_c]
-            
+
             call sumposite_morphism a `shouldBe` Just b
             call sumposite_morphism b `shouldBe` Just c
             call sumposite_morphism c `shouldBe` Nothing
@@ -249,17 +259,24 @@ spec = do
             let a2b_on_a = MorphismCall a2b a
             execute a2b_on_a `shouldBe` b
         it "(RecursiveCategory) should just return itself" $ do
-            let nat = makeRecursiveCategory (Name "self") (Composite (Name "Nat") Sum [Thing (Name "0"), Morphism (Name "succ") valid (Special (Name "self") Reference)])
-            execute nat `shouldBe` unfold Recursive nat
+            execute nat `shouldBe` nat
         it "(RecursiveCategory) should have all different elements" $ do
-            let nat = makeRecursiveCategory (Name "self") (Composite (Name "Nat") Sum [Thing (Name "0"), Morphism (Name "succ") valid (Special (Name "self") Reference)])
             nat `has` Thing (Name "0") `shouldBe` True
             nat `has` Morphism (Name "succ") valid (Thing (Name "0")) `shouldBe` True
             nat `has` Morphism (Name "succ") valid (Morphism (Name "succ") valid (Thing (Name "0"))) `shouldBe` True
         it "(RecursiveCategory) should be callable in a morphism call" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
-            let simple_ab = makeRecursiveCategory (Name "simple_ab") (Composite (Name "ab") Sumposition [Morphism (Name "ab1") a b, Morphism (Name "ab2") b (MorphismCall Special{name=Name "simple_ab", special_type=Reference} a)])
+            let ab1 = Morphism (Name "ab1") a b
+            let ab2 = Morphism (Name "ab2") b (MorphismCall Special{name=Name "ab", special_type=Reference} a)
+            let simple_ab = Composite {
+                name= Name "ab",
+                composition_type=Sumposition,
+                inner=[
+                    ab1,
+                    ab2
+                ]
+            }
             -- print $ inner_expr simple_ab
             simplify (MorphismCall simple_ab b) `shouldBe` MorphismCall simple_ab b
             simplify (MorphismCall simple_ab a) `shouldBe` MorphismCall simple_ab a
@@ -270,7 +287,8 @@ spec = do
             let a = Thing (Name "a")
             sample (Placeholder (Name "something") (Just 0) a) `shouldBe` a
         it "(Higher) requesting a thing of a recursive type should return that thing" $ do
-            sample (Placeholder (Name "x") (Just 0) natural) `shouldBe` fromJust (dereference (Name "zero") natural)
+            putStr $ categoryToText $ sample $ Placeholder (Name "x") (Just 0) nat
+            sample (Placeholder (Name "x") (Just 0) nat) `shouldBe` fromJust (dereference (Name "0") nat)
     describe "dereference" $ do
         it "should handle indices on composites well" $ do
             let composite_category = Composite (Name "something") Product [Thing (Name "a"), Thing (Name "b")]
@@ -279,6 +297,6 @@ spec = do
             dereference (Index 1) composite_category `shouldBe` Just (Thing (Name "b"))
             dereference (Name "a") composite_category `shouldBe` Just (Thing (Name "a"))
             dereference (Name "b") composite_category `shouldBe` Just (Thing (Name "b"))
-            
+
 
             

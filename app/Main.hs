@@ -10,4 +10,4 @@ main = do
   let a_b = Morphism (Name "a->b") a b
 
   let expr = MorphismCall a_b a
-  putStr $ "Hello world"
+  putStr "Hello world"

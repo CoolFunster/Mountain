@@ -1,0 +1,10 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "MTPL:lib"
+
+    - path: "./app/Main.hs"
+      component: "MTPL:exe:MTPL-exe"
+
+    - path: "./test"
+      component: "MTPL:test:spec"

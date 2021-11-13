@@ -23,6 +23,7 @@ dependencies:
 - base >= 4.7 && < 5
 - hspec
 - hspec-megaparsec
+- hspec-discover
 - QuickCheck
 - algebraic-graphs
 - containers
@@ -46,6 +47,9 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - MTPL
+    when:        
+    - condition: false        
+      other-modules: Paths_MTPL
 
 tests:
     spec:
