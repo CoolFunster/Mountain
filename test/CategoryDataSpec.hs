@@ -287,7 +287,6 @@ spec = do
             let a = Thing (Name "a")
             sample (Placeholder (Name "something") (Just 0) a) `shouldBe` a
         it "(Higher) requesting a thing of a recursive type should return that thing" $ do
-            putStr $ categoryToText $ sample $ Placeholder (Name "x") (Just 0) nat
             sample (Placeholder (Name "x") (Just 0) nat) `shouldBe` fromJust (dereference (Name "0") nat)
     describe "dereference" $ do
         it "should handle indices on composites well" $ do
