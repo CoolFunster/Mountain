@@ -4,7 +4,7 @@ import Test.Hspec
 import CategoryData
 import CategoryCore
 
-import FrontEnds.Textual.CategoryWriter (categoryToText)
+import FrontEnds.Textual.V1.CategoryWriter (categoryToText)
 
 import Data.Maybe (fromJust)
 

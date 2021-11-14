@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FrontEnds.Textual.CategoryWriter where
+module FrontEnds.Textual.V1.CategoryWriter where
 
 import CategoryData
 

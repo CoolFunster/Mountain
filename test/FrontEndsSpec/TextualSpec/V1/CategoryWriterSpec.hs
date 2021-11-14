@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FrontEndsSpec.TextualSpec.CategoryWriterSpec (spec) where
+module FrontEndsSpec.TextualSpec.V1.CategoryWriterSpec (spec) where
 
 import Test.Hspec
 
-import FrontEnds.Textual.CategoryWriter
+import FrontEnds.Textual.V1.CategoryWriter
 import CategoryData
 
 

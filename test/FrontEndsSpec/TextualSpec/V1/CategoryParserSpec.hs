@@ -1,16 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FrontEndsSpec.TextualSpec.CategoryParserSpec (spec) where
+module FrontEndsSpec.TextualSpec.V1.CategoryParserSpec (spec) where
 
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
 
 import CategoryData
-import FrontEnds.Textual.CategoryParser
+import FrontEnds.Textual.V1.CategoryParser
 
 import Data.Maybe (fromJust)
 import Data.Either (fromRight)
-import FrontEnds.Textual.CategoryParser (parseCategoryString)
+import FrontEnds.Textual.V1.CategoryParser (parseCategoryString)
 import Text.Megaparsec.Debug (dbg)
 
 -- TODO Split into respective files

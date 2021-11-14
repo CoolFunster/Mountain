@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FrontEnds.Textual.CategoryParser (parseCategoryFile, parseCategoryString) where
+module FrontEnds.Textual.V1.CategoryParser (parseCategoryFile, parseCategoryString) where
 
 import CategoryData
 
