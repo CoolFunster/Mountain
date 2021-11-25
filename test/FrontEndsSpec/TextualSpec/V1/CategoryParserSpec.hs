@@ -20,33 +20,40 @@ import Test.QuickCheck.Arbitrary (Arbitrary(arbitrary))
 import System.Posix.Internals (puts)
 import qualified Data.Text.IO as TextIO
 import FrontEnds.Textual.V1.CategoryWriter (categoryToCharList)
+import Debug.Trace
 
 instance Q.Arbitrary SpecialCategoryType where
     arbitrary = do
         Q.oneof [
-            return Flexible, 
-            return Reference, 
+            return Flexible,
+            return Reference,
             return Universal]
 
 instance Q.Arbitrary Id where
     arbitrary = do
-        arbitrary_name <- Q.vectorOf 15 arbitraryPrintableChar
-        arbitrary_idx <- arbitrary
+        arbitrary_name <- Q.vectorOf 15 (Q.choose ('a', 'z'))
+        -- arbitrary_idx <- arbitrary
         Q.oneof [
-            return Unnamed,
-            return $ Name arbitrary_name,
-            return $ Index arbitrary_idx]
+            -- return Unnamed,
+            return $ Name arbitrary_name]
+            -- return $ Index arbitrary_idx]
 
 instance Q.Arbitrary Category where
-  arbitrary = Q.frequency [
-    (10, Thing <$> arbitrary),
-    (1, Morphism <$> arbitrary <*> arbitrary <*> arbitrary),
-    (1, Placeholder <$> arbitrary <*> arbitrary <*> arbitrary),
-    (3, Special <$> arbitrary <*> arbitrary),
-    (1, MorphismCall <$> arbitrary <*> arbitrary),
-    (1, Dereference <$> arbitrary <*> arbitrary),
-    (2, Membership <$> arbitrary <*> arbitrary),
-    (1, RefinedCategory <$> arbitrary <*> arbitrary <*> arbitrary)]
+  arbitrary = do
+        let isJustPos = (\x -> fmap (>= 0) x == Just True)
+        arbitrary_name <- arbitrary :: Q.Gen Id
+        Q.frequency [
+            (10, Thing <$> arbitrary),
+            (1, Morphism <$> arbitrary <*> arbitrary <*> arbitrary),
+            (1, Placeholder <$> arbitrary <*> Q.suchThat arbitrary isJustPos <*> arbitrary),
+            (3, Q.oneof [
+                    return Special{name= Unnamed, special_type=Flexible},
+                    return Special{name= Unnamed, special_type=Universal},
+                    return Special{name=arbitrary_name, special_type=Reference}]),
+            (1, MorphismCall <$> Q.suchThat arbitrary isMorphic <*> arbitrary),
+            (1, Dereference <$> arbitrary <*> arbitrary),
+            (2, Membership <$> arbitrary <*> arbitrary)]
+            -- (1, RefinedCategory <$> arbitrary <*> arbitrary <*> arbitrary)]
 
 
 
@@ -106,8 +113,21 @@ spec = do
     describe "read" $ do
         -- it "Parser Writer property check" $ Q.property $
         --     \x -> (parseCategoryString . categoryToText) x `shouldBe` (x :: Category)
-        it "Parser Writer property check" $ do
-            result <- Q.generate (arbitrary::Q.Gen Category)
-            putStrLn $ categoryToCharList result
-            -- let new_result = parseCategoryString $ categoryToText result
-            -- result `shouldBe` new_result
+        it "should handle weird inputs" $ do
+            -- let result = Placeholder {name = Name "snjtohdxzhzduha", ph_level = Just 0, ph_category = Morphism {name = Name "yqwjtynfczbpylb", input = Thing {name = Name "teqtbwxzcgzbzzs"}, output = Morphism {name = Name "lrwtclekizeecdu", input = Special {name = Unnamed, special_type = Flexible}, output = Dereference {base_category = Thing {name = Name "qaxdhkrfcwrdazf"}, category_id = Name "pbyuagseuymmttb"}}}}
+            let result = Morphism {name = Name "yqwjtynfczbpylb", input = Thing {name = Name "teqtbwxzcgzbzzs"}, output = Morphism {name = Name "lrwtclekizeecdu", input = Special {name = Unnamed, special_type = Flexible}, output = Dereference {base_category = Thing {name = Name "qaxdhkrfcwrdazf"}, category_id = Name "pbyuagseuymmttb"}}}
+            -- {snjtohdxzhzduha<0>@(yqwjtynfczbpylb:`teqtbwxzcgzbzzs -> lrwtclekizeecdu:swppevicyohjvch:(%) -> `qaxdhkrfcwrdazf.pbyuagseuymmttb)
+            let new_result = categoryToText result
+            putStrLn $ show result
+            TextIO.putStrLn new_result
+            let parsed_result = parseCategoryString $ new_result
+            putStrLn $ show $ parsed_result
+            parsed_result `shouldBe` result
+        -- it "Parser Writer property check" $ Q.property $
+            -- \x -> (parseCategoryString . categoryToText) x `shouldBe` (x :: Category)
+            -- result <- Q.generate $ (arbitrary :: Q.Gen Category)
+            -- let new_result = categoryToText result
+            -- putStrLn $ show result
+            -- TextIO.putStrLn new_result
+            -- putStrLn $ show $ parseCategoryString $ new_result
+            
