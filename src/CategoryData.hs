@@ -51,16 +51,24 @@ data Category =
     } |
     -- language constructs
     MorphismCall {
+        name::Id,
         base_morphism::Category,
         argument::Category
     } |
     Dereference {
+        name::Id,
         base_category::Category,
         category_id::Id
     } |
     Membership {
+        name::Id,
         big_category::Category,
         small_category::Category
+    } |   
+    -- TODO: Add this to all the functions
+    IntermediateMorphism {
+        name::Id,
+        chain::IntermediateMorphism
     }
     deriving (Eq, Show)
 
@@ -95,12 +103,16 @@ isMorphismCall _ = False
 
 isRecursiveCategory :: Category -> Bool
 isRecursiveCategory cat
-    | isNamedCategory cat = name cat `elem` map name (freeVariables cat)
+    | isCategoricalObject cat = name cat `elem` map name (freeVariables cat)
     | otherwise = False
 
 isSpecialCategory :: SpecialCategoryType -> Category -> Bool
 isSpecialCategory sctype Special{special_type=c_type} = sctype == c_type
 isSpecialCategory sctype other = False
+
+isSpecial :: Category -> Bool
+isSpecial Special{} = True
+isSpecial _ = False 
 
 isDereference :: Category -> Bool
 isDereference Dereference{} = True
@@ -110,21 +122,18 @@ isMembership :: Category -> Bool
 isMembership Membership{} = True
 isMembership _ = False
 
-isNamedCategory :: Category -> Bool
-isNamedCategory Thing{} = True
-isNamedCategory Composite{} = True
-isNamedCategory Morphism{} = True
-isNamedCategory Placeholder{} = True
-isNamedCategory RefinedCategory{} = True
-isNamedCategory Special{} = True
-isNamedCategory other = False
+isRefinedCategory :: Category -> Bool
+isRefinedCategory RefinedCategory{} = True
+isRefinedCategory _ = False
 
 isCategoricalObject :: Category -> Bool
 isCategoricalObject object =
     isThing object ||
     isMorphism object ||
     isComposite object ||
-    isPlaceholder object
+    isPlaceholder object ||
+    isRefinedCategory object ||
+    isSpecial  object
 
 isCategoricalConstruct :: Category -> Bool
 isCategoricalConstruct = not . isCategoricalObject
@@ -173,8 +182,8 @@ replace base_expr old new
             Composite id composite_type inner -> Composite id composite_type (sequence (sequence (map replace inner) old) new)
             Morphism id input output -> Morphism id (replace input old new) (replace output old new)
             Placeholder id ph_level ph_category -> Placeholder id ph_level (replace ph_category old new)
-            MorphismCall bm a -> MorphismCall (replace bm old new) (replace a old new)
-            Dereference base_category id -> Dereference (replace base_category old new) id
+            MorphismCall id bm a -> MorphismCall id (replace bm old new) (replace a old new)
+            Dereference d_id base_category id -> Dereference d_id (replace base_category old new) id
             Special{} -> base_expr
             RefinedCategory {} -> error "not implemented"
             Membership {} -> error "not implemented"
@@ -190,7 +199,7 @@ unfold Recursive category
 
 dereference :: Id -> Category -> Maybe Category
 dereference id category
-        | isNamedCategory category && name category == id = Just category
+        | name category == id = Just category
         | otherwise =
         case category of
             t@Thing{name=name} -> Nothing
@@ -253,3 +262,55 @@ valid = Composite (Name "valid") Product []
 
 empty :: Category
 empty = Composite (Name "empty") Sum []
+
+-- Intermediate morphism representation for parsing
+
+data MorphismTermType = Import | Given | Definition | Return deriving (Show, Eq)
+data IntermediateMorphism =
+    MorphismTerm {
+        m_type::MorphismTermType,
+        m_category::Category
+    } |
+    MorphismChain {
+        m_input::IntermediateMorphism,
+        m_output::IntermediateMorphism
+    } deriving (Show, Eq)
+
+-- NEXT TODO: Fix this to handle definitions and replacing things in the chain
+imToMorphism :: IntermediateMorphism -> Category
+-- imToMorphism MorphismChain{m_input=MorphismTerm{m_type=Definition, m_category=category}, m_output=m_out} = 
+imToMorphism MorphismChain{m_input=m_in, m_output=m_out} = Morphism{name=Unnamed, input=m_category m_in, output=imToMorphism m_out}
+imToMorphism MorphismTerm{m_category=category} = category
+
+replaceIMTerm :: IntermediateMorphism -> Category -> Category -> IntermediateMorphism
+replaceIMTerm mt@MorphismTerm{m_category=base_category} old_category new_category = mt{m_category=replace base_category old_category new_category}
+replaceIMTerm mt@MorphismChain{m_input=m_in, m_output=m_out} old_category new_category = mt{m_input=replaceIMTerm m_in old_category new_category, m_output=replaceIMTerm m_out old_category new_category}
+
+categoryToIm :: Category -> IntermediateMorphism
+categoryToIm Morphism{name=name, input=m_input, output=m@Morphism{}} = 
+    MorphismChain{
+        m_input=MorphismTerm{
+            m_type=Given, 
+            m_category=m_input
+        },
+        m_output=categoryToIm m
+    }
+categoryToIm Morphism{name=name, input=m_input, output=anything_else} = 
+    MorphismChain{
+        m_input=MorphismTerm{
+            m_type=Given, 
+            m_category=m_input
+        },
+        m_output=MorphismTerm{
+            m_type=Return, 
+            m_category=anything_else
+        }
+    }
+categoryToIm anything_else = error $ "categoryToIM only supports Morphisms. gave " ++ show anything_else
+
+validateIM :: Bool -> IntermediateMorphism -> Bool
+validateIM is_head_of_chain MorphismTerm{m_type=the_type} = not is_head_of_chain && (the_type == Return)
+validateIM is_head_of_chain MorphismChain{m_input=m_input, m_output=m_output} = 
+    if is_head_of_chain
+        then m_type m_input `elem` [Import, Given, Definition] && validateIM False m_output
+        else m_type m_input `elem` [Given, Definition] && validateIM False m_output

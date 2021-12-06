@@ -141,8 +141,8 @@ call c@(Composite _ Composition _) input_category = call (asMorphism c) input_ca
 call (Composite _ Sumposition inner_functions) input_category = tryFunctions input_category (map call inner_functions) 
     where
         tryFunctions x = getFirst . mconcat . map (First . ($ x))
-call fc@Special{} input_category = Just $ MorphismCall fc input_category
-call base_category fc@Special{}  = Just $ MorphismCall base_category fc 
+call fc@Special{} input_category = Just $ MorphismCall Unnamed fc input_category
+call base_category fc@Special{}  = Just $ MorphismCall Unnamed base_category fc 
 call non_morphism _ = Nothing
 
 simplify :: Category -> Category
@@ -156,7 +156,7 @@ simplify ph@(Placeholder placeholder_name ph_level ph_category)
     | otherwise = Placeholder placeholder_name ph_level (simplify ph_category)
 simplify mc@MorphismCall{base_morphism=bm, argument=a}
     | not . isRecursiveCategory $ bm = fromJust $ call (simplify bm) (simplify a)
-    | otherwise = MorphismCall (simplify bm) (simplify a)
+    | otherwise = MorphismCall Unnamed (simplify bm) (simplify a)
 simplify fc@Special{} = fc
 simplify input_category = input_category
 

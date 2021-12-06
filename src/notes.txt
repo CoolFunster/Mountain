@@ -51,21 +51,15 @@ so its just a collection of categorical objects and not language constructs or f
 ===========
 Grocery App
 ===========
-    Ingredients <
-        Thing (Name "Pepper")
-        Thing (Name "Salt")
-        Thing (Name "Egg")
-        Thing (Name "Milk")
-        Thing (Name "Flour")
-    >
-
-    Location : (long:Float, lat:Float) -- can be ints initially
-
-    Ingredient Store : ({Ingredients}, Location)
-
-    Recipe : [Ingredients]
-
     Graphs : Sumposition (predecessor:Location -> Sumposition(successor:Location -> {dist:Float | dist > 0.0}))
+
+    import (List, Float, Graph)
+    ->  define Ingredients: {`Pepper, `Salt, `Egg, `Milk, `Flour}
+    ->  define Location: (long:Float, lat:Float)
+    ->  define Store: (inventory:List($Ingredients), location:Location)
+    ->  define Recipe: given List(Ingredients) -> return Ingredients
+
+
 
     Route
         {r@(edges:[(pred:Location,succ:Location)], m:Map) | for each edge in edges : ((x:Any,y:Any) -> x `elem` m && y `elem` m(x)}
@@ -104,3 +98,6 @@ Sets are also crucial to define as a basic data structure for performance
 How to populate types from databases
 
 placeholder and refinement = current placeholder
+
+
+expr(import math -> define 1 -> given 2 -> return 3)

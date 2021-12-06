@@ -235,7 +235,7 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     productLeftPred = (fst . head) related_preds_and_edges
                                     productLeftLabel = (head . inner_term_id . snd . head) related_preds_and_edges
                                 in
-                                    Just $ CategoryData.Dereference (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel  
+                                    Just $ CategoryData.Dereference Unnamed (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel  
                             ProductRight ->
                                 let 
                                     inner_expressions = map (extractProgram proof_graph source_nodes) goal_node_predecessors
@@ -327,7 +327,7 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     productLeftPred = (fst . head) related_preds_and_edges
                                     productLeftLabel = (head . inner_term_id . snd . head) related_preds_and_edges
                                 in
-                                    Just $ CategoryData.Dereference (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel 
+                                    Just $ CategoryData.Dereference Unnamed (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel 
                             HigherRight ->
                                 let 
                                     inner_expressions = map (extractProgram proof_graph source_nodes) goal_node_predecessors

@@ -28,9 +28,8 @@ categoryToCharList (Composite name Higher inner) = nameToLabel name ++ "^{" ++ i
 categoryToCharList (Composite name Composition inner) = nameToLabel name ++ "*(" ++ intercalate "," (map categoryToCharList inner) ++ ")"
 categoryToCharList (Composite name Sumposition inner) = nameToLabel name ++ "*|" ++ intercalate "," (map categoryToCharList inner) ++ "|"
 categoryToCharList (Morphism name inp out) = nameToLabel name ++ categoryToCharList inp ++ " -> " ++ categoryToCharList out
-categoryToCharList (Placeholder name Nothing ph_category) = "{" ++ nameToText name ++ "@(" ++ categoryToCharList ph_category ++ ")}"
-categoryToCharList (Placeholder name (Just level) ph_category) = "{" ++ nameToText name ++ "<" ++ show level ++ ">" ++ "@(" ++ categoryToCharList ph_category ++ ")}"
-categoryToCharList RefinedCategory {name=_name, base_category=p@Placeholder{}, predicate=_predicate} = nameToLabel _name ++ "{" ++ (tail . init . categoryToCharList) p ++ "|" ++ categoryToCharList _predicate ++ "}"
+categoryToCharList (Placeholder name Nothing ph_category) = nameToText name ++ "@(" ++ categoryToCharList ph_category ++ ")"
+categoryToCharList (Placeholder name (Just level) ph_category) = nameToText name ++ "<" ++ show level ++ ">" ++ "@(" ++ categoryToCharList ph_category ++ ")"
 categoryToCharList RefinedCategory {name=_name, base_category=_base_category, predicate=_predicate} = nameToLabel _name ++ "{" ++ categoryToCharList _base_category ++ "|" ++ categoryToCharList _predicate ++ "}"
 categoryToCharList Special{name=name, special_type=Flexible} = nameToLabel name ++ "(%)"
 categoryToCharList Special{name=name, special_type=Universal} = nameToLabel name ++ "%Any"

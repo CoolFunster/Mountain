@@ -29,8 +29,8 @@ spec = do
         it "(Morphism) should write named morphisms" $ do
             categoryToText (Morphism (Name "AB") (Thing (Name "a")) (Thing (Name "b"))) `shouldBe` "AB:`a -> `b" 
         it "(Placeholder) should write placeholders" $ do
-            categoryToText Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")} `shouldBe` "{x@(`a)}"
-            categoryToText Placeholder{name=Name "x", ph_level=Just 1, ph_category=Thing (Name "a")} `shouldBe` "{x<1>@(`a)}" 
+            categoryToText Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")} `shouldBe` "x@(`a)"
+            categoryToText Placeholder{name=Name "x", ph_level=Just 1, ph_category=Thing (Name "a")} `shouldBe` "x<1>@(`a)" 
         it "(Refinement) should write refinement" $ do
             categoryToText RefinedCategory{name=Unnamed,base_category=Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")}, predicate=Morphism{name=Unnamed, input=Thing (Name "a"), output=Thing (Name "b")}} `shouldBe` "{x@(`a)|`a -> `b}" 
         it "(Special) should write flexible" $ do
