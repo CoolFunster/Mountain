@@ -89,7 +89,7 @@ pCategoryExpr =
     let
         expr_parser = makeExprParser pCategoryTerm [
                 [
-                    binary (symbol (pack "::")) (\x y -> Membership{name=Unnamed,big_category=x,small_category=y})
+                    binary (symbol (pack "::")) (\x y -> Membership{big_category=x,small_category=y})
                 ]
             ]
     in
@@ -106,17 +106,9 @@ pCategoryTerm = do
                 anything_else -> anything_else
             )
     return (foldl collector base extension)
-    -- case extension of
-    --     _ -> error "unsupported"
 
 pCategoryBase :: Parser Category
 pCategoryBase = try (pStandardLabeledCategory <|> pThing <|> pReference <|> pPlaceholder)
-
-fixNamingOfCompositeCategories :: Id -> Category -> Category
-fixNamingOfCompositeCategories input_id c@Composite{inner=[something]} = fixNamingOfCompositeCategories input_id something
-fixNamingOfCompositeCategories input_id input_category
-    | name input_category == Unnamed = input_category{name=input_id}
-    | otherwise = input_category
 
 pStandardLabeledCategory :: Parser Category
 pStandardLabeledCategory = do
@@ -131,7 +123,9 @@ pStandardLabeledCategory = do
         pSumple,
         pHigher,
         pRefinement]
-    return $ fixNamingOfCompositeCategories name category
+    case name of
+        Unnamed -> return category
+        _ -> return CategoryData.Label{name=name, target=category}
 
 
 pCategoryExtension :: Parser Category
@@ -149,30 +143,32 @@ pThing = do
 pTuple :: Parser Category
 pTuple = do
     inner_categories <- between (symbol (pack "(")) (symbol (pack ")")) pCategoryInnerList
-    return Composite{name=Unnamed, composition_type=Product, inner=inner_categories}
+    if length inner_categories == 1
+        then return $ head inner_categories
+        else return Composite{composition_type=Product, inner=inner_categories}
 
 pSumple :: Parser Category
 pSumple = do
     inner_categories <- between (symbol (pack "|")) (symbol (pack "|")) pCategoryInnerList
-    return Composite{name=Unnamed, composition_type=Sum, inner=inner_categories}
+    return Composite{composition_type=Sum, inner=inner_categories}
 
 pHigher :: Parser Category
 pHigher = do
     inner_categories <- between (symbol (pack "^{")) (symbol (pack "}")) pCategoryInnerList
-    return Composite{name=Unnamed, composition_type=Higher, inner=inner_categories}
+    return Composite{composition_type=Higher, inner=inner_categories}
 
 pComposition :: Parser Category
 pComposition = do
     inner_categories <- between (symbol (pack "*(")) (symbol (pack ")")) pCategoryInnerList
     if all isMorphic inner_categories
-        then return Composite{name=Unnamed, composition_type=Composition, inner=inner_categories}
+        then return Composite{composition_type=Composition, inner=inner_categories}
         else fail "Not a composition of morphisms"
 
 pSumposition :: Parser Category
 pSumposition = do
     inner_categories <- between (symbol (pack "*|")) (symbol (pack "|")) pCategoryInnerList
     if all isMorphic inner_categories
-        then return Composite{name=Unnamed, composition_type=Sumposition, inner=inner_categories}
+        then return Composite{composition_type=Sumposition, inner=inner_categories}
         else fail "Not a composition of morphisms"
 
 pPlaceholder :: Parser Category
@@ -193,7 +189,7 @@ pRefinementInner = do
     _ <- symbol (pack "|")
     _ <- spaceConsumer
     refinement <- pCategory
-    return RefinedCategory{name=Unnamed,base_category=ph,predicate=refinement}
+    return RefinedCategory{base_category=ph,predicate=refinement}
 
 pRefinement :: Parser Category
 pRefinement = between (symbol (pack "{")) (symbol (pack "}")) pRefinementInner
@@ -201,30 +197,30 @@ pRefinement = between (symbol (pack "{")) (symbol (pack "}")) pRefinementInner
 pFlexible :: Parser Category
 pFlexible = do
     _ <- symbol (pack "(%)")
-    return (Special Unnamed Flexible)
+    return (Special Flexible)
 
 pUniversal :: Parser Category
 pUniversal = do
     _ <- symbol (pack "Any")
-    return (Special Unnamed Universal)
+    return (Special Universal)
 
 pReference :: Parser Category
 pReference = do
     _ <- symbol (pack "$")
     name <- pCategoryName
-    return Special{name=name,special_type=Reference}
+    return Reference{name=name}
 
 
 pMorphismCallExtension :: Parser Category
 pMorphismCallExtension = do
     argument <- between (symbol (pack "[")) (symbol (pack "]")) pCategory
-    return MorphismCall{name=Unnamed,base_morphism=Thing Unnamed,argument=argument}
+    return MorphismCall{base_morphism=Thing Unnamed,argument=argument}
 
 pDereferenceExtension :: Parser Category
 pDereferenceExtension = do
     _ <- symbol (pack ".")
     category_id <- pCategoryName
-    return Dereference{name=Unnamed,base_category=Thing Unnamed, category_id=category_id}
+    return Dereference{base_category=Thing Unnamed, category_id=category_id}
 
 pMorphismTermType :: Parser MorphismTermType
 pMorphismTermType =

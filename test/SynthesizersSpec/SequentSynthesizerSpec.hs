@@ -33,7 +33,7 @@ spec = do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_b = Composite (Name "a_b") Product [a,b]
+        let a_b = Composite Product [a,b]
 
         let seq_to_solve = categorySequent {
             left_terms=[a_b],
@@ -48,7 +48,7 @@ spec = do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_b = Composite (Name "a_b") Product [a,b]
+        let a_b = Composite Product [a,b]
 
         let seq_to_solve = categorySequent {
             left_terms=[a,b],
@@ -58,12 +58,12 @@ spec = do
         let final_proof = solveCategorySequent seq_to_solve
         -- putStrLn $ prettyPrintProofStr (solveCategorySequent [productRight] seq_to_solve)
         let program_from_proof = extractProgramFromSeqent final_proof seq_to_solve
-        program_from_proof `shouldBe` Just (Composite (Name "a_b") Product [a, b])
+        program_from_proof `shouldBe` Just (Composite Product [a, b])
     it "(Sum Right)" $ do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_b = Composite (Name "a_b") Sum [a,b]
+        let a_b = Composite Sum [a,b]
 
         let seq_to_solve = categorySequent {
             left_terms=[a],
@@ -77,7 +77,7 @@ spec = do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_b = Composite (Name "aVb") Sum [a,b]
+        let a_b = Composite Sum [a,b]
 
         let seq_to_solve = categorySequent {
             left_terms=[a_b],
@@ -92,12 +92,12 @@ spec = do
         let b = Thing (Name "b")
         let c = Thing (Name "c")
 
-        let a_b = Composite (Name "aVb") Sum [a,b]
+        let a_b = Composite Sum [a,b]
         -- let b_a = Composite (Name "b^a") Product [b,a]
 
-        let a_or_c = Composite (Name "aVc") Sum [a,c]
-        let b_or_c = Composite (Name "bVc") Sum [b,c]
-        let a_or_c_and_b_or_c = Composite (Name "(aVc)_(bVc)") Product [a_or_c, b_or_c]
+        let a_or_c = Composite Sum [a,c]
+        let b_or_c = Composite Sum [b,c]
+        let a_or_c_and_b_or_c = Composite Product [a_or_c, b_or_c]
 
         let seq_to_solve = categorySequent {
             left_terms=[a_b, c],
@@ -108,13 +108,13 @@ spec = do
         -- putStrLn $ prettyPrintProofStr final_proof
         let program_from_proof = extractProgramFromSeqent final_proof seq_to_solve
         -- print program_from_proof
-        program_from_proof `shouldBe` Just (Composite (Name "(aVc)_(bVc)") Product [c,c])
+        program_from_proof `shouldBe` Just (Composite Product [c,c])
     it "(Morphism Left)" $ do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
         let c = Thing (Name "c")
 
-        let a_to_b = Morphism (Name "a->b") a b
+        let a_to_b = Morphism a b
         
         let seq_to_solve = categorySequent {
             left_terms=[a_to_b, a],
@@ -130,9 +130,9 @@ spec = do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
         
-        let a_b = Composite (Name "ab") Product [a,b]
+        let a_b = Composite Product [a,b]
 
-        let ab_to_b = Morphism (Name "ab_to_b") a_b b
+        let ab_to_b = Morphism a_b b
 
         let seq_to_solve = categorySequent {
             left_terms=[],
@@ -143,15 +143,15 @@ spec = do
         -- putStrLn $ prettyPrintProofStr final_proof
         let program_from_proof = extractProgramFromSeqent final_proof seq_to_solve
         -- print program_from_proof
-        program_from_proof `shouldBe` Just (Morphism (Name "ab_to_b") a_b (Dereference a_b (Name "b")))
+        program_from_proof `shouldBe` Just (Morphism a_b (Dereference a_b (Name "b")))
     it "(Sumposition Left) term applier" $ do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_to_b = Morphism (Name "a->b") a b
-        let b_to_a = Morphism (Name "b->a") b a
+        let a_to_b = Morphism a b
+        let b_to_a = Morphism b a
 
-        let all = Composite (Name "all") Sumposition [a_to_b, b_to_a]
+        let all = Composite Sumposition [a_to_b, b_to_a]
 
         let seq_to_solve = categorySequent {
             left_terms=[all],
@@ -163,10 +163,10 @@ spec = do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_to_b = Morphism (Name "a->b") a b
-        let b_to_a = Morphism (Name "b->a") b a
+        let a_to_b = Morphism a b
+        let b_to_a = Morphism b a
 
-        let all = Composite (Name "all") Sumposition [a_to_b, b_to_a]
+        let all = Composite Sumposition [a_to_b, b_to_a]
 
         let seq_to_solve = categorySequent {
             left_terms=[a],
@@ -180,12 +180,12 @@ spec = do
         let c = Thing (Name "c")
         let d = Thing (Name "d")
 
-        let a_to_b = Morphism (Name "a->b") a b
-        let b_to_c = Morphism (Name "b->c") b c
-        let c_to_d = Morphism (Name "c->d") c d
-        let a_to_d = Morphism (Name "a->d") a d
+        let a_to_b = Morphism a b
+        let b_to_c = Morphism b c
+        let c_to_d = Morphism c d
+        let a_to_d = Morphism a d
 
-        let comp = Composite (Name "a_to_c") Composition [a_to_b, b_to_c]
+        let comp = Composite Composition [a_to_b, b_to_c]
 
         let seq_to_solve = categorySequent {
             left_terms=[comp, c_to_d],
@@ -203,10 +203,10 @@ spec = do
         let c = Thing (Name "c")
         let d = Thing (Name "d")
 
-        let a_to_b = Morphism (Name "a->b") a b
-        let b_to_c = Morphism (Name "b->c") b c
+        let a_to_b = Morphism a b
+        let b_to_c = Morphism b c
 
-        let comp = Composite (Name "a_to_c") Composition [a_to_b, b_to_c]
+        let comp = Composite Composition [a_to_b, b_to_c]
 
         let seq_to_solve = categorySequent {
             left_terms=[a_to_b, b_to_c],
@@ -222,7 +222,7 @@ spec = do
         let a = Thing (Name "a")
         let b = Thing (Name "b")
 
-        let a_b = Composite (Name "a_b") Higher [a,b]
+        let a_b = Composite Higher [a,b]
 
         let seq_to_solve = categorySequent {
             left_terms=[a_b],
@@ -239,17 +239,17 @@ spec = do
         let c = Thing (Name "c")
         let d = Thing (Name "d")
 
-        let a_to_b = Morphism (Name "a->b") a b
-        let b_to_c = Morphism (Name "b->c") b c
-        let c_to_d = Morphism (Name "c->d") c d
+        let a_to_b = Morphism a b
+        let b_to_c = Morphism b c
+        let c_to_d = Morphism c d
 
-        let a_to_c = Morphism (Name "a->c") a c
-        let b_to_d = Morphism (Name "b->d") b d
+        let a_to_c = Morphism a c
+        let b_to_d = Morphism b d
 
-        let all = Composite (Name "all") Higher [a_to_b, b_to_c, c_to_d]
-        -- let all = Composite (Name "all") Higher [a_to_c, b_to_d]
+        let all = Composite Higher [a_to_b, b_to_c, c_to_d]
+        -- let all = Composite Higher [a_to_c, b_to_d]
 
-        let subset = Composite (Name "subset") Higher [a_to_c, b_to_d]
+        let subset = Composite Higher [a_to_c, b_to_d]
 
         let seq_to_solve = categorySequent {
             left_terms=[all],

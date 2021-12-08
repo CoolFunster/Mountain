@@ -235,14 +235,13 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     productLeftPred = (fst . head) related_preds_and_edges
                                     productLeftLabel = (head . inner_term_id . snd . head) related_preds_and_edges
                                 in
-                                    Just $ CategoryData.Dereference Unnamed (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel  
+                                    Just $ CategoryData.Dereference (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel  
                             ProductRight ->
                                 let 
                                     inner_expressions = map (extractProgram proof_graph source_nodes) goal_node_predecessors
                                     term_name = CategoryData.name goal_category
                                 in
                                     Just $ CategoryData.Composite {
-                                        CategoryData.name=term_name,
                                         CategoryData.composition_type=CategoryData.Product,
                                         CategoryData.inner=map fromJust inner_expressions
                                     }
@@ -256,7 +255,6 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     apply_list_foo_to_list_args= zipWith ($)
                                 in
                                     Just $ CategoryData.Composite {
-                                        CategoryData.name=CategoryData.name goal_category,
                                         CategoryData.composition_type=CategoryData.Sum,
                                         CategoryData.inner=apply_list_foo_to_list_args (map substitute_nothings goal_node_predecessors) inner_expressions
                                     }
@@ -281,7 +279,6 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     derived_output = fromJust $ extractProgram proof_graph (assumed_node:source_nodes) derived_node
                                 in
                                     Just $ CategoryData.Morphism {
-                                        name=CategoryData.name goal_category,
                                         input=sequent_term assumed_node,
                                         output=derived_output
                                     }
@@ -290,7 +287,6 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     inner_expressions = map (fromJust . extractProgram proof_graph source_nodes) goal_node_predecessors
                                 in
                                     Just $ CategoryData.Composite{
-                                        CategoryData.name=CategoryData.name goal_category,
                                         CategoryData.composition_type=CategoryData.Sumposition,
                                         CategoryData.inner=inner_expressions
                                     }
@@ -299,7 +295,6 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     inner_expressions = map (fromJust . extractProgram proof_graph source_nodes) goal_node_predecessors
                                 in
                                     Just $ CategoryData.Composite{
-                                        CategoryData.name=CategoryData.name goal_category,
                                         CategoryData.composition_type=CategoryData.Sumposition,
                                         CategoryData.inner=inner_expressions
                                     }
@@ -318,7 +313,6 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     term_name = CategoryData.name goal_category
                                 in
                                     Just $ CategoryData.Composite{
-                                        CategoryData.name=term_name,
                                         CategoryData.composition_type=CategoryData.Composition,
                                         CategoryData.inner=map fromJust inner_expressions
                                     }
@@ -327,14 +321,13 @@ extractProgram proof_graph source_nodes goal_node@Node{sequent_term=goal_categor
                                     productLeftPred = (fst . head) related_preds_and_edges
                                     productLeftLabel = (head . inner_term_id . snd . head) related_preds_and_edges
                                 in
-                                    Just $ CategoryData.Dereference Unnamed (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel 
+                                    Just $ CategoryData.Dereference (fromJust (extractProgram proof_graph source_nodes productLeftPred)) productLeftLabel 
                             HigherRight ->
                                 let 
                                     inner_expressions = map (extractProgram proof_graph source_nodes) goal_node_predecessors
                                     term_name = CategoryData.name goal_category
                                 in
                                     Just $ CategoryData.Composite {
-                                        CategoryData.name=term_name,
                                         CategoryData.composition_type=CategoryData.Higher,
                                         CategoryData.inner=map fromJust inner_expressions
                                     }
@@ -843,7 +836,6 @@ placeholderLeftTermApplier sequent input_category@CategoryData.Placeholder{ph_le
                                 ph_category = some_input_category
                             }
                             term_to_add = Composite{
-                                name=CategoryData.name input_category, 
                                 composition_type=c_type,
                                 inner=map create_placeholder inner
                             }

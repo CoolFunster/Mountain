@@ -1,6 +1,6 @@
 module CategorySynthesizer where
 
-import Data.Maybe (catMaybes, fromJust)
+import Data.Maybe (catMaybes, fromJust, isNothing)
 import Control.Exception (assert)
 
 import Synthesizers.Synthesizer
@@ -10,6 +10,45 @@ import CategoryData
 isAnswered = Synthesizers.Synthesizer.isAnswered
 isNotPossible = Synthesizers.Synthesizer.isNotPossible
 isUnknown = Synthesizers.Synthesizer.isUnknown
+
+sample :: Category -> Category
+sample p@Placeholder{ph_level=Nothing, ph_category=category} = sample p{ph_level=Just 0}
+sample p@Placeholder{ph_level=Just desired_level, ph_category=ph_category}
+    | level ph_category == Just desired_level = ph_category
+    | level ph_category < Just desired_level = error "bad synthesis question"
+    | otherwise = sample p{ph_category=reduce ph_category}
+sample other = error "unsupported"
+
+reduce :: Category -> Category
+reduce t@Thing{} = error "Cannot reduce thing"
+reduce c@Composite{composition_type=Product, inner=inner_cats} = c{inner=map reduce inner_cats}
+reduce c@Composite{composition_type=Sum, inner=inner_cats} = head inner_cats
+reduce c@Composite{composition_type=Higher, inner=inner_cats} = head inner_cats
+reduce c@Composite{composition_type=Composition} = asMorphism c
+reduce c@Composite{composition_type=Sumposition, inner=inner_cats} = asMorphism c
+reduce m@Morphism{input=input_cat, output=output_cat}
+    | isNothing $ level m = error "bad morphism"
+    | level m == Just 0 = m
+    | otherwise = (unfold Recursive m){input=reduce input_cat, output=reduce output_cat}
+reduce p@Placeholder{ph_level=needed_level, ph_category=ph_cat}
+    | isNothing needed_level || isNothing (level ph_cat) = error "No idea what usecase this is"
+    | level ph_cat == needed_level = reduce ph_cat
+    | otherwise = 
+        let 
+            reduced_cat = reduce ph_cat
+        in
+            if level reduced_cat == needed_level
+                then reduced_cat
+                else p{ph_category=reduced_cat}
+reduce RefinedCategory{} = error "not supported yet"
+reduce Special{special_type=Flexible} = valid
+reduce Special{special_type=Universal} = valid
+reduce Reference{} = error "can't sample references"
+reduce m@MorphismCall{base_morphism=bm, argument=a} = sample m{base_morphism=sample bm, argument=sample a}
+reduce m@Dereference{base_category=bc, category_id=cid} = fromJust $ dereference cid (sample bc)
+reduce l@Label{target=target_cat} = reduce $ unfold Recursive l
+reduce m@Membership{} = error "membership not implemented yet"
+reduce im@IntermediateMorphism{} = error "IntermediateMorphism not implemented yet"
 
 synthesizeCategory :: Category -> Category -> SynthesisResult Category
 synthesizeCategory = synthesize [sequentSynthesizer]
