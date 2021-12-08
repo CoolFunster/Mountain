@@ -64,10 +64,9 @@ data Category =
     Membership {
         big_category::Category,
         small_category::Category
-    } |   
-    -- TODO: Add this to all the functions
+    } |
     IntermediateMorphism {
-        chain::IntermediateMorphism
+        chain::[MorphismTerm]
     }
     deriving (Eq, Show)
 
@@ -101,7 +100,7 @@ isMorphismCall MorphismCall{} = True
 isMorphismCall _ = False
 
 isReference :: Category -> Bool
-isReference Reference{} = True 
+isReference Reference{} = True
 isReference _ = False
 
 isLabel :: Category -> Bool
@@ -118,7 +117,7 @@ isSpecialCategory sctype other = False
 
 isSpecial :: Category -> Bool
 isSpecial Special{} = True
-isSpecial _ = False 
+isSpecial _ = False
 
 isDereference :: Category -> Bool
 isDereference Dereference{} = True
@@ -214,7 +213,7 @@ dereference :: Id -> Category -> Maybe Category
 dereference id Label{name=l_name, target=l_target}
     | l_name == id = Just l_target
     | otherwise = Nothing
-dereference id t@Thing{name=t_name} 
+dereference id t@Thing{name=t_name}
     | id == t_name = Just t
     | otherwise = Nothing
 dereference id p@Placeholder{name=p_name}
@@ -260,8 +259,8 @@ level input_category =
         getInnerLevel inner_categories =
             case mapMaybe level inner_categories of
                 [] -> Nothing
-                levels -> Just $ maximum levels 
-        basicLevel a_category = 
+                levels -> Just $ maximum levels
+        basicLevel a_category =
             case input_category of
                 (Thing t) -> Just 0
                 (Composite Higher inner) -> Just (+1) <*> getInnerLevel inner
@@ -271,7 +270,7 @@ level input_category =
                 MorphismCall{base_morphism=bm} -> level $ output bm
                 Special{} -> Nothing
                 Reference{} -> Nothing
-                Label{target=target} -> level target 
+                Label{target=target} -> level target
                 Dereference{base_category=bc,category_id=id} -> level bc
                 RefinedCategory {base_category=_base_category, predicate=_predicate} -> level _base_category
                 Membership {} -> error "Not implemented"
@@ -290,51 +289,41 @@ empty = Composite Sum []
 -- Intermediate morphism representation for parsing
 
 data MorphismTermType = Import | Given | Definition | Return deriving (Show, Eq)
-data IntermediateMorphism =
+data MorphismTerm = 
     MorphismTerm {
         m_type::MorphismTermType,
         m_category::Category
     } |
-    MorphismChain {
-        m_input::IntermediateMorphism,
-        m_output::IntermediateMorphism
+    MorphismTermChain {
+        c_input::MorphismTerm,
+        c_output::MorphismTerm
     } deriving (Show, Eq)
 
 -- NEXT TODO: Fix this to handle definitions and replacing things in the chain
-imToMorphism :: IntermediateMorphism -> Category
--- imToMorphism MorphismChain{m_input=MorphismTerm{m_type=Definition, m_category=category}, m_output=m_out} = 
-imToMorphism MorphismChain{m_input=m_in, m_output=m_out} = Morphism{input=m_category m_in, output=imToMorphism m_out}
-imToMorphism MorphismTerm{m_category=category} = category
+imToMorphism :: Category -> Category
+imToMorphism IntermediateMorphism{chain=[]} = error "empty morphism chain list?"
+imToMorphism IntermediateMorphism{chain=[something]} = error "single morphism chain list?"
+imToMorphism IntermediateMorphism{chain=[head,tail]} = Morphism{input=m_category head, output=m_category tail}
+imToMorphism IntermediateMorphism{chain=(head:tail)} = Morphism{input=m_category head, output=imToMorphism IntermediateMorphism{chain=tail}}
+imToMorphism somthing_weird = error $ "Only supports Intermediate Morphisms. Passed in " ++ show somthing_weird
 
-replaceIMTerm :: IntermediateMorphism -> Category -> Category -> IntermediateMorphism
-replaceIMTerm mt@MorphismTerm{m_category=base_category} old_category new_category = mt{m_category=replace base_category old_category new_category}
-replaceIMTerm mt@MorphismChain{m_input=m_in, m_output=m_out} old_category new_category = mt{m_input=replaceIMTerm m_in old_category new_category, m_output=replaceIMTerm m_out old_category new_category}
+morphismToTermList :: Category -> [MorphismTerm]
+morphismToTermList Morphism{input=m_input, output=m@Morphism{}} = MorphismTerm{m_type=Given, m_category=m_input}:morphismToTermList m
+morphismToTermList Morphism{input=m_input, output=anything_else} = [MorphismTerm{m_type=Given, m_category=m_input}, MorphismTerm{m_type=Return,m_category=anything_else}]
+morphismToTermList anything_else = error $ "categoryToIM only supports Morphisms. gave " ++ show anything_else
 
-categoryToIm :: Category -> IntermediateMorphism
-categoryToIm Morphism{input=m_input, output=m@Morphism{}} = 
-    MorphismChain{
-        m_input=MorphismTerm{
-            m_type=Given, 
-            m_category=m_input
-        },
-        m_output=categoryToIm m
-    }
-categoryToIm Morphism{input=m_input, output=anything_else} = 
-    MorphismChain{
-        m_input=MorphismTerm{
-            m_type=Given, 
-            m_category=m_input
-        },
-        m_output=MorphismTerm{
-            m_type=Return, 
-            m_category=anything_else
-        }
-    }
-categoryToIm anything_else = error $ "categoryToIM only supports Morphisms. gave " ++ show anything_else
+morphismToIm :: Category -> Category
+morphismToIm m@Morphism{} = IntermediateMorphism{chain=morphismToTermList m}
+morphismToIm something_else = error $ "morphismToIm must take in a Morphism specifically. Got " ++ show something_else
 
-validateIM :: Bool -> IntermediateMorphism -> Bool
-validateIM is_head_of_chain MorphismTerm{m_type=the_type} = not is_head_of_chain && (the_type == Return)
-validateIM is_head_of_chain MorphismChain{m_input=m_input, m_output=m_output} = 
-    if is_head_of_chain
-        then m_type m_input `elem` [Import, Given, Definition] && validateIM False m_output
-        else m_type m_input `elem` [Given, Definition] && validateIM False m_output
+replaceMorphismTerm :: MorphismTerm -> Category -> Category -> MorphismTerm
+replaceMorphismTerm mt@MorphismTerm{m_category=base_category} old_category new_category = mt{m_category=replace base_category old_category new_category}
+replaceMorphismTerm MorphismTermChain{c_input=input, c_output=output} old_category new_category = MorphismTermChain{c_input=replaceMorphismTerm input old_category new_category, c_output=replaceMorphismTerm output old_category new_category} 
+
+isMorphismTermOfTypes :: [MorphismTermType] -> MorphismTerm -> Bool
+isMorphismTermOfTypes allowable_term_types morphism_term = m_type morphism_term `elem` allowable_term_types
+
+uncurryMorphismTermChain :: MorphismTerm -> [MorphismTerm]
+uncurryMorphismTermChain MorphismTermChain{c_input=input, c_output=mc@MorphismTermChain{}} = input:uncurryMorphismTermChain mc
+uncurryMorphismTermChain MorphismTermChain{c_input=input, c_output=anything_else} = [input, anything_else]
+uncurryMorphismTermChain MorphismTerm{} = error "Bad argument"

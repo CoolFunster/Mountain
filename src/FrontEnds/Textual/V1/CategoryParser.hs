@@ -238,7 +238,7 @@ pMorphismTermType =
             "return" -> return Return
             _ -> error "something bad"
 
-pMorphismTermSimple :: Parser IntermediateMorphism
+pMorphismTermSimple :: Parser MorphismTerm
 pMorphismTermSimple =
     do
         m_type <- pMorphismTermType
@@ -248,20 +248,16 @@ pMorphismTermSimple =
             m_category=category
         }
 
-
-pIntermediateMorphism :: Parser IntermediateMorphism
-pIntermediateMorphism =
-    let
-        expr_parser = makeExprParser pMorphismTermSimple [[binary (spaceConsumer <* symbol (pack "->")) MorphismChain]]
-    in
-        expr_parser
+pIntermediateMorphism :: Parser Category
+pIntermediateMorphism = do
+    let expr_parser = makeExprParser pMorphismTermSimple [[binary (spaceConsumer <* symbol (pack "->")) MorphismTermChain]]
+    result <- expr_parser
+    return IntermediateMorphism{
+        chain = uncurryMorphismTermChain result
+    }
 
 pMorphism :: Parser Category
 pMorphism = do
     im <- pIntermediateMorphism
-    let is_head_of_chain = True
-    if validateIM is_head_of_chain im
-        then return $ imToMorphism im
-        else fail "invalid Morphism specification"
-
--- TODO: let/where, slicing
+    let converted = imToMorphism im
+    return (trace (show converted) converted)

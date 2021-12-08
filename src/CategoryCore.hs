@@ -87,7 +87,19 @@ validCategory Label{name=Name _} = Nothing
 validCategory l@Label{} = Just ["Labels must have proper Names. Bad name in " ++ show l]
 validCategory Special{} = Nothing
 validCategory Reference{} = Nothing
+validCategory im@IntermediateMorphism{chain=chain} =
+    let
+        invalidTermSequence =  if not (validMorphismTermSequence chain) then Just ["Bad term sequence for MorphismChain in " ++ show im] else Nothing
+    in
+        _concatenateErrors [invalidTermSequence, validCategory (imToMorphism im)]
 validCategory other = Just ["validCategory Not implemented for " ++ show other]
+
+validMorphismTermSequence :: [MorphismTerm] -> Bool
+validMorphismTermSequence [] = False
+validMorphismTermSequence populated_term_list = and ([
+        isMorphismTermOfTypes [Import, Given, Definition, Return] (head populated_term_list),
+        isMorphismTermOfTypes [Return] (last populated_term_list)
+    ] ++ map (isMorphismTermOfTypes [Given,Definition,Return]) (tail populated_term_list))
 
 isSubstitutable :: Category -> Category -> Bool
 {- placeholder substitutions -}
