@@ -6,12 +6,17 @@ import Data.Dynamic
 import Data.Typeable
 
 import Debug.Trace (trace)
+import Control.Monad
 
 data Id = Name [Char] | Index Int | Unnamed deriving (Show, Eq)
 getNameStr :: Id -> [Char]
 getNameStr (Name n) = n
 getNameStr (Index idx) = show idx
 getNameStr Unnamed = ""
+
+isName :: Id -> Bool
+isName Name{} = True
+isName _ = False
 
 data SpecialCategoryType = Flexible | Universal deriving (Show, Eq)
 data CompositionType =
@@ -73,22 +78,18 @@ data Category =
 -- checks for data constructor type
 isThing :: Category -> Bool
 isThing Thing{} = True
-isThing MorphismCall{base_morphism=bm, argument=a} = isThing $ output bm
 isThing _ = False
 
 isMorphism :: Category -> Bool
 isMorphism Morphism{} = True
-isMorphism MorphismCall{base_morphism=bm} = isMorphism $ output bm
 isMorphism _ = False
 
 isComposite :: Category -> Bool
 isComposite Composite{} = True
-isComposite MorphismCall{base_morphism=bm} = isComposite $ output bm
 isComposite _ = False
 
 isCompositeType :: CompositionType -> Category -> Bool
 isCompositeType input_comp_type Composite{composition_type=cmp_comp_type} = input_comp_type == cmp_comp_type
-isCompositeType input_comp_type MorphismCall{base_morphism=bm} = isCompositeType input_comp_type $ output bm
 isCompositeType _ _ = False
 
 isPlaceholder :: Category -> Bool
@@ -135,11 +136,12 @@ isCategoricalObject :: Category -> Bool
 isCategoricalObject object =
     isThing object ||
     isMorphism object ||
+    isIntermediateMorphism object ||
     isComposite object ||
     isPlaceholder object ||
     isRefinedCategory object ||
     isSpecial  object ||
-    isIntermediateMorphism object
+    isMorphismCall object && isCategoricalObject (output (asMorphism (base_morphism object)))
 
 isCategoricalConstruct :: Category -> Bool
 isCategoricalConstruct = not . isCategoricalObject
@@ -152,15 +154,25 @@ isLanguageConstruct thing =
 
 isMorphic :: Category -> Bool
 isMorphic Morphism{} = True
+isMorphic IntermediateMorphism{} = True
 isMorphic Composite{composition_type=Sumposition} = True
 isMorphic Composite{composition_type=Composition} = True
-isMorphic MorphismCall{base_morphism=base_morphism} = True
 isMorphic Dereference{} = True
 isMorphic Special{} = True
 isMorphic RefinedCategory{base_category=bc} = isMorphic bc
 isMorphic Label{target=target} = isMorphic target
 isMorphic _ = False
 
+isNamedCategory :: Category -> Bool
+isNamedCategory Thing{} = True
+isNamedCategory Placeholder{} = True
+isNamedCategory Reference{} = True
+isNamedCategory _ = False
+
+getName :: Category -> Maybe Id
+getName input_category
+    | not $ isNamedCategory input_category = Nothing
+    | otherwise = Just $ name input_category
 -- end checks for data constructor type
 
 -- some basic functionality on categories
@@ -181,7 +193,7 @@ freeVariables RefinedCategory{base_category=bc} = freeVariables bc
 freeVariables Dereference{base_category=bc, category_id=_category_id} = error "not implemented yet"
 freeVariables Membership{small_category=sc} = freeVariables sc
 freeVariables Label{name=name,target=category} = filter (/= Reference{name=name}) $ freeVariables category
-freeVariables IntermediateMorphism{} = error "Not handled intermdiate morphisms free vars"
+freeVariables i@IntermediateMorphism{} = freeVariables (asMorphism i)
 
 -- replace :: base_expr -> old -> new -> new_expr 
 -- idea compare base expr to old. if same replace with new. otherwise return old. recurse
@@ -191,7 +203,7 @@ replace base_expr old new
     | otherwise =
         case base_expr of
             Thing _ -> base_expr
-            Composite composite_type inner -> Composite composite_type (sequence (sequence (map replace inner) old) new)
+            Composite composite_type inner -> Composite composite_type (map replace inner <*> [old] <*> [new])
             Morphism input output -> Morphism (replace input old new) (replace output old new)
             Placeholder id ph_level ph_category -> Placeholder id ph_level (replace ph_category old new)
             MorphismCall bm a -> MorphismCall (replace bm old new) (replace a old new)
@@ -199,9 +211,13 @@ replace base_expr old new
             Special{} -> base_expr
             Reference{} -> base_expr
             l@Label{name=name, target=target} -> l{target=replace target old new}
-            RefinedCategory {} -> error "not implemented"
-            Membership {} -> error "not implemented"
-            IntermediateMorphism{} -> error "not implemented"
+            Membership{big_category=bc, small_category=sc} -> Membership{big_category=replace bc old new, small_category=replace sc old new}
+            RefinedCategory {base_category=bc, predicate=p} -> RefinedCategory{base_category=replace bc old new, predicate=replace p old new}
+            IntermediateMorphism{chain=im_chain} -> IntermediateMorphism{chain=map replaceMorphismTerm im_chain <*> [old] <*> [new]} 
+
+replaceReferences :: Category -> Category -> Category
+replaceReferences base_expr l@Label{name=label_name, target=c_target} = replace base_expr Reference{name=label_name} (unfold Recursive l)
+replaceReferences be l = error $ "bad replace references: " ++ show be ++ " replacing " ++ show l
 
 data UnfoldType = Flat | Recursive
 unfold :: UnfoldType -> Category -> Category
@@ -235,7 +251,18 @@ dereference id m@Morphism{input=input, output=output} =
         Name "input" -> Just input
         Name "output" -> Just output
         _ -> Nothing
-dereference id anything_else = Nothing
+dereference id m@IntermediateMorphism{chain=[]} = Nothing 
+dereference id m@IntermediateMorphism{chain=[head,tail]} = 
+    case id of
+        Name "input" -> Just (m_category head)
+        Name "output" -> Just (m_category tail)
+        _ -> Nothing
+dereference id m@IntermediateMorphism{chain=(head:tail)} = 
+    case id of
+        Name "input" -> Just (m_category head)
+        Name "output" -> Just (IntermediateMorphism{chain=tail})
+        _ -> Nothing
+dereference id other = Nothing
 
 asMorphism :: Category -> Category
 asMorphism input_category
@@ -247,11 +274,11 @@ asMorphism input_category
                 where
                     morphised_comp_inner = map asMorphism comp_inner
             (Composite Sumposition comp_inner) -> Morphism (Composite Sum (map (input . asMorphism) comp_inner)) (Composite Sum (map (output . asMorphism) comp_inner))
-            MorphismCall{base_morphism=bm} -> asMorphism $ output bm
             f@Special{special_type=Flexible} -> Morphism f f
             Dereference{base_category=bc, category_id=id} -> asMorphism $ fromJust $ dereference id bc
             Label{target=target} -> asMorphism target
-            something -> error $ "not covered: " ++ show something
+            im@IntermediateMorphism{} -> imToMorphism im
+            something -> error $ "Missing definition in isMorphic: " ++ show something
 
 level :: Category -> Maybe Int
 level input_category =
@@ -267,17 +294,23 @@ level input_category =
                 (Composite _ inner) -> getInnerLevel inner
                 Morphism{input=input,output=output} -> getInnerLevel [input, output]
                 Placeholder{ph_level=ph_level} -> ph_level
-                MorphismCall{base_morphism=bm} -> level $ output bm
+                m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else Nothing
                 Special{} -> Nothing
                 Reference{} -> Nothing
                 Label{target=target} -> level target
                 Dereference{base_category=bc,category_id=id} -> level bc
                 RefinedCategory {base_category=_base_category, predicate=_predicate} -> level _base_category
-                Membership {} -> error "Not implemented"
-                IntermediateMorphism{} -> error "Not implemented"
+                Membership {small_category=sc} -> level sc 
+                im@IntermediateMorphism{} -> level (asMorphism im)
     in
         if isRecursiveCategory input_category then Just (+1) <*> basicLevel input_category else basicLevel input_category
 
+levelIsContained :: Maybe Int -> Maybe Int -> Bool 
+-- candidate category, contained category
+levelIsContained Nothing Nothing = True
+levelIsContained Nothing (Just _) = False
+levelIsContained (Just _) Nothing = False
+levelIsContained (Just a) (Just b) = a < b
 -- useful categories
 
 valid :: Category
@@ -285,6 +318,12 @@ valid = Composite Product []
 
 empty :: Category
 empty = Composite Sum []
+
+universal :: Category
+universal = Special{special_type=Universal}
+
+flex :: Category
+flex = Special{special_type=Flexible}
 
 -- Intermediate morphism representation for parsing
 
@@ -326,4 +365,11 @@ isMorphismTermOfTypes allowable_term_types morphism_term = m_type morphism_term 
 uncurryMorphismTermChain :: MorphismTerm -> [MorphismTerm]
 uncurryMorphismTermChain MorphismTermChain{c_input=input, c_output=mc@MorphismTermChain{}} = input:uncurryMorphismTermChain mc
 uncurryMorphismTermChain MorphismTermChain{c_input=input, c_output=anything_else} = [input, anything_else]
-uncurryMorphismTermChain MorphismTerm{} = error "Bad argument"
+uncurryMorphismTermChain m@MorphismTerm{} = error $ "Bad morphism term chain with only one term. " ++ show (m_category m)
+
+validMorphismTermSequence :: [MorphismTerm] -> Bool
+validMorphismTermSequence [] = False
+validMorphismTermSequence populated_term_list = and ([
+        isMorphismTermOfTypes [Import, Given, Definition, Return] (head populated_term_list),
+        isMorphismTermOfTypes [Return] (last populated_term_list)
+    ] ++ map (isMorphismTermOfTypes [Given,Definition,Return]) (tail populated_term_list))

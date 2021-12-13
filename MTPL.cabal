@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5148f2382fb5e927bc8e1ce914374c420760e1244225a20aa519e6b80437b07b
+-- hash: ae2a052bfac947b05b83b603c2b1efd34661c6f40ca3e64d6112e18e8fe4f37f
 
 name:           MTPL
 version:        0.1.0.0
@@ -80,6 +80,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      Categories.ListSpec
       CategoryDataSpec
       CategorySynthesizerSpec
       FrontEndsSpec.TextualSpec.V1.CategoryParserSpec

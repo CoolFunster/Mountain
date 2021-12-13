@@ -2,8 +2,6 @@
 module FrontEndsSpec.TextualSpec.V1.CategoryParserSpec (spec) where
 
 import Test.Hspec
-import Test.Hspec.Megaparsec
-import Text.Megaparsec
 
 import CategoryData
 import FrontEnds.Textual.V1.CategoryParser
@@ -31,21 +29,21 @@ spec = do
         it "(Tuples) should parse recursive tuples" $ do
             parseCategoryString "(`a, (`b, `c))" `shouldBe` Composite {composition_type = Product, inner = [Thing {name = Name "a"},Composite {composition_type = Product, inner = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}
         it "(Tuples) should parse inner morphisms" $ do
-            parseCategoryString "(given `a -> return `b, given `b -> return `c)" `shouldBe` Composite {composition_type = Product, inner = [Morphism{input=Thing {name = Name "a"},output=Thing {name = Name "b"}}, Morphism{input=Thing {name = Name "b"},output=Thing {name = Name "c"}}]}
+            parseCategoryString "(given `a -> return `b, given `b -> return `c)" `shouldBe` Composite {composition_type = Product, inner = [IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]},IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "b"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "c"}}]}]}
         it "(Sumples) should parse sumples" $ do
             parseCategoryString "|`a, `b|" `shouldBe` Composite {composition_type = Sum, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]}
         it "(Higher) should parse higher categories" $ do
-            parseCategoryString "^{`a,`b}" `shouldBe` Composite {composition_type = Higher, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]}
+            parseCategoryString "^{`a,`b}^" `shouldBe` Composite {composition_type = Higher, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]}
         it "(Morphism) should parse morphisms" $ do
-            parseCategoryString "given `a -> return `b" `shouldBe` Morphism (Thing (Name "a")) (Thing (Name "b"))
+            parseCategoryString "given `a -> return `b" `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]}
         it "(Morphism) should parse chains" $ do
-            parseCategoryString  "given `a -> given `b -> return `c" `shouldBe` Morphism (Thing (Name "a")) (Morphism (Thing (Name "b")) (Thing (Name "c")))
+            parseCategoryString  "given `a -> given `b -> return `c" `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Given, m_category = Thing {name = Name "b"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "c"}}]}
         it "(Morphism) should parse named morphisms" $ do
-            parseCategoryString "AB:given `a -> return `b" `shouldBe` CategoryData.Label{name=Name "AB", target=Morphism (Thing (Name "a")) (Thing (Name "b"))}
+            parseCategoryString "AB:given `a -> return `b" `shouldBe` Label {name = Name "AB", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]}}
         it "(Composition) should parse compositions" $ do
             let a_to_b = parseCategoryString "given `a -> return `b"
             let b_to_c = parseCategoryString "given `b -> return `c"
-            parseCategoryString "*(given `a -> return `b, given `b -> return `c)" `shouldBe` Composite{composition_type=Composition,inner=[a_to_b, b_to_c]}
+            parseCategoryString "*(given `a -> return `b, given `b -> return `c)*" `shouldBe` Composite{composition_type=Composition,inner=[a_to_b, b_to_c]}
         it "(Sumposition) should parse sumpositions" $ do
             let a_to_b = parseCategoryString "given `a -> return `b"
             let b_to_c = parseCategoryString "given `b -> return `c"
@@ -58,7 +56,7 @@ spec = do
             parseCategoryString "@`a" `shouldBe` Placeholder{name=Unnamed, ph_level=Nothing, ph_category=Thing (Name "a")}
             parseCategoryString "<1>@`a" `shouldBe` Placeholder{name=Unnamed, ph_level=Just 1, ph_category=Thing (Name "a")}
         it "(Refinement) should parse refinement" $ do
-            parseCategoryString "{x@(`a) | given `a -> return `b}" `shouldBe` RefinedCategory Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")} Morphism{input=Thing (Name "a"), output=Thing (Name "b")}
+            parseCategoryString "{x@(`a) | given `a -> return `b}" `shouldBe` RefinedCategory {base_category = Placeholder {name = Name "x", ph_level = Nothing, ph_category = Thing {name = Name "a"}}, predicate = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]}}
         it "(Special) should parse flexible" $ do
             parseCategoryString "(%)" `shouldBe` Special{special_type=Flexible}
             parseCategoryString "test:(%)" `shouldBe` CategoryData.Label {name = Name "test", target = Special {special_type = Flexible}}
@@ -67,8 +65,10 @@ spec = do
             parseCategoryString "test:Any" `shouldBe` CategoryData.Label {name = Name "test", target = Special {special_type = Universal}}
         it "(Special) should parse Reference" $ do
             parseCategoryString "$Stuff" `shouldBe` Reference (Name "Stuff")
-        it "(Call) should call" $ do
+        it "(Call) should parse call" $ do
             parseCategoryString "$base_foo[$some_arg]" `shouldBe` MorphismCall{base_morphism=Reference (Name "base_foo"),argument=Reference (Name "some_arg")}
+        it "(Call) should parse tuple call" $ do
+            parseCategoryString "tail: $List[$list_type]" `shouldBe` Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}
         it "(Call) should call consecutiveness" $ do
             parseCategoryString "$base_foo[$some_arg][$some_other]" `shouldBe` MorphismCall{base_morphism=MorphismCall{base_morphism=Reference (Name "base_foo"),argument=Reference (Name "some_arg")},argument=Reference (Name "some_other") }
         it "(Dereference) should parse dereferences" $ do
@@ -77,5 +77,5 @@ spec = do
         it "(Membership) should parse membership" $ do
             parseCategoryString "$base_category::$child_category" `shouldBe` Membership{big_category=Reference (Name "base_category") , small_category=Reference (Name "child_category") }
         it "(Recursive) should parse recursion" $ do
-            parseCategoryString "self:(given `a -> return $self[`b])" `shouldBe` CategoryData.Label {name = Name "self", target = Morphism {input = Thing {name = Name "a"}, output = MorphismCall {base_morphism = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}}}
+            parseCategoryString "self:(given `a -> return $self[`b])" `shouldBe`  Label {name = Name "self", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = MorphismCall {base_morphism = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}}]}}
             

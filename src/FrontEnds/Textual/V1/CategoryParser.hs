@@ -15,24 +15,30 @@ import Data.Maybe (fromJust, isJust)
 
 import Debug.Trace (trace)
 
-import System.IO
+import qualified Data.Text.IO as TextIO
 
 
-parseCategoryFileWith :: Parser a -> FilePath -> Text -> a
-parseCategoryFileWith cat_parser file_path file_contents = do
+baseParseCategory :: Parser a -> FilePath -> Text -> a
+baseParseCategory cat_parser file_path file_contents = do
     let result = runParser cat_parser file_path file_contents
     case result of
         Left parse_error -> error (errorBundlePretty parse_error)
         Right result -> result
 
-parseCategoryFile :: FilePath -> Text -> Category
+parseCategoryFileWith :: Parser a -> FilePath -> IO a
+parseCategoryFileWith parser path_to_file = do
+    contents <- TextIO.readFile path_to_file
+    let category = baseParseCategory parser path_to_file contents
+    return category
+
+parseCategoryFile :: FilePath -> IO Category
 parseCategoryFile = parseCategoryFileWith pCategory
 
 parseCategoryStringWith :: Parser a -> Text -> a
-parseCategoryStringWith cat_parser = parseCategoryFileWith cat_parser "String"
+parseCategoryStringWith cat_parser = baseParseCategory cat_parser "String"
 
 parseCategoryString :: Text -> Category
-parseCategoryString = parseCategoryFile "String"
+parseCategoryString = parseCategoryStringWith pCategory
 
 type Parser = Parsec Void Text
 
@@ -41,7 +47,7 @@ spaceConsumer :: Parser ()
 spaceConsumer = L.space
                 space1                         -- (2)
                 (L.skipLineComment $ pack "//")       -- (3)
-                (L.skipBlockComment (pack "/*") (pack "*/")) -- (4)
+                (L.skipBlockComment (pack "/%") (pack "%/")) -- (4)
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer
@@ -49,7 +55,8 @@ lexeme = L.lexeme spaceConsumer
 symbol :: Text -> Parser Text
 symbol = L.symbol spaceConsumer
 
-binary  inner_parser f = InfixR  (f <$ inner_parser)
+binaryR  inner_parser f = InfixR  (f <$ inner_parser)
+binaryN  inner_parser f = InfixN  (f <$ inner_parser)
 prefix  inner_parser f = Prefix  (f <$ inner_parser)
 postfix inner_parser f = Postfix (f <$ inner_parser)
 
@@ -68,7 +75,7 @@ pCategoryLabel = do
     name <- pCategoryName
     _ <- symbol (pack ":")
     if name `elem` [Name "given", Name "import", Name "define", Name "return"]
-        then fail "cannot name category keyword"
+        then fail $ "cannot name category keyword " ++ show name
         else return name
 
 pCategoryOptionalLabel :: Parser Id
@@ -82,19 +89,33 @@ pCategoryInnerList :: Parser [Category]
 pCategoryInnerList = sepBy pCategory (symbol (pack ","))
 {- end category helpers-}
 
-pCategory = pCategoryExpr
+pCategory = pMembership
 
-pCategoryExpr :: Parser Category
-pCategoryExpr =
+pMembership :: Parser Category
+pMembership =
     let
-        expr_parser = makeExprParser pCategoryTerm [
+        expr_parser = makeExprParser pOptionalLabeledCategory [
                 [
-                    binary (symbol (pack "::")) (\x y -> Membership{big_category=x,small_category=y})
+                    binaryN (symbol (pack "::")) (\x y -> Membership{big_category=x,small_category=y})
                 ]
             ]
     in
         do
             expr_parser
+
+pOptionalLabeledCategory :: Parser Category
+pOptionalLabeledCategory = do
+    name <- pCategoryOptionalLabel
+    category <- try pLabeledCategory <|> pCategoryTerm
+    case name of
+        Unnamed -> return category
+        _ -> return CategoryData.Label{name=name, target=category}
+
+pLabeledCategory :: Parser Category
+pLabeledCategory = do
+    name <- pCategoryLabel
+    category <- pCategoryTerm
+    return CategoryData.Label{name=name, target=category}
 
 pCategoryTerm :: Parser Category
 pCategoryTerm = do
@@ -107,32 +128,27 @@ pCategoryTerm = do
             )
     return (foldl collector base extension)
 
-pCategoryBase :: Parser Category
-pCategoryBase = try (pStandardLabeledCategory <|> pThing <|> pReference <|> pPlaceholder)
-
-pStandardLabeledCategory :: Parser Category
-pStandardLabeledCategory = do
-    name <- pCategoryOptionalLabel
-    category <- choice [
-        pMorphism,
-        pUniversal,
-        pFlexible,
-        pComposition,
-        pSumposition,
-        pTuple,
-        pSumple,
-        pHigher,
-        pRefinement]
-    case name of
-        Unnamed -> return category
-        _ -> return CategoryData.Label{name=name, target=category}
-
-
 pCategoryExtension :: Parser Category
 pCategoryExtension = choice [
-        pMorphismCallExtension,
-        pDereferenceExtension
+        try pMorphismCallExtension,
+        try pDereferenceExtension
     ]
+
+pCategoryBase :: Parser Category
+pCategoryBase = pStandardCategory <|> try pThing <|> try pReference <|> try pPlaceholder
+
+
+pStandardCategory :: Parser Category
+pStandardCategory = choice [
+    try pMorphism,
+    try pUniversal,
+    try pFlexible,
+    try pComposition,
+    try pTuple,
+    try pSumposition,
+    try pSumple,
+    try pHigher,
+    try pRefinement]
 
 pThing :: Parser Category
 pThing = do
@@ -140,36 +156,43 @@ pThing = do
     thing_name <- pCategoryName
     return Thing{name=thing_name}
 
+pWrapInner :: [Char] -> [Char] -> Parser a -> Parser a
+pWrapInner open_char close_char = between (optional spaceConsumer <* symbol (pack open_char) <* optional spaceConsumer) (optional spaceConsumer <* symbol (pack close_char) <* optional spaceConsumer)
+
 pTuple :: Parser Category
 pTuple = do
-    inner_categories <- between (symbol (pack "(")) (symbol (pack ")")) pCategoryInnerList
+    inner_categories <- pWrapInner "(" ")" pCategoryInnerList
     if length inner_categories == 1
         then return $ head inner_categories
         else return Composite{composition_type=Product, inner=inner_categories}
 
 pSumple :: Parser Category
 pSumple = do
-    inner_categories <- between (symbol (pack "|")) (symbol (pack "|")) pCategoryInnerList
-    return Composite{composition_type=Sum, inner=inner_categories}
+    inner_categories <- pWrapInner "|" "|" pCategoryInnerList
+    if length inner_categories == 1
+        then return $ head inner_categories
+        else return Composite{composition_type=Sum, inner=inner_categories}
 
 pHigher :: Parser Category
 pHigher = do
-    inner_categories <- between (symbol (pack "^{")) (symbol (pack "}")) pCategoryInnerList
-    return Composite{composition_type=Higher, inner=inner_categories}
+    inner_categories <- pWrapInner "^{" "}" pCategoryInnerList
+    if length inner_categories == 1
+        then return $ head inner_categories
+        else return Composite{composition_type=Higher, inner=inner_categories}
 
 pComposition :: Parser Category
 pComposition = do
-    inner_categories <- between (symbol (pack "*(")) (symbol (pack ")")) pCategoryInnerList
-    if all isMorphic inner_categories
-        then return Composite{composition_type=Composition, inner=inner_categories}
-        else fail "Not a composition of morphisms"
+    inner_categories <- pWrapInner "*(" ")" pCategoryInnerList
+    if length inner_categories == 1
+        then return $ head inner_categories
+        else return Composite{composition_type=Composition, inner=inner_categories}
 
 pSumposition :: Parser Category
 pSumposition = do
-    inner_categories <- between (symbol (pack "*|")) (symbol (pack "|")) pCategoryInnerList
-    if all isMorphic inner_categories
-        then return Composite{composition_type=Sumposition, inner=inner_categories}
-        else fail "Not a composition of morphisms"
+    inner_categories <- pWrapInner "*|" "|" pCategoryInnerList
+    if length inner_categories == 1
+        then return $ head inner_categories
+        else return Composite{composition_type=Sumposition, inner=inner_categories}
 
 pPlaceholder :: Parser Category
 pPlaceholder = do
@@ -250,14 +273,11 @@ pMorphismTermSimple =
 
 pIntermediateMorphism :: Parser Category
 pIntermediateMorphism = do
-    let expr_parser = makeExprParser pMorphismTermSimple [[binary (spaceConsumer <* symbol (pack "->")) MorphismTermChain]]
+    let expr_parser = makeExprParser pMorphismTermSimple [[binaryR (spaceConsumer <* symbol (pack "->")) MorphismTermChain]]
     result <- expr_parser
     return IntermediateMorphism{
         chain = uncurryMorphismTermChain result
     }
 
 pMorphism :: Parser Category
-pMorphism = do
-    im <- pIntermediateMorphism
-    let converted = imToMorphism im
-    return (trace (show converted) converted)
+pMorphism = pIntermediateMorphism
