@@ -103,13 +103,13 @@ spec = do
         it "should handle weird inputs" $ do
             let result = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "teqtbwxzcgzbzzs"}},MorphismTerm {m_type = Given, m_category = Special {special_type = Flexible}},MorphismTerm {m_type = Return, m_category = Dereference {base_category = Thing {name = Name "qaxdhkrfcwrdazf"}, category_id = Name "pbyuagseuymmttb"}}]}
             let new_result = categoryToText result
-            let parsed_result = parseCategoryString new_result
+            let parsed_result = parseCategoryText new_result
             parsed_result `shouldBe` result
         it "should handle weird inputs 2" $ do
             let result = MorphismCall {base_morphism = Special {special_type = Universal}, argument = MorphismCall {base_morphism = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Dereference {base_category = Special {special_type = Universal}, category_id = Name "zhzftofcpkstfpf"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "ydwodbwscbdpzzx"}}]}, argument = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "mymsyuvyykursxj"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "lpssbqsnstpqadc"}}]}}}
             let new_result = categoryToText result
             -- TextIO.putStrLn new_result
-            let parsed_result = parseCategoryString new_result
+            let parsed_result = parseCategoryText new_result
             -- print parsed_result
             categoryToText parsed_result `shouldBe` new_result
         -- it "should handle weird inputs 3" $ do
@@ -123,7 +123,7 @@ spec = do
             let result = CategoryData.Label {name = Name "ksozjunvzmjbgey", target = Thing {name = Name "kcisxotsnthdbzv"}}
             let new_result = categoryToText result
             -- TextIO.putStrLn new_result
-            let parsed_result = parseCategoryString new_result
+            let parsed_result = parseCategoryText new_result
             -- print parsed_result
             parsed_result `shouldBe` result
         it "should handle weird inputs 5" $ do
@@ -131,7 +131,7 @@ spec = do
             let result = Composite {composition_type = Sumposition, inner = []}
             let new_result = categoryToText result
             -- TextIO.putStrLn new_result
-            let parsed_result = parseCategoryString new_result
+            let parsed_result = parseCategoryText new_result
             -- print parsed_result
             parsed_result `shouldBe` result
         -- it "should handle weird inputs 6" $ do
@@ -141,6 +141,7 @@ spec = do
         --     let parsed_result = parseCategoryString new_result
         --     print parsed_result
         --     categoryToText parsed_result `shouldBe` new_result
+        
 
 
             

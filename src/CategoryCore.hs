@@ -47,19 +47,26 @@ has big_category small_category
                 | isCompositeType Product other_category && length product_inner /= length (inner other_category) = False
                 | otherwise = and $ zipWith CategoryCore.has product_inner (inner other_category)
             has_inner (Composite Sum sum_inner) other_category@(Composite Sum _) = all (CategoryCore.has other_category) sum_inner
-            has_inner (Composite Sum sum_inner) other_category = or (sequence (map CategoryCore.has sum_inner) other_category)
+            has_inner (Composite Sum sum_inner) other_category = or $ map CategoryCore.has sum_inner <*> [other_category]
             {- Higher Categories -}
             has_inner h@Composite{composition_type=Higher} other_category = isAnswered $ synthesizeCategory h other_category
             has_inner big_category h@Composite{composition_type=Higher,inner=inner_terms} = all (has_inner big_category) inner_terms
             {- Composite Morphism -}
             has_inner c_big@Composite{composition_type=Composition} other_category = CategoryCore.has (asMorphism c_big) other_category
-            has_inner (Composite Sumposition sump_inner) other_category = or (sequence (map CategoryCore.has sump_inner) other_category)
+            has_inner (Composite Sumposition sump_inner) other_category = or $ map CategoryCore.has sump_inner <*> [other_category]
             {- Placeholders -}
             has_inner Placeholder{ph_level=ph_level,ph_category=ph_category} other_category =
                 case (ph_level, level other_category) of
                     (Just level, Just other_level) -> level <= other_level && CategoryCore.has other_category ph_category
                     _ -> error "Bad leveling!"
-            has_inner big small = error $ "Not implemented yet for " ++ show big ++ " has " ++ show small
+            has_inner mc@MorphismCall{base_morphism=bm, argument=a} other =
+                let
+                    call_result = call bm a
+                in
+                    case call_result of
+                        Nothing -> False
+                        _ -> has (fromJust call_result) other
+            has_inner big small = error $ "has not implemented yet for " ++ show big ++ " has " ++ show small
 
 isValidCategory :: Category -> Bool
 isValidCategory any_category = isNothing $ validCategory any_category
@@ -128,13 +135,13 @@ call m@(Morphism input output) input_category
     | isValidArgumentTo input_category m = Just (replace output input input_category)
     | otherwise = Nothing
 call m@IntermediateMorphism{chain=(MorphismTerm{m_type=Given,m_category=given_category}:tail)} input_category
-    | isValidArgumentTo given_category m = 
+    | isValidArgumentTo given_category m =
         case tail of
             [MorphismTerm{m_type=Return, m_category=return_category}] -> Just return_category
             _ -> Just $ IntermediateMorphism tail
     | otherwise = Nothing
 call m@IntermediateMorphism{chain=(MorphismTerm{m_type=Definition,m_category=given_category}:tail)} input_category
-    | isValidArgumentTo given_category m = 
+    | isValidArgumentTo given_category m =
         let
             result = replaceReferences given_category (IntermediateMorphism tail)
         in
@@ -147,8 +154,10 @@ call c@(Composite Composition _) input_category = call (asMorphism c) input_cate
 call (Composite Sumposition inner_functions) input_category = tryFunctions input_category (map call inner_functions)
     where
         tryFunctions x = getFirst . mconcat . map (First . ($ x))
-call fc@Special{} input_category = Just $ MorphismCall fc input_category
-call base_category fc@Special{}  = Just $ MorphismCall base_category fc
+call fc@Special{} input_category = Just $ Special{special_type=Flexible}
+call base_category fc@Special{}  = Just $ Special{special_type=Flexible}
+call r@Reference{} input_category = Just $ Special{special_type=Flexible}
+call base_category r@Reference{} = Just $ Special{special_type=Flexible}
 call non_morphism _ = Nothing
 
 simplify :: Category -> Category

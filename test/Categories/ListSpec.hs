@@ -9,6 +9,7 @@ import FrontEnds.Textual.V1.CategoryWriter
 import CategoryData
 import Data.Maybe
 import FrontEnds.Textual.V1.CategoryWriter (categoryToStr)
+import FrontEnds.Textual.V1.CategoryParser (parseCategoryString)
 
 spec :: Spec
 spec = do
@@ -22,3 +23,6 @@ spec = do
             let list_on_anything = execute MorphismCall{base_morphism=list,argument=universal}
             fromJust (dereference (Name "empty") list_on_anything) `shouldBe` Thing (Name "empty_list")
             (list_on_anything `has` Thing (Name "empty_list")) `shouldBe` True
+            list_on_anything `has` parseCategoryString "( () , `empty_list )" `shouldBe` True
+            list_on_anything `has` parseCategoryString "( `anything , `empty_list )" `shouldBe` True
+            -- (list_on_anything `has` )

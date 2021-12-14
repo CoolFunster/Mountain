@@ -30,6 +30,8 @@ spec = do
             parseCategoryString "(`a, (`b, `c))" `shouldBe` Composite {composition_type = Product, inner = [Thing {name = Name "a"},Composite {composition_type = Product, inner = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}
         it "(Tuples) should parse inner morphisms" $ do
             parseCategoryString "(given `a -> return `b, given `b -> return `c)" `shouldBe` Composite {composition_type = Product, inner = [IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]},IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "b"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "c"}}]}]}
+        it "(Tuples) should handle spaces better" $ do
+             parseCategoryStringWith pTuple "( `anything , `empty_list )" `shouldBe` Composite {composition_type = Product, inner = [Thing (Name "anything"), Thing (Name "empty_list")]}
         it "(Sumples) should parse sumples" $ do
             parseCategoryString "|`a, `b|" `shouldBe` Composite {composition_type = Sum, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]}
         it "(Higher) should parse higher categories" $ do

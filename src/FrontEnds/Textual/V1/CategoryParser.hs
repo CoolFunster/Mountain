@@ -34,11 +34,17 @@ parseCategoryFileWith parser path_to_file = do
 parseCategoryFile :: FilePath -> IO Category
 parseCategoryFile = parseCategoryFileWith pCategory
 
-parseCategoryStringWith :: Parser a -> Text -> a
-parseCategoryStringWith cat_parser = baseParseCategory cat_parser "String"
+parseCategoryStringWith :: Parser a -> [Char] -> a
+parseCategoryStringWith cat_parser input_str = baseParseCategory cat_parser "String" (pack input_str)
 
-parseCategoryString :: Text -> Category
+parseCategoryString :: [Char] -> Category
 parseCategoryString = parseCategoryStringWith pCategory
+
+parseCategoryTextWith :: Parser a -> Text -> a
+parseCategoryTextWith cat_parser = baseParseCategory cat_parser "String"
+
+parseCategoryText :: Text -> Category
+parseCategoryText = parseCategoryTextWith pCategory
 
 type Parser = Parsec Void Text
 
@@ -86,7 +92,7 @@ pCategoryOptionalLabel = do
         Nothing -> return Unnamed
 
 pCategoryInnerList :: Parser [Category]
-pCategoryInnerList = sepBy pCategory (symbol (pack ","))
+pCategoryInnerList = sepBy pCategory (try $ optional spaceConsumer <* symbol (pack ","))
 {- end category helpers-}
 
 pCategory = pMembership
