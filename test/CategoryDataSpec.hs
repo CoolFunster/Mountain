@@ -232,37 +232,44 @@ spec = do
     describe "execute" $ do
         it "(Thing) should just return the thing" $ do
             let a = Thing (Name "a")
-            execute a `shouldBe` a
+            result <- execute a
+            result `shouldBe` a
         it "(Composite) should just return the composite" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let ab = Composite Product [a,b]
-            execute ab `shouldBe` ab
+            result <- execute ab
+            result `shouldBe` ab
         it "(Morphism) should just return the morphism" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Morphism a b
-            execute a2b `shouldBe` a2b
+            result <- execute a2b
+            result `shouldBe` a2b
         it "(Placeholder) should just return the placeholder" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a_b = Composite Higher [a,b]
             let x_elem_a_b = Placeholder (Name "x") (Just 0) a_b
-            execute x_elem_a_b `shouldBe` x_elem_a_b
+            result <- execute x_elem_a_b
+            result `shouldBe` x_elem_a_b
         it "(Placeholder) should just return the placeholder" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a_b = Composite Higher [a,b]
             let x_elem_a_b = Placeholder (Name "x") (Just 0) a_b
-            execute x_elem_a_b `shouldBe` x_elem_a_b
+            result <- execute x_elem_a_b
+            result `shouldBe` x_elem_a_b
         it "(MorphismCall) should just call the morphism" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Morphism a b
             let a2b_on_a = MorphismCall a2b a
-            execute a2b_on_a `shouldBe` b
+            result <- execute a2b_on_a
+            result `shouldBe` b
         it "(RecursiveCategory) should just return itself" $ do
-            execute nat `shouldBe` unfold Recursive nat
+            result <- execute nat
+            result `shouldBe` unfold Recursive nat
         it "(RecursiveCategory) should have each of the component elements" $ do
             nat `has` Thing (Name "0") `shouldBe` True
             nat `has` Morphism valid (Thing (Name "0")) `shouldBe` True
@@ -284,8 +291,8 @@ spec = do
             -- print $ inner_expr simple_ab
             simplify (MorphismCall unfolded_simple_ab b) `shouldBe` MorphismCall unfolded_simple_ab b
             simplify (MorphismCall unfolded_simple_ab a) `shouldBe` MorphismCall unfolded_simple_ab a
-            execute (MorphismCall unfolded_simple_ab a) `shouldBe` b
-            execute (MorphismCall unfolded_simple_ab b) `shouldBe` b
+            result <- execute (MorphismCall unfolded_simple_ab a)
+            result `shouldBe` b
     describe "dereference" $ do
         it "should handle indices on composites well" $ do
             let composite_category = Composite Product [Thing (Name "a"), Thing (Name "b")]

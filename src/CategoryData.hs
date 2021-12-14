@@ -217,6 +217,7 @@ replace base_expr old new
 
 replaceReferences :: Category -> Category -> Category
 replaceReferences base_expr l@Label{name=label_name, target=c_target} = replace base_expr Reference{name=label_name} (unfold Recursive l)
+replaceReferences base_expr p@Placeholder{name=ph_name} = replace base_expr Reference{name=ph_name} p
 replaceReferences be l = error $ "bad replace references: " ++ show be ++ " replacing " ++ show l
 
 data UnfoldType = Flat | Recursive
@@ -308,7 +309,7 @@ level input_category =
 levelIsContained :: Maybe Int -> Maybe Int -> Bool 
 -- candidate category, contained category
 levelIsContained Nothing Nothing = True
-levelIsContained Nothing (Just _) = False
+levelIsContained Nothing (Just _) = True
 levelIsContained (Just _) Nothing = False
 levelIsContained (Just a) (Just b) = a < b
 -- useful categories

@@ -9,6 +9,7 @@ import Data.List (find)
 import Data.Maybe (mapMaybe, fromJust, isNothing, isJust, catMaybes)
 
 import FrontEnds.Textual.V1.CategoryWriter (categoryToStr)
+import FrontEnds.Textual.V1.CategoryParser (parseCategoryFile)
 
 {- Category Functions -}
 equal :: Category -> Category -> Bool
@@ -120,9 +121,11 @@ validCategory other = Just ["validCategory Not implemented for " ++ show other]
 isSubstitutable :: Category -> Category -> Bool
 isSubstitutable base_category argument =
     case base_category of
-        Placeholder{ph_level=ph_level, ph_category=category} -> (level argument) `levelIsContained` ph_level && category `has` argument
+        Placeholder{ph_level=ph_level, ph_category=category} -> ph_level `levelIsContained` level argument && category `has` argument
         c@Composite{composition_type=Sum, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
         c@Composite{composition_type=Sumposition, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
+        Special{} -> True
+        Reference{} -> True
         _ -> base_category `equal` argument
 
 isValidArgumentTo :: Category -> Category -> Bool
@@ -136,19 +139,27 @@ call m@(Morphism input output) input_category
     | otherwise = Nothing
 call m@IntermediateMorphism{chain=(MorphismTerm{m_type=Given,m_category=given_category}:tail)} input_category
     | isValidArgumentTo given_category m =
-        case tail of
+        let
+            replaced_tail = 
+                case given_category of
+                    Label{name=name} -> replaceReferences (IntermediateMorphism tail) Label{name=name, target=input_category}
+                    Placeholder{name=name} -> replaceReferences (IntermediateMorphism tail) Label{name=name, target=input_category}
+                    something_else -> IntermediateMorphism tail
+        in
+        case chain replaced_tail of
             [MorphismTerm{m_type=Return, m_category=return_category}] -> Just return_category
-            _ -> Just $ IntermediateMorphism tail
+            _ -> Just replaced_tail
     | otherwise = Nothing
 call m@IntermediateMorphism{chain=(MorphismTerm{m_type=Definition,m_category=given_category}:tail)} input_category
     | isValidArgumentTo given_category m =
         let
-            result = replaceReferences given_category (IntermediateMorphism tail)
+            result = replaceReferences (IntermediateMorphism tail) given_category
         in
             case chain result of
                 [MorphismTerm{m_type=Return, m_category=return_category}] -> Just return_category
                 _ -> Just result
     | otherwise = Nothing
+
 call m@IntermediateMorphism{chain=other} input_category = Nothing
 call c@(Composite Composition _) input_category = call (asMorphism c) input_category
 call (Composite Sumposition inner_functions) input_category = tryFunctions input_category (map call inner_functions)
@@ -158,6 +169,8 @@ call fc@Special{} input_category = Just $ Special{special_type=Flexible}
 call base_category fc@Special{}  = Just $ Special{special_type=Flexible}
 call r@Reference{} input_category = Just $ Special{special_type=Flexible}
 call base_category r@Reference{} = Just $ Special{special_type=Flexible}
+call l@Label{target=t} arg = call (unfold Recursive l) arg
+call base_category l@Label{target=t} = call base_category (unfold Recursive l)
 call non_morphism _ = Nothing
 
 simplify :: Category -> Category
@@ -187,9 +200,9 @@ evaluate l@Label{name=name, target=target}
     | otherwise = l
 evaluate other = error $ "evaluate Not Implemented yet on " ++ show other
 
-execute :: Category -> Category
+execute :: Category -> IO Category
 execute input_category = do
     let error_checks = validCategory input_category
     case error_checks of
-        Nothing -> (simplify . evaluate . simplify) input_category
+        Nothing -> return $ (simplify . evaluate . simplify) input_category
         Just errors -> error $ "Some semantic errors: \n" ++ unlines errors ++ "\n Found in: " ++ show input_category
