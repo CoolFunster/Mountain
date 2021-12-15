@@ -190,7 +190,10 @@ freeVariables MorphismCall{base_morphism=bm, argument=a} = freeVariables bm ++ f
 freeVariables f@Special{} = []
 freeVariables r@Reference{} = [r]
 freeVariables RefinedCategory{base_category=bc} = freeVariables bc
-freeVariables Dereference{base_category=bc, category_id=_category_id} = error "not implemented yet"
+freeVariables Dereference{base_category=bc, category_id=_category_id} = 
+    case dereference _category_id bc of
+        Just something -> freeVariables something
+        _ -> []
 freeVariables Membership{small_category=sc} = freeVariables sc
 freeVariables Label{name=name,target=category} = filter (/= Reference{name=name}) $ freeVariables category
 freeVariables i@IntermediateMorphism{} = freeVariables (asMorphism i)
@@ -229,16 +232,19 @@ unfold _ something_else = error $ "Cannot unfold a non labeled category: " ++ sh
 dereference :: Id -> Category -> Maybe Category
 dereference id Label{name=l_name, target=l_target}
     | l_name == id = Just l_target
-    | otherwise = Nothing
+    | otherwise = dereference id l_target
 dereference id t@Thing{name=t_name}
     | id == t_name = Just t
     | otherwise = Nothing
-dereference id p@Placeholder{name=p_name}
+dereference id p@Placeholder{name=p_name,ph_category=ph_category}
     | id == p_name = Just p
-    | otherwise = Nothing
+    | otherwise = 
+        case dereference id ph_category of
+            Nothing -> Nothing
+            Just something -> Just p{name=Unnamed, ph_category=something}
 dereference id r@Reference{name=r_name}
     | id == r_name = Just r
-    | otherwise = Nothing
+    | otherwise = Just Special{special_type=Flexible}
 dereference id c@Composite{inner=inner} =
     case id of
         Index idx -> Just (inner!!idx)

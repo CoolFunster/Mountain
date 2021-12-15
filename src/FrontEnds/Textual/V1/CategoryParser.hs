@@ -76,6 +76,11 @@ pCategoryName = do
     name <- some (alphaNumChar <|> char '_')
     return (Name name)
 
+pCategoryIdx :: Parser Id
+pCategoryIdx = do 
+    result <- between (symbol (pack "<")) (symbol (pack ">")) integer
+    return (Index (fromInteger result))
+
 pCategoryLabel :: Parser Id
 pCategoryLabel = do
     name <- pCategoryName
@@ -248,7 +253,9 @@ pMorphismCallExtension = do
 pDereferenceExtension :: Parser Category
 pDereferenceExtension = do
     _ <- symbol (pack ".")
-    category_id <- pCategoryName
+    category_id <- choice [
+        try pCategoryIdx,
+        try pCategoryName]
     return Dereference{base_category=Thing Unnamed, category_id=category_id}
 
 pMorphismTermType :: Parser MorphismTermType
@@ -257,13 +264,13 @@ pMorphismTermType =
         pString <- choice [
             symbol $ pack "import",
             symbol $ pack "given",
-            symbol $ pack "definition",
+            symbol $ pack "define",
             symbol $ pack "return"]
         _ <- spaceConsumer
         case unpack pString of
             "import" -> return Import
             "given" -> return Given
-            "definition" -> return Definition
+            "define" -> return Definition
             "return" -> return Return
             _ -> error "something bad"
 

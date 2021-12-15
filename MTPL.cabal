@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: ae2a052bfac947b05b83b603c2b1efd34661c6f40ca3e64d6112e18e8fe4f37f
+-- hash: 0921f08b30b17fed65a9394656ff94c6ef5316f417b3fb27cc1d40c63ea03f00
 
 name:           MTPL
 version:        0.1.0.0
@@ -81,6 +81,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       Categories.ListSpec
+      Categories.NatSpec
       CategoryDataSpec
       CategorySynthesizerSpec
       FrontEndsSpec.TextualSpec.V1.CategoryParserSpec

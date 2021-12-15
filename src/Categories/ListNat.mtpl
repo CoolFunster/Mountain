@@ -1,0 +1,3 @@
+ListNat:
+    import List:$List
+    -> return $List[()]
