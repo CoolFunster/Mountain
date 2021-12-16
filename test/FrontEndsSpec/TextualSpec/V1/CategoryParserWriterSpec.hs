@@ -56,6 +56,13 @@ instance Q.Arbitrary MorphismTermType where
 instance Q.Arbitrary MorphismTerm where
     arbitrary = MorphismTerm <$> arbitrary <*> arbitrary
 
+instance Q.Arbitrary CategoryLevel where
+    arbitrary = do
+        some_integer <- arbitrary
+        Q.oneof [
+            return AnyLevel,
+            return $ Specific some_integer]
+
 arbitraryListOfSize :: Int -> Q.Gen [MorphismTerm]
 arbitraryListOfSize size_ = do
     head <- arbitrary
@@ -74,15 +81,14 @@ flexListOfMinSize min_size = do
 
 instance Q.Arbitrary Category where
   arbitrary = do
-        let isJustPos = (\x -> fmap (>= 0) x == Just True)
         arbitrary_name <- arbitrary :: Q.Gen Id
         let flexList = Q.sized $ \n -> Q.frequency [(1, (:) <$> arbitrary <*> arbitrary), (n, (:) <$> arbitrary <*> flexList)]
         Q.frequency [
             (10, Thing <$> arbitrary),
             -- (1, Morphism <$> arbitrary <*> arbitrary),
             (1, Composite <$> arbitrary <*> arbitrary),
-            (1, Placeholder <$> arbitrary <*> Q.suchThat arbitrary isJustPos <*> arbitrary),
-            (1, RefinedCategory <$> (Placeholder <$> arbitrary <*> Q.suchThat arbitrary isJustPos <*> arbitrary) <*> arbitrary),
+            (1, Placeholder <$> arbitrary <*> arbitrary <*> arbitrary),
+            (1, RefinedCategory <$> (Placeholder <$> arbitrary <*> arbitrary <*> arbitrary) <*> arbitrary),
             (3, Q.oneof [
                     return Special{special_type=Flexible},
                     return Special{special_type=Universal},

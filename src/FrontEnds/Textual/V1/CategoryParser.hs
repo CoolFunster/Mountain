@@ -77,9 +77,9 @@ pCategoryName = do
     return (Name name)
 
 pCategoryIdx :: Parser Id
-pCategoryIdx = do 
-    result <- between (symbol (pack "<")) (symbol (pack ">")) integer
-    return (Index (fromInteger result))
+pCategoryIdx = do
+    _ <- symbol $ pack "#"
+    Index . fromInteger <$> integer
 
 pCategoryLabel :: Parser Id
 pCategoryLabel = do
@@ -205,11 +205,17 @@ pSumposition = do
         then return $ head inner_categories
         else return Composite{composition_type=Sumposition, inner=inner_categories}
 
+pCategoryLevel :: Parser CategoryLevel
+pCategoryLevel = do
+    specific_result <- try $ optional $ between (symbol $ pack "<") (symbol $ pack ">") integer
+    case specific_result of
+        Nothing -> return AnyLevel
+        Just some_level -> return $ Specific some_level
+
 pPlaceholder :: Parser Category
 pPlaceholder = do
     name <- optional pCategoryName
-    level <- optional (between (symbol (pack "<")) (symbol (pack ">")) integer)
-    let ph_level = if isJust level then Just (fromInteger (fromJust level)) else Nothing
+    ph_level <- pCategoryLevel
     _ <- symbol (pack "@")
     category <- pCategory
     case name of

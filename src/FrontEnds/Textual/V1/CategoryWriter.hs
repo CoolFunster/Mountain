@@ -38,8 +38,9 @@ categoryToCharList (Composite Higher inner) = "^{" ++ intercalate "," (map categ
 categoryToCharList (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToCharList inner) ++ ")"
 categoryToCharList (Composite Sumposition inner) = "*|" ++ intercalate "," (map categoryToCharList inner) ++ "|"
 categoryToCharList m@Morphism{} = categoryToCharList $ morphismToIm m
-categoryToCharList (Placeholder name Nothing ph_category) = nameToText name ++ "@(" ++ categoryToCharList ph_category ++ ")"
-categoryToCharList (Placeholder name (Just level) ph_category) = nameToText name ++ "<" ++ show level ++ ">" ++ "@(" ++ categoryToCharList ph_category ++ ")"
+categoryToCharList (Placeholder name AnyLevel ph_category) = nameToText name ++ "@(" ++ categoryToCharList ph_category ++ ")"
+categoryToCharList (Placeholder name (Specific level) ph_category) = nameToText name ++ "<" ++ show level ++ ">" ++ "@(" ++ categoryToCharList ph_category ++ ")"
+categoryToCharList (Placeholder name Infinite ph_category) = nameToText name ++ "<INF>" ++ "@(" ++ categoryToCharList ph_category ++ ")"
 categoryToCharList RefinedCategory {base_category=_base_category, predicate=_predicate} = "{" ++ categoryToCharList _base_category ++ " | " ++ categoryToCharList _predicate ++ "}"
 categoryToCharList Special{special_type=Flexible} = "(%)"
 categoryToCharList Special{special_type=Universal} = "Any"

@@ -51,14 +51,14 @@ spec = do
             let b_to_c = parseCategoryString "given `b -> return `c"
             parseCategoryString "*|given `a -> return `b, given `b -> return `c|" `shouldBe` Composite{composition_type=Sumposition,inner=[a_to_b, b_to_c]}
         it "(Placeholder) should parse placeholders" $ do
-            parseCategoryString "x@`a" `shouldBe` Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")}
-            parseCategoryString "x@(`a)" `shouldBe` Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")}
-            parseCategoryString "x<1>@`a" `shouldBe` Placeholder{name=Name "x", ph_level=Just 1, ph_category=Thing (Name "a")}
-            parseCategoryString "x<1>@(`a)" `shouldBe` Placeholder{name=Name "x", ph_level=Just 1, ph_category=Thing (Name "a")}
-            parseCategoryString "@`a" `shouldBe` Placeholder{name=Unnamed, ph_level=Nothing, ph_category=Thing (Name "a")}
-            parseCategoryString "<1>@`a" `shouldBe` Placeholder{name=Unnamed, ph_level=Just 1, ph_category=Thing (Name "a")}
+            parseCategoryString "x@`a" `shouldBe` Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")}
+            parseCategoryString "x@(`a)" `shouldBe` Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")}
+            parseCategoryString "x<1>@`a" `shouldBe` Placeholder{name=Name "x", ph_level=Specific 1, ph_category=Thing (Name "a")}
+            parseCategoryString "x<1>@(`a)" `shouldBe` Placeholder{name=Name "x", ph_level=Specific 1, ph_category=Thing (Name "a")}
+            parseCategoryString "@`a" `shouldBe` Placeholder{name=Unnamed, ph_level=AnyLevel, ph_category=Thing (Name "a")}
+            parseCategoryString "<1>@`a" `shouldBe` Placeholder{name=Unnamed, ph_level=Specific 1, ph_category=Thing (Name "a")}
         it "(Refinement) should parse refinement" $ do
-            parseCategoryString "{x@(`a) | given `a -> return `b}" `shouldBe` RefinedCategory {base_category = Placeholder {name = Name "x", ph_level = Nothing, ph_category = Thing {name = Name "a"}}, predicate = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]}}
+            parseCategoryString "{x@(`a) | given `a -> return `b}" `shouldBe` RefinedCategory {base_category = Placeholder {name = Name "x", ph_level = AnyLevel, ph_category = Thing {name = Name "a"}}, predicate = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "b"}}]}}
         it "(Special) should parse flexible" $ do
             parseCategoryString "(%)" `shouldBe` Special{special_type=Flexible}
             parseCategoryString "test:(%)" `shouldBe` CategoryData.Label {name = Name "test", target = Special {special_type = Flexible}}

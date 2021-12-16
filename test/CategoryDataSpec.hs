@@ -29,27 +29,27 @@ spec = do
     describe "level" $ do
         it "(things) should have a level of zero" $ do
             let thing = Thing (Name "thing")
-            level thing `shouldBe` Just (0 :: Int)
+            level thing `shouldBe` Specific 0
         it "(higher categories) should have a level of 1 more than their parts" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
             let higher_category = Composite Higher [thing, thing2]
-            level higher_category `shouldBe` Just (1 :: Int)
+            level higher_category `shouldBe` Specific 1
         it "(Product categories) should have a level of their components" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
             let product_category = Composite Product [thing, thing2]
-            level product_category `shouldBe` Just (0 :: Int)
+            level product_category `shouldBe` Specific 0
         it "(Sum categories) should have a level of their components" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
             let sum_category = Composite Sum [thing, thing2]
-            level sum_category `shouldBe` Just (0 :: Int)
+            level sum_category `shouldBe` Specific 0
         it "(Morphisms) should have a level of their components" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
             let morphism = Morphism thing thing2
-            level morphism `shouldBe` Just (0 :: Int)
+            level morphism `shouldBe` Specific 0
     describe "has" $ do
         it "(things) should make equal things have each other" $ do
             let thing = Thing (Name "thing")
@@ -181,7 +181,7 @@ spec = do
             let a_c = Morphism a c
 
             let higher_category = Composite Higher [a,b,a_b,b_c]
-            let ph_hc = Placeholder (Name "ph-all") (Just 0) higher_category
+            let ph_hc = Placeholder (Name "ph-all") (Specific 0) higher_category
 
             has higher_category ph_hc `shouldBe` True
             has ph_hc higher_category  `shouldBe` False
@@ -251,14 +251,14 @@ spec = do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a_b = Composite Higher [a,b]
-            let x_elem_a_b = Placeholder (Name "x") (Just 0) a_b
+            let x_elem_a_b = Placeholder (Name "x") (Specific 0) a_b
             result <- execute x_elem_a_b
             result `shouldBe` x_elem_a_b
         it "(Placeholder) should just return the placeholder" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a_b = Composite Higher [a,b]
-            let x_elem_a_b = Placeholder (Name "x") (Just 0) a_b
+            let x_elem_a_b = Placeholder (Name "x") (Specific 0) a_b
             result <- execute x_elem_a_b
             result `shouldBe` x_elem_a_b
         it "(MorphismCall) should just call the morphism" $ do
@@ -322,5 +322,5 @@ spec = do
         it "should import intermediate morphisms " $ do
             let test_item = IntermediateMorphism [MorphismTerm{m_type=CategoryData.Import, m_category=Label{name=Name "l", target=Reference{name=Name "List"}}}]
             result <- importCategories test_item
-            result `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Definition, m_category = Label {name = Name "l", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = Nothing, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}}]}
+            result `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Definition, m_category = Label {name = Name "l", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = AnyLevel, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}}]}
             

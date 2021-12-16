@@ -31,10 +31,10 @@ spec = do
         it "(Morphism) should handle nested chains" $ do
             categoryToText (Morphism (Morphism (Thing (Name "a")) (Thing (Name "b"))) (Thing (Name "b"))) `shouldBe` "given (given `a -> return `b) -> return `b" 
         it "(Placeholder) should write placeholders" $ do
-            categoryToText Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")} `shouldBe` "x@(`a)"
-            categoryToText Placeholder{name=Name "x", ph_level=Just 1, ph_category=Thing (Name "a")} `shouldBe` "x<1>@(`a)" 
+            categoryToText Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")} `shouldBe` "x@(`a)"
+            categoryToText Placeholder{name=Name "x", ph_level=Specific 1, ph_category=Thing (Name "a")} `shouldBe` "x<1>@(`a)" 
         it "(Refinement) should write refinement" $ do
-            categoryToText RefinedCategory{base_category=Placeholder{name=Name "x", ph_level=Nothing, ph_category=Thing (Name "a")}, predicate=Morphism{input=Thing (Name "a"), output=Thing (Name "b")}} `shouldBe` "{x@(`a) | given `a -> return `b}" 
+            categoryToText RefinedCategory{base_category=Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")}, predicate=Morphism{input=Thing (Name "a"), output=Thing (Name "b")}} `shouldBe` "{x@(`a) | given `a -> return `b}" 
         it "(Special) should write flexible" $ do
             categoryToText Special{special_type=Flexible} `shouldBe` "(%)"
         it "(Special) should write Universal" $ do

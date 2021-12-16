@@ -27,6 +27,20 @@ data CompositionType =
     Sumposition -- a case statement of functions (a->b, b->c = a->c)
     deriving (Show, Eq)
 
+data CategoryLevel =
+    Infinite |
+    AnyLevel |
+    Specific Integer
+    deriving (Eq, Show)
+
+instance Ord CategoryLevel where
+    (compare) (Specific a) (Specific b)  = compare a b
+    (compare) Infinite (Specific b) = GT
+    (compare) Infinite Infinite = EQ 
+    (compare) (Specific b) Infinite = LT
+    (compare) AnyLevel _ = EQ 
+    (compare) _ AnyLevel = EQ 
+
 data Category =
     -- categories
     Thing { name::Id } | -- a concrete object
@@ -40,7 +54,7 @@ data Category =
     } |
     Placeholder {
         name::Id,
-        ph_level::Maybe Int, -- if nothing then is interpreted as any level
+        ph_level::CategoryLevel, -- if nothing then is interpreted as any level
         ph_category::Category
     } |
     RefinedCategory {
@@ -190,7 +204,7 @@ freeVariables MorphismCall{base_morphism=bm, argument=a} = freeVariables bm ++ f
 freeVariables f@Special{} = []
 freeVariables r@Reference{} = [r]
 freeVariables RefinedCategory{base_category=bc} = freeVariables bc
-freeVariables Dereference{base_category=bc, category_id=_category_id} = 
+freeVariables Dereference{base_category=bc, category_id=_category_id} =
     case dereference _category_id bc of
         Just something -> freeVariables something
         _ -> []
@@ -216,7 +230,7 @@ replace base_expr old new
             l@Label{name=name, target=target} -> l{target=replace target old new}
             Membership{big_category=bc, small_category=sc} -> Membership{big_category=replace bc old new, small_category=replace sc old new}
             RefinedCategory {base_category=bc, predicate=p} -> RefinedCategory{base_category=replace bc old new, predicate=replace p old new}
-            IntermediateMorphism{chain=im_chain} -> IntermediateMorphism{chain=map replaceMorphismTerm im_chain <*> [old] <*> [new]} 
+            IntermediateMorphism{chain=im_chain} -> IntermediateMorphism{chain=map replaceMorphismTerm im_chain <*> [old] <*> [new]}
 
 replaceReferences :: Category -> Category -> Category
 replaceReferences base_expr l@Label{name=label_name, target=c_target} = replace base_expr Reference{name=label_name} (unfold Recursive l)
@@ -238,13 +252,13 @@ dereference id t@Thing{name=t_name}
     | otherwise = Nothing
 dereference id p@Placeholder{name=p_name,ph_category=ph_category}
     | id == p_name = Just p
-    | otherwise = 
+    | otherwise =
         case dereference id ph_category of
             Nothing -> Nothing
             Just something -> Just p{name=Unnamed, ph_category=something}
 dereference id r@Reference{name=r_name}
     | id == r_name = Just r
-    | otherwise = Just Special{special_type=Flexible}
+    | otherwise = Nothing
 dereference id c@Composite{inner=inner} =
     case id of
         Index idx -> Just (inner!!idx)
@@ -258,17 +272,25 @@ dereference id m@Morphism{input=input, output=output} =
         Name "input" -> Just input
         Name "output" -> Just output
         _ -> Nothing
-dereference id m@IntermediateMorphism{chain=[]} = Nothing 
-dereference id m@IntermediateMorphism{chain=[head,tail]} = 
+dereference id m@IntermediateMorphism{chain=[]} = Nothing
+dereference id m@IntermediateMorphism{chain=[head,tail]} =
     case id of
         Name "input" -> Just (m_category head)
         Name "output" -> Just (m_category tail)
         _ -> Nothing
-dereference id m@IntermediateMorphism{chain=(head:tail)} = 
+dereference id m@IntermediateMorphism{chain=(head:tail)} =
     case id of
         Name "input" -> Just (m_category head)
         Name "output" -> Just (IntermediateMorphism{chain=tail})
         _ -> Nothing
+dereference id d@Dereference{base_category=bc,category_id=c_id} = 
+    let
+        intermediate_deref = dereference c_id bc
+    in
+    case intermediate_deref of
+        Nothing -> Nothing
+        Just some_category -> dereference id some_category
+dereference id f@Special{special_type=Flexible} = Just f
 dereference id other = Nothing
 
 asMorphism :: Category -> Category
@@ -287,37 +309,39 @@ asMorphism input_category
             im@IntermediateMorphism{} -> imToMorphism im
             something -> error $ "Missing definition in isMorphic: " ++ show something
 
-level :: Category -> Maybe Int
+level :: Category -> CategoryLevel
 level input_category =
     let
-        getInnerLevel inner_categories =
-            case mapMaybe level inner_categories of
-                [] -> Nothing
-                levels -> Just $ maximum levels
+        getInnerLevel [] = AnyLevel
+        getInnerLevel inner_categories = maximum $ map level inner_categories
+        incrementLevel some_level = 
+            case some_level of
+                Specific l -> Specific (1 + l)
+                anything_else -> anything_else
         basicLevel a_category =
             case input_category of
-                (Thing t) -> Just 0
-                (Composite Higher inner) -> Just (+1) <*> getInnerLevel inner
+                (Thing t) -> Specific 0
+                (Composite Higher inner) -> incrementLevel (getInnerLevel inner)
                 (Composite _ inner) -> getInnerLevel inner
                 Morphism{input=input,output=output} -> getInnerLevel [input, output]
                 Placeholder{ph_level=ph_level} -> ph_level
-                m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else Nothing
-                Special{} -> Nothing
-                Reference{} -> Nothing
+                m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else getInnerLevel [bm, a]
+                Special{special_type=Flexible} -> AnyLevel
+                Special{special_type=Universal} -> Infinite
+                Reference{} -> AnyLevel
                 Label{target=target} -> level target
-                Dereference{base_category=bc,category_id=id} -> level bc
+                Dereference{base_category=bc,category_id=id} -> 
+                    case dereference id bc of
+                        Nothing -> level bc
+                        Just something -> level something
                 RefinedCategory {base_category=_base_category, predicate=_predicate} -> level _base_category
-                Membership {small_category=sc} -> level sc 
+                Membership {small_category=sc} -> level sc
                 im@IntermediateMorphism{} -> level (asMorphism im)
     in
-        if isRecursiveCategory input_category then Just (+1) <*> basicLevel input_category else basicLevel input_category
+        if isRecursiveCategory input_category 
+            then incrementLevel (basicLevel input_category) 
+            else basicLevel input_category
 
-levelIsContained :: Maybe Int -> Maybe Int -> Bool 
--- candidate category, contained category
-levelIsContained Nothing Nothing = True
-levelIsContained Nothing (Just _) = True
-levelIsContained (Just _) Nothing = False
-levelIsContained (Just a) (Just b) = a < b
 -- useful categories
 
 valid :: Category
@@ -335,7 +359,7 @@ flex = Special{special_type=Flexible}
 -- Intermediate morphism representation for parsing
 
 data MorphismTermType = Import | Given | Definition | Return deriving (Show, Eq)
-data MorphismTerm = 
+data MorphismTerm =
     MorphismTerm {
         m_type::MorphismTermType,
         m_category::Category
@@ -364,7 +388,7 @@ morphismToIm something_else = error $ "morphismToIm must take in a Morphism spec
 
 replaceMorphismTerm :: MorphismTerm -> Category -> Category -> MorphismTerm
 replaceMorphismTerm mt@MorphismTerm{m_category=base_category} old_category new_category = mt{m_category=replace base_category old_category new_category}
-replaceMorphismTerm MorphismTermChain{c_input=input, c_output=output} old_category new_category = MorphismTermChain{c_input=replaceMorphismTerm input old_category new_category, c_output=replaceMorphismTerm output old_category new_category} 
+replaceMorphismTerm MorphismTermChain{c_input=input, c_output=output} old_category new_category = MorphismTermChain{c_input=replaceMorphismTerm input old_category new_category, c_output=replaceMorphismTerm output old_category new_category}
 
 isMorphismTermOfTypes :: [MorphismTermType] -> MorphismTerm -> Bool
 isMorphismTermOfTypes allowable_term_types morphism_term = m_type morphism_term `elem` allowable_term_types

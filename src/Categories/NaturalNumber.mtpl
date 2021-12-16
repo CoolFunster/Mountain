@@ -4,7 +4,7 @@ NaturalNumber:
         nonzero: (head:(), rest:$nat_data)
     |
     -> define (increment: given x@$nat_data -> return $nat_data::((), $x))
-    -> define (decrement: given x@$nat_data.nonzero -> return $x.<1>)
+    -> define (decrement: given x@$nat_data.nonzero -> return $x.#1)
     -> return (
         Nat:$nat_data,
         increment: $increment,

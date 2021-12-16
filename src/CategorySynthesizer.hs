@@ -12,10 +12,10 @@ isNotPossible = Synthesizers.Synthesizer.isNotPossible
 isUnknown = Synthesizers.Synthesizer.isUnknown
 
 sample :: Category -> Category
-sample p@Placeholder{ph_level=Nothing, ph_category=category} = sample p{ph_level=Just 0}
-sample p@Placeholder{ph_level=Just desired_level, ph_category=ph_category}
-    | level ph_category == Just desired_level = ph_category
-    | level ph_category < Just desired_level = error "bad synthesis question"
+sample p@Placeholder{ph_level=AnyLevel, ph_category=category} = sample p{ph_level=Specific 0}
+sample p@Placeholder{ph_level=Specific desired_level, ph_category=ph_category}
+    | level ph_category == Specific desired_level = ph_category
+    | level ph_category < Specific desired_level = error "bad synthesis question"
     | otherwise = sample p{ph_category=reduce ph_category}
 sample other = error "unsupported"
 
@@ -27,14 +27,14 @@ reduce c@Composite{composition_type=Higher, inner=inner_cats} = head inner_cats
 reduce c@Composite{composition_type=Composition} = asMorphism c
 reduce c@Composite{composition_type=Sumposition, inner=inner_cats} = asMorphism c
 reduce m@Morphism{input=input_cat, output=output_cat}
-    | isNothing $ level m = error "bad morphism"
-    | level m == Just 0 = m
+    | AnyLevel == level m = error "bad morphism"
+    | level m == Specific 0 = m
     | otherwise = (unfold Recursive m){input=reduce input_cat, output=reduce output_cat}
 reduce p@Placeholder{ph_level=needed_level, ph_category=ph_cat}
-    | isNothing needed_level || isNothing (level ph_cat) = error "No idea what usecase this is"
+    | AnyLevel == needed_level || AnyLevel == level ph_cat = error "No idea what usecase this is"
     | level ph_cat == needed_level = reduce ph_cat
-    | otherwise = 
-        let 
+    | otherwise =
+        let
             reduced_cat = reduce ph_cat
         in
             if level reduced_cat == needed_level
@@ -55,7 +55,7 @@ synthesizeCategory = synthesize [sequentSynthesizer]
 
 -- extractSynthesisProblem :: Category -> Category -> Maybe ([Category], Category)
 -- extractSynthesisProblem s@Special{name=s_name, special_type=Flexible} input_category 
---     | input_category == s = Just ([valid], Placeholder{name=s_name, ph_level=Nothing, ph_category=Special{special_type=Universal}})
+--     | input_category == s = Just ([valid], Placeholder{name=s_name, ph_level=AnyLevel, ph_category=Special{special_type=Universal}})
 --     | not $ s `elem` freeVariables input_category = Nothing
 --     | otherwise = 
 --         case input_category of
@@ -79,7 +79,7 @@ synthesizeCategory = synthesize [sequentSynthesizer]
 --                     ph_problem = snd result
 --                 in
 --                     case ph_problem of
---                         p@Placeholder{ph_level=Nothing} -> Just (fst result, p{ph_level=level})
+--                         p@Placeholder{ph_level=AnyLevel} -> Just (fst result, p{ph_level=level})
 --                         p@Placeholder{ph_level=Just ph_level} -> 
 --                             if ph_level == level then result 
 --                             else error "Bad levels in synthesis!!!!"

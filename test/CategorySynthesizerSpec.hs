@@ -22,6 +22,6 @@ spec = do
     describe "sample" $ do
         it "(Thing) requesting a thing of level 0 should return a thing" $ do
             let a = Thing (Name "a")
-            sample (Placeholder (Name "something") (Just 0) a) `shouldBe` a
+            sample (Placeholder (Name "something") (Specific 0) a) `shouldBe` a
         it "(Higher) requesting a thing of a recursive type should return that thing" $ do
-            sample (Placeholder (Name "x") (Just 0) nat) `shouldBe` fromJust (dereference (Name "0") (target nat))
+            sample (Placeholder (Name "x") (Specific 0) nat) `shouldBe` fromJust (dereference (Name "0") (target nat))

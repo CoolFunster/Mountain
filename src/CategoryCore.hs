@@ -18,7 +18,8 @@ equal a b = a == b || a `has` b && b `has` a
 
 -- has (containing expr, inner expr)
 tracedHas :: Category -> Category -> Bool
-tracedHas a b = trace ("big: " ++ categoryToStr a ++ "\nsmall: " ++ categoryToStr b ++ "\n") (has a b)
+-- tracedHas a b = trace ("big: " ++ categoryToStr a ++ "\nsmall: " ++ categoryToStr b ++ "\n") (has a b)
+tracedHas = has
 
 has :: Category -> Category -> Bool
 has big_category small_category
@@ -29,7 +30,7 @@ has big_category small_category
     | Reference{} <- small_category = True
     | Label{target=t} <- big_category = CategoryCore.tracedHas t small_category
     | Label{target=t} <- small_category = CategoryCore.tracedHas big_category t
-    | isJust (level big_category) && isJust (level small_category) && level big_category < level small_category = False
+    | level big_category < level small_category = False
     | Placeholder{ph_level=ph_level, ph_category=ph_category} <- small_category = (ph_level <= level big_category) && CategoryCore.tracedHas big_category ph_category
     | (Composite _ [category]) <- big_category = CategoryCore.tracedHas category small_category
     | (Composite _ [category]) <- small_category = CategoryCore.tracedHas big_category category
@@ -60,10 +61,7 @@ has big_category small_category
             has_inner c_big@Composite{composition_type=Composition} other_category = CategoryCore.tracedHas (asMorphism c_big) other_category
             has_inner (Composite Sumposition sump_inner) other_category = or $ map CategoryCore.tracedHas sump_inner <*> [other_category]
             {- Placeholders -}
-            has_inner Placeholder{ph_level=ph_level,ph_category=ph_category} other_category =
-                case (ph_level, level other_category) of
-                    (Just level, Just other_level) -> level <= other_level && CategoryCore.tracedHas other_category ph_category
-                    _ -> error "Bad leveling!"
+            has_inner Placeholder{ph_level=ph_level,ph_category=ph_category} other_category = ph_level <= level other_category && CategoryCore.tracedHas other_category ph_category
             has_inner mc@MorphismCall{base_morphism=bm, argument=a} other =
                 let
                     call_result = call bm a
@@ -94,15 +92,14 @@ validCategory c@(Composite comp_type inner) = do
     let bad_null_inner = _makeErrorMsg (comp_type `elem` [Sumposition, Composition, Higher] && null inner) (show comp_type ++ " must contain function values. Given empty inner in " ++ show c)
     let all_is_morphic = _makeErrorMsg ((comp_type `elem` [Sumposition, Composition]) && not (all isMorphic inner)) ("Not all elements are morphic in " ++ show c)
     _concatenateErrors $ [bad_null_inner, all_is_morphic] ++ map validCategory inner
-validCategory ph@(Placeholder _ (Just ph_level) ph_category) = do
-    let ph_level_error = if ph_level < 0 then Just ["Ph level is less than zero. " ++ show ph_level ++ " in " ++ show ph] else Nothing
-    let ph_level_error2 = if ph_level > fromJust (level ph_category) then Just ["ph_level " ++ show ph_level ++ " is greater than category level " ++ show (level ph_category) ++ " in " ++ show ph] else Nothing
+validCategory ph@(Placeholder _ ph_level ph_category) = do
+    let ph_level_error = if ph_level < Specific 0 then Just ["Ph level is less than zero. " ++ show ph_level ++ " in " ++ show ph] else Nothing
+    let ph_level_error2 = if ph_level > level ph_category then Just ["ph_level " ++ show ph_level ++ " is greater than category level " ++ show (level ph_category) ++ " in " ++ show ph] else Nothing
     _concatenateErrors [ph_level_error, ph_level_error2, validCategory ph_category]
-validCategory (Placeholder _ Nothing ph_category) = validCategory ph_category
 validCategory MorphismCall{base_morphism=bm, argument=a} = do
     let invalid_arg_error = if not (a `isValidArgumentTo` bm) then Just ["Invalid argument. " ++ show a ++ " is not a valid argument to " ++ show bm] else Nothing
     _concatenateErrors [validCategory bm, validCategory a , invalid_arg_error]
-validCategory d@Dereference{base_category=bc, category_id=id} = if isNothing (dereference id bc) then Just ["Dereference not valid in " ++ show d] else Nothing
+validCategory d@Dereference{base_category=bc, category_id=id} =  Nothing--if isNothing (dereference id bc) then Just ["Dereference not valid in " ++ show d] else Nothing
 validCategory l@Label{name=l_name, target=l_target} = do
     let bad_name = if not $ isName l_name then Just ["Labels must have proper Names. Bad name in " ++ show l] else Nothing
     -- let bad_target = if isNamedCategory l_target then Just ["Labelled a category which already has a name in " ++ show l] else Nothing
@@ -125,7 +122,8 @@ validCategory other = Just ["validCategory Not implemented for " ++ show other]
 isSubstitutable :: Category -> Category -> Bool
 isSubstitutable base_category argument =
     case base_category of
-        Placeholder{ph_level=ph_level, ph_category=category} -> ph_level `levelIsContained` level argument && category `has` argument
+        Placeholder{ph_level=s@(Specific l), ph_category=category} -> level argument == s && category `has` argument
+        Placeholder{ph_level=other_level, ph_category=category} -> level argument <= other_level && category `has` argument
         c@Composite{composition_type=Sum, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
         c@Composite{composition_type=Sumposition, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
         Special{} -> True
@@ -155,7 +153,6 @@ call m@IntermediateMorphism{chain=(MorphismTerm{m_type=Given,m_category=given_ca
             [MorphismTerm{m_type=Return, m_category=return_category}] -> Just return_category
             _ -> Just $ IntermediateMorphism replaced_tail
     | otherwise = Nothing
-
 call m@IntermediateMorphism{chain=other} input_category = Nothing
 call c@(Composite Composition _) input_category = call (asMorphism c) input_category
 call (Composite Sumposition inner_functions) input_category = tryFunctions input_category (map call inner_functions)
@@ -183,8 +180,7 @@ simplify (Morphism input output) = Morphism (simplify input) (simplify output)
 simplify (Composite _ [any]) = simplify any
 simplify (Composite composite_type inner) = Composite composite_type (map simplify inner)
 simplify ph@(Placeholder placeholder_name ph_level ph_category)
-    | isNothing ph_level && ph_category == valid = ph
-    | ph_level == level ph_category = simplify ph_category
+    | ph_level == level ph_category && ph_level /= AnyLevel = simplify ph_category
     | otherwise = Placeholder placeholder_name ph_level (simplify ph_category)
 simplify mc@MorphismCall{base_morphism=bm, argument=a} = MorphismCall (simplify bm) (simplify a)
 simplify l@Label{target=target} = l{target=simplify target}
@@ -194,7 +190,7 @@ simplify i@IntermediateMorphism{chain=chain} = do
     case simplified_inners of
         [MorphismTerm{m_type=Return, m_category=category}] -> category
         _ -> IntermediateMorphism{chain=simplified_inners}
-simplify d@Dereference{base_category=bc, category_id=c_id} = 
+simplify d@Dereference{base_category=bc, category_id=c_id} =
     let
         result = dereference c_id bc
     in
@@ -220,6 +216,7 @@ evaluate r@Reference{} = r
 evaluate l@Label{name=name, target=target}
     | isRecursiveCategory l = replace target Reference{name=name} l
     | otherwise = l
+evaluate m@Membership{big_category=bc, small_category=sc} = evaluate sc
 evaluate other = error $ "evaluate Not Implemented yet on " ++ show other
 
 importPathToCategoryPath :: [Char] -> [Char]
@@ -291,7 +288,5 @@ execute input_category =
         Just errors -> error $ "Some semantic errors: \n" ++ unlines errors ++ "\n Found in: " ++ show input_category
         Nothing -> do
             import_replaced <- importCategories input_category
-            print $ categoryToStr import_replaced
             let simplified = simplify import_replaced
-            print $ categoryToStr simplified
             return $ evaluate simplified
