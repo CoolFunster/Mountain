@@ -24,18 +24,18 @@ data Synthesizer a = Synthesizer {
 
 synthesize :: [Synthesizer a] -> a -> a -> SynthesisResult a
 synthesize [] _ _ = Unknown []
-synthesize solver_list big_category small_category = 
+synthesize solver_list big_category small_category =
     case head_result of
-        Unknown head_unknown -> 
+        Unknown head_unknown ->
             case synthesize (tail solver_list) big_category small_category of
                 Unknown tail_unknown -> Unknown (head_unknown ++ tail_unknown)
                 NotPossible -> NotPossible
                 Answer x -> Answer x
         NotPossible -> NotPossible
-        Answer x -> Answer x 
-    where 
-        solve big_category small_category solver = 
-            if (applicable solver) big_category small_category 
-                then (synthesizer solver) big_category small_category
+        Answer x -> Answer x
+    where
+        solve big_category small_category solver =
+            if applicable solver big_category small_category
+                then synthesizer solver big_category small_category
                 else Unknown []
         head_result = solve big_category small_category (head solver_list)

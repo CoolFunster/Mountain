@@ -287,9 +287,9 @@ dereference id d@Dereference{base_category=bc,category_id=c_id} =
     let
         intermediate_deref = dereference c_id bc
     in
-    case intermediate_deref of
-        Nothing -> Nothing
-        Just some_category -> dereference id some_category
+        case intermediate_deref of
+            Nothing -> Nothing
+            Just some_category -> dereference id some_category
 dereference id f@Special{special_type=Flexible} = Just f
 dereference id other = Nothing
 
@@ -371,10 +371,7 @@ data MorphismTerm =
 
 -- NEXT TODO: Fix this to handle definitions and replacing things in the chain
 imToMorphism :: Category -> Category
-imToMorphism IntermediateMorphism{chain=[]} = error "empty morphism chain list?"
-imToMorphism IntermediateMorphism{chain=[something]} = error "single morphism chain list?"
-imToMorphism IntermediateMorphism{chain=[head,tail]} = Morphism{input=m_category head, output=m_category tail}
-imToMorphism IntermediateMorphism{chain=(head:tail)} = Morphism{input=m_category head, output=imToMorphism IntermediateMorphism{chain=tail}}
+imToMorphism IntermediateMorphism{chain=chain} = morphismTermListToCategory chain
 imToMorphism somthing_weird = error $ "Only supports Intermediate Morphisms. Passed in " ++ show somthing_weird
 
 morphismToTermList :: Category -> [MorphismTerm]
@@ -404,3 +401,22 @@ validMorphismTermSequence populated_term_list = and ([
         isMorphismTermOfTypes [Import, Given, Definition, Return] (head populated_term_list),
         isMorphismTermOfTypes [Return] (last populated_term_list)
     ] ++ map (isMorphismTermOfTypes [Given,Definition,Return]) (tail populated_term_list))
+
+makeNoDefMorphismTermSequence :: [MorphismTerm] -> [MorphismTerm]
+makeNoDefMorphismTermSequence [] = []
+makeNoDefMorphismTermSequence (m@MorphismTermChain{}:rest) = makeNoDefMorphismTermSequence $ uncurryMorphismTermChain m ++ makeNoDefMorphismTermSequence rest
+makeNoDefMorphismTermSequence (MorphismTerm{m_type=Definition, m_category=Label{name=l_name, target=t_category}}:rest) = makeNoDefMorphismTermSequence $ map replaceMorphismTerm rest <*> [Reference{name=l_name}] <*> [t_category]
+makeNoDefMorphismTermSequence (MorphismTerm{m_type=Definition, m_category=other}:rest) = rest
+makeNoDefMorphismTermSequence (other:rest) = other:makeNoDefMorphismTermSequence rest
+
+morphismTermListToCategory :: [MorphismTerm] -> Category
+morphismTermListToCategory input_list =
+    let 
+        removed_defs = makeNoDefMorphismTermSequence input_list
+    in
+        case removed_defs of
+            [] -> error "bad term list to category []"
+            [MorphismTerm{m_type=Return, m_category=cat}] -> cat
+            s@[other] -> error $ "bad term list to category " ++ show s
+            [head,tail] -> Morphism{input=m_category head, output=m_category tail}
+            (head:tail) -> Morphism{input=m_category head, output=morphismTermListToCategory tail}
