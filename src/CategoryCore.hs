@@ -136,8 +136,11 @@ isValidArgumentTo input_argument input_morphic_category
     | otherwise = input (asMorphism input_morphic_category) `isSubstitutable` input_argument
 
 call :: Category -> Category -> Maybe Category
+call m@(Morphism p@Placeholder{name=p_name} output) input_category
+    | isValidArgumentTo input_category m = Just (replace output Reference{name=p_name} input_category)
+    | otherwise = Nothing
 call m@(Morphism input output) input_category
-    | isValidArgumentTo input_category m = Just (replace output input input_category)
+    | isValidArgumentTo input_category m = Just output
     | otherwise = Nothing
 call m@IntermediateMorphism{chain=(MorphismTerm{m_type=Given,m_category=given_category}:tail)} input_category
     | isValidArgumentTo given_category m =

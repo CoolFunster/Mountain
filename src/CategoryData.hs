@@ -36,10 +36,10 @@ data CategoryLevel =
 instance Ord CategoryLevel where
     (compare) (Specific a) (Specific b)  = compare a b
     (compare) Infinite (Specific b) = GT
-    (compare) Infinite Infinite = EQ 
+    (compare) Infinite Infinite = EQ
     (compare) (Specific b) Infinite = LT
-    (compare) AnyLevel _ = EQ 
-    (compare) _ AnyLevel = EQ 
+    (compare) AnyLevel _ = EQ
+    (compare) _ AnyLevel = EQ
 
 data Category =
     -- categories
@@ -191,6 +191,48 @@ getName input_category
 
 -- some basic functionality on categories
 
+level :: Category -> CategoryLevel
+level input_category =
+    let
+        getInnerLevel [] = Specific 0
+        getInnerLevel inner_categories = 
+            case filter (AnyLevel /=) (map level inner_categories) of
+                [] -> AnyLevel 
+                other_levels -> maximum other_levels  
+        incrementLevel some_level =
+            case some_level of
+                Specific l -> Specific (1 + l)
+                anything_else -> anything_else
+        basicLevel a_category =
+            case input_category of
+                (Thing t) -> Specific 0
+                (Composite Higher inner) -> incrementLevel (getInnerLevel inner)
+                (Composite _ inner) -> getInnerLevel inner
+                m@Morphism{input=p@Placeholder{name=name, ph_category=ph_cat},output=output} -> getInnerLevel [p, replace output Reference{name=name} p{ph_level=level ph_cat}]
+                m@Morphism{input=input,output=output} -> getInnerLevel [input, output]
+                Placeholder{ph_level=AnyLevel, ph_category=ph_c} -> level ph_c 
+                Placeholder{ph_level=other} -> other
+                m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else getInnerLevel [bm, a]
+                Special{special_type=Flexible} -> AnyLevel
+                Special{special_type=Universal} -> Infinite
+                Reference{} -> AnyLevel
+                l@Label{target=target} -> 
+                    if isRecursiveCategory l 
+                        then do 
+                            let unfolded = unfold Flat l
+                            incrementLevel $ level unfolded
+                        else
+                            level target 
+                Dereference{base_category=bc,category_id=id} ->
+                    case dereference id bc of
+                        Nothing -> level bc
+                        Just something -> level something
+                RefinedCategory {base_category=_base_category, predicate=_predicate} -> level _base_category
+                Membership {small_category=sc} -> level sc
+                im@IntermediateMorphism{} -> level (asMorphism im)
+    in
+        basicLevel input_category
+
 isRecursiveCategory :: Category -> Bool
 isRecursiveCategory Label{name=rec_name,target=rec_category} = rec_name `elem` map name (freeVariables rec_category)
 isRecursiveCategory _ = False
@@ -235,7 +277,7 @@ replace base_expr old new
 replaceReferences :: Category -> Category -> Category
 replaceReferences base_expr l@Label{name=label_name, target=c_target} = replace base_expr Reference{name=label_name} (unfold Recursive l)
 replaceReferences base_expr p@Placeholder{name=ph_name} = replace base_expr Reference{name=ph_name} p
-replaceReferences be l = error $ "bad replace references: " ++ show be ++ " replacing " ++ show l
+replaceReferences be l = error $ "ReplaceReferences error. Cannot replace non label/ph in: \n" ++ show be ++ "\n With attempted label/ph: \n" ++ show l
 
 data UnfoldType = Flat | Recursive
 unfold :: UnfoldType -> Category -> Category
@@ -283,7 +325,7 @@ dereference id m@IntermediateMorphism{chain=(head:tail)} =
         Name "input" -> Just (m_category head)
         Name "output" -> Just (IntermediateMorphism{chain=tail})
         _ -> Nothing
-dereference id d@Dereference{base_category=bc,category_id=c_id} = 
+dereference id d@Dereference{base_category=bc,category_id=c_id} =
     let
         intermediate_deref = dereference c_id bc
     in
@@ -308,39 +350,6 @@ asMorphism input_category
             Label{target=target} -> asMorphism target
             im@IntermediateMorphism{} -> imToMorphism im
             something -> error $ "Missing definition in isMorphic: " ++ show something
-
-level :: Category -> CategoryLevel
-level input_category =
-    let
-        getInnerLevel [] = AnyLevel
-        getInnerLevel inner_categories = maximum $ map level inner_categories
-        incrementLevel some_level = 
-            case some_level of
-                Specific l -> Specific (1 + l)
-                anything_else -> anything_else
-        basicLevel a_category =
-            case input_category of
-                (Thing t) -> Specific 0
-                (Composite Higher inner) -> incrementLevel (getInnerLevel inner)
-                (Composite _ inner) -> getInnerLevel inner
-                Morphism{input=input,output=output} -> getInnerLevel [input, output]
-                Placeholder{ph_level=ph_level} -> ph_level
-                m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else getInnerLevel [bm, a]
-                Special{special_type=Flexible} -> AnyLevel
-                Special{special_type=Universal} -> Infinite
-                Reference{} -> AnyLevel
-                Label{target=target} -> level target
-                Dereference{base_category=bc,category_id=id} -> 
-                    case dereference id bc of
-                        Nothing -> level bc
-                        Just something -> level something
-                RefinedCategory {base_category=_base_category, predicate=_predicate} -> level _base_category
-                Membership {small_category=sc} -> level sc
-                im@IntermediateMorphism{} -> level (asMorphism im)
-    in
-        if isRecursiveCategory input_category 
-            then incrementLevel (basicLevel input_category) 
-            else basicLevel input_category
 
 -- useful categories
 
@@ -411,7 +420,7 @@ makeNoDefMorphismTermSequence (other:rest) = other:makeNoDefMorphismTermSequence
 
 morphismTermListToCategory :: [MorphismTerm] -> Category
 morphismTermListToCategory input_list =
-    let 
+    let
         removed_defs = makeNoDefMorphismTermSequence input_list
     in
         case removed_defs of

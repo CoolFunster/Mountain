@@ -7,7 +7,8 @@ import CategoryCore
 import FrontEnds.Textual.V1.CategoryParser
 import FrontEnds.Textual.V1.CategoryWriter
 import Data.Maybe
-import CategoryCore
+
+import CategorySampler
 
 spec :: Spec
 spec = do

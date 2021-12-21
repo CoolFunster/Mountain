@@ -4,11 +4,12 @@ import Test.Hspec
 import CategoryData
 import CategoryCore
 
-import FrontEnds.Textual.V1.CategoryWriter (categoryToText)
+import FrontEnds.Textual.V1.CategoryWriter (categoryToText, categoryToStr)
 
 import Data.Maybe (fromJust)
 import Language.Python.Common.AST (Expr(Tuple))
 import CategoryCore (importCategories)
+import FrontEnds.Textual.V1.CategoryParser (parseCategoryString)
 
 -- TODO Split into respective files
 
@@ -50,6 +51,14 @@ spec = do
             let thing2 = Thing (Name "thing2")
             let morphism = Morphism thing thing2
             level morphism `shouldBe` Specific 0
+        it "(Recursive) recursive categories should have an appropriate level" $ do
+            let thing = Thing (Name "thing")
+            let recursive_cat = Label{name=Name "self", target=Composite{composition_type=Product,inner=[thing, Reference{name=Name "self"}]}}
+            isRecursiveCategory recursive_cat `shouldBe` True
+            level recursive_cat `shouldBe` Specific 1
+        it "(Example 1) should have correct level" $ do
+            let result = parseCategoryString "given x@(|zero:(),nonzero:(head:(),rest:nat_data:|zero:(),nonzero:(head:(),rest:$nat_data)|)|) -> return (|zero:(),nonzero:(head:(),rest:nat_data:|zero:(),nonzero:(head:(),rest:$nat_data)|)|)::(((),$x))"
+            level result `shouldBe` Specific 1
     describe "has" $ do
         it "(things) should make equal things have each other" $ do
             let thing = Thing (Name "thing")
