@@ -194,6 +194,16 @@ spec = do
 
             has higher_category ph_hc `shouldBe` True
             has ph_hc higher_category  `shouldBe` False
+        it "(example) should have" $ do
+            let cat1 = parseCategoryString "nat_data:|(),((),$nat_data)|"
+            let cat2 = parseCategoryString "((),nat_data:|(),((),$nat_data)|)"
+            cat1 `tracedHas` cat2 `shouldBe` True
+    describe "isSubstitutable" $ do
+        it "(example 1) should be valid" $ do
+            let morph_input = parseCategoryString "x@(((),nat_data:|(),((),$nat_data)|))"
+            let arg = parseCategoryString "x@(((),((),nat_data:|(),((),$nat_data)|)))"
+            morph_input `tracedHas` arg `shouldBe` False
+            arg `isSubstitutable` morph_input `shouldBe` False
     describe "call" $ do
         it "(NonMorphism) should return Nothing" $ do
             let a = Thing (Name "a")
@@ -332,4 +342,7 @@ spec = do
             let test_item = IntermediateMorphism [MorphismTerm{m_type=CategoryData.Import, m_category=Label{name=Name "l", target=Reference{name=Name "List"}}}]
             result <- importCategories test_item
             result `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Definition, m_category = Label {name = Name "l", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = AnyLevel, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}}]}
-            
+    describe "RecursiveCategory" $ do
+        it "(isRecursiveCat) example 1 " $ do
+            let parsed = parseCategoryString "nat_data:|zero:(),nonzero:(head:(),rest:$nat_data)|"
+            isRecursiveCategory parsed `shouldBe` True

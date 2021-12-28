@@ -18,8 +18,8 @@ equal a b = a == b || a `has` b && b `has` a
 
 -- has (containing expr, inner expr)
 tracedHas :: Category -> Category -> Bool
--- tracedHas a b = trace ("big: " ++ categoryToStr a ++ "\nsmall: " ++ categoryToStr b ++ "\n") (has a b)
-tracedHas = has
+tracedHas a b = trace ("big: " ++ categoryToStr a ++ "\nsmall: " ++ categoryToStr b ++ "\n") (has a b)
+-- tracedHas = has
 
 has :: Category -> Category -> Bool
 has big_category small_category
@@ -28,12 +28,14 @@ has big_category small_category
     | Special{} <- small_category = True
     | Reference{} <- big_category = True
     | Reference{} <- small_category = True
-    | Label{target=t} <- big_category = CategoryCore.tracedHas t small_category
-    | Label{target=t} <- small_category = CategoryCore.tracedHas big_category t
+    | l@Label{target=t} <- big_category = CategoryCore.tracedHas (unfold Recursive l) small_category
+    | l@Label{target=t} <- small_category = CategoryCore.tracedHas big_category (unfold Recursive l)
     | level big_category < level small_category = False
     | Placeholder{ph_level=ph_level, ph_category=ph_category} <- small_category = (ph_level <= level big_category) && CategoryCore.tracedHas big_category ph_category
     | (Composite _ [category]) <- big_category = CategoryCore.tracedHas category small_category
     | (Composite _ [category]) <- small_category = CategoryCore.tracedHas big_category category
+    | (Composite Set inner) <- big_category = CategoryCore.tracedHas (Composite Sum inner) small_category
+    | (Composite Set inner) <- small_category = CategoryCore.tracedHas big_category (Composite Sum inner)
     | im@IntermediateMorphism{} <- big_category = tracedHas (asMorphism im) small_category
     | im@IntermediateMorphism{} <- small_category = tracedHas big_category (asMorphism im)
     | otherwise = has_inner big_category small_category
@@ -124,6 +126,7 @@ isSubstitutable base_category argument =
     case base_category of
         Placeholder{ph_level=s@(Specific l), ph_category=category} -> level argument == s && category `has` argument
         Placeholder{ph_level=other_level, ph_category=category} -> level argument <= other_level && category `has` argument
+        c@Composite{composition_type=Set, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
         c@Composite{composition_type=Sum, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
         c@Composite{composition_type=Sumposition, inner=inner_categories} -> or $ map has inner_categories <*> [argument]
         Special{} -> True
@@ -134,6 +137,13 @@ isValidArgumentTo :: Category -> Category -> Bool
 isValidArgumentTo input_argument input_morphic_category
     | not . isMorphic $ input_morphic_category = False
     | otherwise = input (asMorphism input_morphic_category) `isSubstitutable` input_argument
+
+errorableCall :: Category -> Category -> Category
+errorableCall base arg = do
+    let result = call base arg
+    case result of
+        Nothing -> error $ "Call failed with \n\t input: " ++ categoryToStr base ++ "\n\targument: " ++ categoryToStr arg
+        Just something -> something
 
 call :: Category -> Category -> Maybe Category
 call m@(Morphism p@Placeholder{name=p_name} output) input_category
@@ -210,7 +220,7 @@ evaluate m@MorphismCall{base_morphism=Reference{}, argument=a} = m{argument=eval
 evaluate m@MorphismCall{base_morphism=bm, argument=Reference{}} = m{base_morphism=evaluate bm}
 evaluate m@MorphismCall{base_morphism=Special{special_type=Flexible}, argument=a} = m{argument=evaluate a}
 evaluate m@MorphismCall{base_morphism=bm, argument=Special{special_type=Flexible}} = m{base_morphism=evaluate bm}
-evaluate MorphismCall{base_morphism=bm, argument=a} = evaluate (fromJust $ call (evaluate bm) (evaluate a))
+evaluate MorphismCall{base_morphism=bm, argument=a} = evaluate (errorableCall (evaluate bm) (evaluate a))
 evaluate d@Dereference{base_category=Reference{}, category_id=id} = d
 evaluate d@Dereference{base_category=Special{special_type=Flexible}, category_id=id} = d
 evaluate Dereference{base_category=bc, category_id=id} = evaluate $ fromJust $ dereference id bc

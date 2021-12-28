@@ -20,6 +20,7 @@ isName _ = False
 
 data SpecialCategoryType = Flexible | Universal deriving (Show, Eq)
 data CompositionType =
+    Set | -- enumerated category
     Product | -- tuple
     Sum | -- a or b, union
     Higher | -- the type operator
@@ -206,10 +207,11 @@ level input_category =
         basicLevel a_category =
             case input_category of
                 (Thing t) -> Specific 0
+                (Composite Set inner) -> incrementLevel (getInnerLevel inner)
                 (Composite Higher inner) -> incrementLevel (getInnerLevel inner)
                 (Composite _ inner) -> getInnerLevel inner
                 m@Morphism{input=p@Placeholder{name=name, ph_category=ph_cat},output=output} -> getInnerLevel [p, replace output Reference{name=name} p{ph_level=level ph_cat}]
-                m@Morphism{input=input,output=output} -> getInnerLevel [input, output]
+                m@Morphism{input=input,output=output} -> maximum [Specific 0, level output]
                 Placeholder{ph_level=AnyLevel, ph_category=ph_c} -> level ph_c 
                 Placeholder{ph_level=other} -> other
                 m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else getInnerLevel [bm, a]

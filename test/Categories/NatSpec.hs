@@ -9,6 +9,7 @@ import FrontEnds.Textual.V1.CategoryWriter
 import Data.Maybe
 
 import CategorySampler
+import CategoryCore (errorableCall)
 
 spec :: Spec
 spec = do
@@ -30,9 +31,9 @@ spec = do
             zero <- execute (parseCategoryString "import natural:$NaturalNumber -> return $natural.Nat.zero")
             increment <- execute (parseCategoryString "import natural:$NaturalNumber -> return $natural.increment")
             decrement <- execute (parseCategoryString "import natural:$NaturalNumber -> return $natural.decrement")
-            let one = fromJust $ call increment zero
+            let one = errorableCall increment zero
             categoryToStr one `shouldBe` "((),())"
-            let two = fromJust $ call increment one
+            let two = errorableCall increment one
             categoryToStr two `shouldBe` "((),((),()))"
-            categoryToStr (simplify $ fromJust $ call decrement two) `shouldBe` categoryToStr one
-            categoryToStr (simplify $ fromJust $ call decrement one) `shouldBe` categoryToStr zero
+            categoryToStr (simplify $ errorableCall decrement two) `shouldBe` categoryToStr one
+            categoryToStr (simplify $ errorableCall decrement one) `shouldBe` categoryToStr zero

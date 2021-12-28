@@ -25,16 +25,16 @@ spec = do
         it "(Sumposition) should write sumposite categories" $ do
             categoryToText Composite {composition_type = Sumposition, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*|`a,`b|"
         it "(Morphism) should write chains" $ do    
-            categoryToText (Morphism (Thing (Name "a")) (Morphism (Thing (Name "b")) (Thing (Name "c")))) `shouldBe`  "given `a -> given `b -> return `c" 
+            categoryToText (Morphism (Thing (Name "a")) (Morphism (Thing (Name "b")) (Thing (Name "c")))) `shouldBe`  "`a->`b->`c"
         it "(Morphism) should write named morphisms" $ do
-            categoryToText (Morphism (Thing (Name "a")) (Thing (Name "b"))) `shouldBe` "given `a -> return `b" 
+            categoryToText (Morphism (Thing (Name "a")) (Thing (Name "b"))) `shouldBe` "`a->`b" 
         it "(Morphism) should handle nested chains" $ do
-            categoryToText (Morphism (Morphism (Thing (Name "a")) (Thing (Name "b"))) (Thing (Name "b"))) `shouldBe` "given (given `a -> return `b) -> return `b" 
+            categoryToText (Morphism (Morphism (Thing (Name "a")) (Thing (Name "b"))) (Thing (Name "b"))) `shouldBe` "(`a->`b)->`b"
         it "(Placeholder) should write placeholders" $ do
-            categoryToText Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")} `shouldBe` "x@(`a)"
-            categoryToText Placeholder{name=Name "x", ph_level=Specific 1, ph_category=Thing (Name "a")} `shouldBe` "x<1>@(`a)" 
+            categoryToText Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")} `shouldBe` "x@`a"
+            categoryToText Placeholder{name=Name "x", ph_level=Specific 1, ph_category=Thing (Name "a")} `shouldBe` "x<1>@`a" 
         it "(Refinement) should write refinement" $ do
-            categoryToText RefinedCategory{base_category=Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")}, predicate=Morphism{input=Thing (Name "a"), output=Thing (Name "b")}} `shouldBe` "{x@(`a) | given `a -> return `b}" 
+            categoryToText RefinedCategory{base_category=Placeholder{name=Name "x", ph_level=AnyLevel, ph_category=Thing (Name "a")}, predicate=Morphism{input=Thing (Name "a"), output=Thing (Name "b")}} `shouldBe` "{x@`a | `a->`b}"
         it "(Special) should write flexible" $ do
             categoryToText Special{special_type=Flexible} `shouldBe` "(%)"
         it "(Special) should write Universal" $ do
@@ -49,3 +49,5 @@ spec = do
             categoryToText Dereference{base_category=Reference{name=Name "base_ref"}, category_id=Name "name"}  `shouldBe` "($base_ref).name"
         it "(Membership) should write membership" $ do
             categoryToText Membership{big_category=Reference (Name "base_category"), small_category=Reference (Name "child_category") } `shouldBe` "($base_category)::($child_category)"
+        it "(IntermediateMorphism) should write IM" $ do
+            categoryToText IntermediateMorphism{chain=[MorphismTerm{m_type=Given, m_category=Thing (Name "a")}, MorphismTerm{m_type=Return, m_category=Thing (Name "b")}]} `shouldBe` "given `a -> return `b"
