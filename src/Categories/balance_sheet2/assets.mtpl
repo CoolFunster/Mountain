@@ -1,0 +1,13 @@
+//https://www.investopedia.com/terms/b/balancesheet.asp
+Assets: 
+    import DollarAmount
+    -> define currentAssets@DollarAmount
+    -> define investments_long_term_receivables@DollarAmount
+    -> define property_plant_equipment@DollarAmount
+    -> define intangibles@DollarAmount
+    -> return (
+        current_assets:$DollarAmount,
+        investments_long_term_receivables:$DollarAmount,
+        property_plant_equipment:$DollarAmount,
+        intangibles:$DollarAmount
+    )

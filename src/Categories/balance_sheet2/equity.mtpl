@@ -1,0 +1,9 @@
+//https://www.investopedia.com/terms/b/balancesheet.asp
+Equity: (
+    common_stock:$DollarGroup,
+    earnings_reinvested:$DollarGroup,
+    accumulated_income:$DollarGroup,
+    common_stock_in_treasury:$DollarGroup,
+    exxon_mobile_share:$DollarGroup,
+    non_controlling_interests:$DollarGroup
+)

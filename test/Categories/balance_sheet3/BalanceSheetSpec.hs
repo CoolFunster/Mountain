@@ -4,8 +4,7 @@ import Test.Hspec
 import CategoryData
 import CategoryCore
 
-import FrontEnds.Textual.V1.CategoryParser
-import FrontEnds.Textual.V1.CategoryWriter
+import FrontEnds.English.Chatbot.V1.CategoryParser
 import Data.Maybe
 
 import CategorySampler
@@ -13,9 +12,9 @@ import CategoryCore (errorableCall)
 
 spec :: Spec
 spec = do
-    describe "ListNat" $ do
-        it "should parse nat correctly" $ do
-            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/List2Nat.mtpl"
+    describe "BalanceSheet" $ do
+        it "parses BalanceSheet" $ do
+            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/balance_sheet3/balance_sheet.mtpl"
             -- print category
             category `shouldBe` Label {name = Name "ListNat", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Import, m_category = Label {name = Name "List", target = Reference {name = Name "List"}}},MorphismTerm {m_type = Import, m_category = Label {name = Name "Nat", target = Reference {name = Name "NaturalNumber"}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "list2Nat", target = Composite {composition_type = Product, inner = []}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "nat2List", target = Special {special_type = Flexible}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Product, inner = [Label {name = Name "List2Nat", target = Reference {name = Name "list2Nat"}},Label {name = Name "Nat2List", target = Reference {name = Name "nat2List"}}]}}]}}
         it "should import lists and execute correctly" $ do

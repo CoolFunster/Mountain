@@ -1,0 +1,25 @@
+LinkedList: 
+    given list_type@Any
+    -> define LinkedList:|
+            empty: `empty_list,
+            nonempty: (
+                head: $list_type,
+                tail: $LinkedList[$list_type]
+            )
+        |
+    -> define push:(
+        given x@$LinkedList[$list_type]
+        -> given elem@$list_type 
+        -> return (
+            head:$elem,
+            tail:$x
+        )
+    )
+    -> define pop:
+        given x@($LinkedList[Any].nonempty)
+        -> return $x.tail
+    -> return (
+            LinkedList:$LinkedList,
+            push:$insert,
+            pop:$pop
+        )

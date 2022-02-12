@@ -34,6 +34,7 @@ categoryToCharList :: Category -> [Char]
 categoryToCharList (Thing name) = "`" ++ nameToText name
 categoryToCharList (Composite Product inner) = "(" ++ intercalate "," (map categoryToCharList inner) ++ ")"
 categoryToCharList (Composite Sum inner) = "|" ++ intercalate "," (map categoryToCharList inner) ++ "|"
+categoryToCharList (Composite Set inner) = "{" ++ intercalate "," (map categoryToCharList inner) ++ "}"
 categoryToCharList (Composite Higher inner) = "^{" ++ intercalate "," (map categoryToCharList inner) ++ "}"
 categoryToCharList (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToCharList inner) ++ ")"
 categoryToCharList (Composite Sumposition inner) = "*|" ++ intercalate "," (map categoryToCharList inner) ++ "|"

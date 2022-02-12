@@ -221,4 +221,47 @@ A model is what?
 
     a theory is a category
 
-    
+    a statement in model theory is simply a category whose basic terms are within another category
+    This is a higher category.
+
+    I need to have higher categories be this. Its something that matches a category of elements
+    so HC<Set>
+
+
+is an asset a thing? a placeholder?
+
+should I use a function to model a group of assets as an asset?
+
+should it be in the same category? or split out into others?
+
+
+What causes a developer to be slow when working with a codebase?
+    Before writing the feature they have to know:
+        1) Where to inject my new feature
+            Code slicing 
+        1a) What model changes need to be made to support new usecases?
+            Code transformations/assisted refactors
+        2) What assumptions of data are at a particular location?
+            Refined typing
+        3) What methods, data, algorithms exist which i can use to write my feature?
+            Code search and synthesis
+    After writing the feature they have to know:
+        1) How to write tests which represent the usecases of their code
+            Code flattening and type generation
+        2) How to create mock data which represents the edge data they care about
+            Type generation
+        3) How to document their addition so future software engineers can interface with it.
+            examples + type information + usage examples
+
+    Knowing this information is hard:
+        Side effects, hidden state, and monkeypatching make this difficult
+        Object oriented code leads to large code refactors for new usecases
+
+    Model theory makes each of these steps effortless and easy because of the language design
+
+
+    Stretch goals
+        - microservice architecture interfaces add bugs. 
+            Handle multiple services within the same codebase
+            or
+            Help find other things

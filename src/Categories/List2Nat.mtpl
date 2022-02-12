@@ -1,0 +1,10 @@
+ListNat:
+    import List:$List
+    -> import Nat:$NaturalNumber
+    -> define list2Nat:
+        ()
+    -> define nat2List:(%)
+    -> return (
+        List2Nat:$list2Nat,
+        Nat2List:$nat2List
+    )

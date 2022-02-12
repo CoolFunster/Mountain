@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 582f880ed6b3142647fbcb935ae1bf46a99182ef6ac7d2053a0f4a64dbd4b3cb
+-- hash: a05c9b26419b44e206d51aee17de578a5e2a9047d23897f0602fdbebbb0377ff
 
 name:           MTPL
 version:        0.1.0.0
@@ -31,6 +31,7 @@ library
       CategoryData
       CategorySampler
       CategorySynthesizer
+      FrontEnds.English.Chatbot.V1.CategoryWriter
       FrontEnds.Textual.V1.CategoryParser
       FrontEnds.Textual.V1.CategoryWriter
       Synthesizers.SequentSynthesizer
@@ -85,6 +86,7 @@ test-suite spec
       Categories.NatSpec
       CategoryDataSpec
       CategorySamplerSpec
+      FrontEndsSpec.English.Chatbot.V1.CategoryWriterSpec
       FrontEndsSpec.TextualSpec.V1.CategoryParserSpec
       FrontEndsSpec.TextualSpec.V1.CategoryParserWriterSpec
       FrontEndsSpec.TextualSpec.V1.CategoryWriterSpec

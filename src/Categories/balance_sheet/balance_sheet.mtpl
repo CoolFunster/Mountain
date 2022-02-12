@@ -1,0 +1,63 @@
+//https://www.investopedia.com/terms/b/balancesheet.asp
+BalanceSheet:
+    define DollarAmount:{x:Float | len[decimal[x]] <= 2}
+    -> define DollarGroup:(
+        data: (
+            head:|$DollarAmount, $DollarGroup|,
+            tail:|$DollarAmount, $DollarGroup|
+        ),
+        total: 
+            given group@$DollarGroup.data
+            -> return (DollarAmount)::*|
+                given (amount@$DollarAmount, rest@$DollarGroup) -> return $amount + $total[$rest]
+                given (amount@$DollarGroup, rest@$DollarGroup) -> return $total[$amount] + $total[$rest]
+            |($group)
+    )
+    -> define Assets:(
+        define Inventories:($DollarGroup.data)::(
+            crude_oil_products_and_merch:$DollarAmount,
+            materials_and_supplies:$DollarAmount
+        )
+        -> define CurrentAssets:($DollarGroup.data)::(
+            cash_and_cash_equivalents:$DollarAmount,
+            notes_and_accounts_receivable:$DollarAmount,
+            inventories:$Inventories,
+            other_assets:$DollarAmount
+        )
+        -> return ($DollarGroup.data)::(
+            current_assets:$CurrentAssets,
+            investments_long_term_receivables:$DollarAmount,
+            property_plant_equipment:$DollarAmount,
+            intangibles:$DollarAmount 
+        )
+    )
+    -> define Liabilities:(
+        define CurrentLiabilities:(
+            notes_and_loans_payable:$DollarAmount,
+            accounts_payable:$DollarAmount,
+            income_taxes_payable:$DollarAmount
+        )
+        -> return (
+            current_liabilities:$CurrentLiabilities,
+            long_term_debt:$DollarAmount,
+            postretirement_benefits_reserve:$DollarAmount,
+            deferred_income_tax_liabilities:$DollarAmount,
+            longterm_obligations:$DollarAmount,
+            other_longterm_obligations:$DollarAmount
+        )
+    )
+    -> define Equity: (
+        common_stock:$DollarGroup,
+        earnings_reinvested:$DollarGroup,
+        accumulated_income:$DollarGroup,
+        common_stock_in_treasury:$DollarGroup,
+        exxon_mobile_share:$DollarGroup,
+        non_controlling_interests:$DollarGroup
+    )
+    -> return {
+        sheet:(
+            assets:$Assets,
+            liabilities:$Liabilities,
+            equity:$Equity
+        ) | $DollarGroup.total($assets) == ($DollarGroup.total($liabilities) + $DollarGroup.total($equity))
+    }   

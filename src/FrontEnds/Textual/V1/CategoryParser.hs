@@ -159,6 +159,7 @@ pStandardCategory = choice [
     try pSumposition,
     try pSumple,
     try pHigher,
+    try pSet,
     try pRefinement]
 
 pThing :: Parser Category
@@ -183,6 +184,13 @@ pSumple = do
     if length inner_categories == 1
         then return $ head inner_categories
         else return Composite{composition_type=Sum, inner=inner_categories}
+
+pSet :: Parser Category
+pSet = do
+    inner_categories <- pWrapInner "{" "}" pCategoryInnerList
+    if length inner_categories == 1
+        then return $ head inner_categories
+        else return Composite{composition_type=Set, inner=inner_categories}
 
 pHigher :: Parser Category
 pHigher = do
