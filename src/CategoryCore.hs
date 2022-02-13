@@ -9,7 +9,7 @@ import Data.List (find)
 import Data.Maybe (fromMaybe, mapMaybe, fromJust, isNothing, isJust, catMaybes)
 
 import FrontEnds.Textual.V1.CategoryWriter (categoryToStr)
-import FrontEnds.Textual.V1.CategoryParser (parseCategoryFile)
+import FrontEnds.Textual.V1.CategoryParser (parseCategoryFile, loadModule)
 import Language.Python.Common (Statement(Import))
 
 {- Category Functions -}
@@ -232,28 +232,30 @@ evaluate l@Label{name=name, target=target}
 evaluate m@Membership{big_category=bc, small_category=sc} = evaluate sc
 evaluate other = error $ "evaluate Not Implemented yet on " ++ show other
 
-importPathToCategoryPath :: [Char] -> [Char]
-importPathToCategoryPath input_str =
-    let
-        repl '.' = '/'
-        repl other = other
-    in
-        "/home/mpriam/git/mtpl_language/src/Categories/" ++ map repl input_str ++ ".mtpl"
-
 -- TODO WHEN WE IMPORT A CATEGORY WE NEED TO VALIDATE THAT ITS LABELED LIKE ITS FILE
 importMorphismTerm :: MorphismTerm -> IO MorphismTerm
 importMorphismTerm m@MorphismTerm{m_type=CategoryData.Import, m_category=category} =
     case category of
         Reference{name=(Name category_path)} -> do
-            imported_category <- parseCategoryFile (importPathToCategoryPath category_path)
+            imported_category <- loadModule category_path
             case imported_category of
                 l@Label{} -> return MorphismTerm{m_type=Definition, m_category=imported_category}
                 _ -> error $ "imported category " ++ category_path ++ " is not labeled"
         l@Label{name=l_name, target=Reference{name=(Name category_path)}} -> do
-            imported_category <- parseCategoryFile (importPathToCategoryPath category_path)
+            imported_category <- loadModule category_path
             let renamed_category = case imported_category of
                     l@Label{} -> l{name=l_name}
                     _ -> error $ "imported category " ++ category_path ++ " is not labeled"
+            return MorphismTerm{m_type=Definition, m_category=renamed_category}
+        l@Label{name=l_name, target=d@Dereference{base_category=bc, category_id=(Name cat_id)}} -> do
+            let unrollDereference d = case d of
+                    Dereference{base_category=bc, category_id=Name id} -> unrollDereference bc ++ "." ++ id
+                    Reference{name=Name name} -> name
+                    _ -> error "bad import " ++ show d
+            imported_category <- loadModule $ trace ("PLOG: " ++ unrollDereference d) (unrollDereference d)
+            let renamed_category = case imported_category of
+                    l@Label{} -> l{name=l_name}
+                    _ -> error "imported category is not labeled"
             return MorphismTerm{m_type=Definition, m_category=renamed_category}
         _ -> error $ "bad import formulation: " ++ show m
 importMorphismTerm other = return other

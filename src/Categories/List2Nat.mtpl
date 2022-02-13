@@ -1,6 +1,6 @@
 ListNat:
-    import List:$List
-    -> import Nat:$NaturalNumber
+    import List:$base.list
+    -> import Nat:$base.naturalnumber
     -> define list2Nat:
         ()
     -> define nat2List:(%)

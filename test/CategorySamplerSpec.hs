@@ -44,14 +44,14 @@ spec = do
             let (result,_) = randomSample Placeholder{name=Unnamed, ph_level=Specific 0, ph_category=parsedCategory} rng
             categoryToStr result `shouldBe` "()"
         it "(natural numbers) should randomly sample natural numbers" $ do
-            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/NaturalNumber.mtpl"
+            category <- loadModule "base.naturalnumber"
             let simplified_category = CategoryCore.simplify category
             let rng = generator (Just 0)
             -- print $ categoryToStr $ simplify category
             let (result, _) = randomSample Placeholder{name=Unnamed, ph_level=Specific 0, ph_category=simplified_category}  rng
             categoryToStr result `shouldBe` "((),()->((),()),((),())->())"
         it "(natural numbers) should randomly sample decrement 2" $ do
-            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/NaturalNumber.mtpl"
+            category <- loadModule "base.naturalnumber"
             let simplified_category1 = CategoryCore.simplify category
             let simplified_category = fromJust $ dereference (Name "decrement") simplified_category1
             let rng = generator (Just 100)
@@ -61,7 +61,7 @@ spec = do
             let (result, _) = randomSample Placeholder{name=Unnamed, ph_level=Specific 0, ph_category=simplified_category}  rng
             categoryToStr result `shouldBe` "((),((),()))->((),())"
         it "(natural numbers) should randomly sample natural numbers 3" $ do
-            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/NaturalNumber.mtpl"
+            category <- loadModule "base.naturalnumber"
             let simplified_category = CategoryCore.simplify category
             let rng = generator (Just 100)
             -- print $ categoryToStr $ removeBloat $ simplify $ category

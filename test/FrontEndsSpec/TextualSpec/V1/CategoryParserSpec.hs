@@ -4,7 +4,6 @@ module FrontEndsSpec.TextualSpec.V1.CategoryParserSpec (spec) where
 import Test.Hspec
 
 import CategoryData
-import FrontEnds.Textual.V1.CategoryParser
 
 import Data.Maybe (fromJust)
 import Data.Either (fromRight)
@@ -16,6 +15,7 @@ import Test.QuickCheck.Arbitrary (Arbitrary(arbitrary))
 import System.Posix.Internals (puts)
 import qualified Data.Text.IO as TextIO
 import Debug.Trace
+import FrontEnds.Textual.V1.CategoryParser (loadModule, parseCategoryString, parseCategoryStringWith, pTuple)
 
 spec :: Spec
 spec = do
@@ -82,4 +82,8 @@ spec = do
             parseCategoryString "$base_category::$child_category" `shouldBe` Membership{big_category=Reference (Name "base_category") , small_category=Reference (Name "child_category") }
         it "(Recursive) should parse recursion" $ do
             parseCategoryString "self:(given `a -> return $self[`b])" `shouldBe`  Label {name = Name "self", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "a"}},MorphismTerm {m_type = Return, m_category = MorphismCall {base_morphism = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}}]}}
+    describe "Module loader" $ do
+        it "should load files" $ do
+            result <- loadModule "base.list"
+            result `shouldBe` result
             

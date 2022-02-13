@@ -5,11 +5,11 @@ import CategoryData
 import CategoryCore
 
 import FrontEnds.Textual.V1.CategoryParser
+    ( parseCategoryFile, parseCategoryString, loadModule )
 import FrontEnds.Textual.V1.CategoryWriter
 import Data.Maybe
 
 import CategorySampler
-import CategoryCore (errorableCall)
 
 spec :: Spec
 spec = do
@@ -17,20 +17,20 @@ spec = do
         it "should parse nat correctly" $ do
             category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/List2Nat.mtpl"
             -- print category
-            category `shouldBe` Label {name = Name "ListNat", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Import, m_category = Label {name = Name "List", target = Reference {name = Name "List"}}},MorphismTerm {m_type = Import, m_category = Label {name = Name "Nat", target = Reference {name = Name "NaturalNumber"}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "list2Nat", target = Composite {composition_type = Product, inner = []}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "nat2List", target = Special {special_type = Flexible}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Product, inner = [Label {name = Name "List2Nat", target = Reference {name = Name "list2Nat"}},Label {name = Name "Nat2List", target = Reference {name = Name "nat2List"}}]}}]}}
+            category `shouldBe` Label {name = Name "ListNat", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Import, m_category = Label {name = Name "List", target = Dereference {base_category = Reference {name = Name "base"}, category_id = Name "list"}}},MorphismTerm {m_type = Import, m_category = Label {name = Name "Nat", target = Dereference {base_category = Reference {name = Name "base"}, category_id = Name "naturalnumber"}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "list2Nat", target = Composite {composition_type = Product, inner = []}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "nat2List", target = Special {special_type = Flexible}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Product, inner = [Label {name = Name "List2Nat", target = Reference {name = Name "list2Nat"}},Label {name = Name "Nat2List", target = Reference {name = Name "nat2List"}}]}}]}}
         it "should import lists and execute correctly" $ do
             category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/List2Nat.mtpl"
             result <- execute category
             result `shouldBe`  Label {name = Name "ListNat", target = Composite {composition_type = Product, inner = [Label {name = Name "List2Nat", target = Composite {composition_type = Product, inner = []}},Label {name = Name "Nat2List", target = Special {special_type = Flexible}}]}}
     describe "NaturalNumber" $ do
         it "should parse NaturalNumber correctly" $ do
-            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/NaturalNumber.mtpl"
+            category <- loadModule "base.naturalnumber"
             category `shouldBe` Label {name = Name "NaturalNumber", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Definition, m_category = Label {name = Name "nat_data", target = Composite {composition_type = Sum, inner = [Label {name = Name "zero", target = Composite {composition_type = Product, inner = []}},Label {name = Name "nonzero", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Composite {composition_type = Product, inner = []}},Label {name = Name "rest", target = Reference {name = Name "nat_data"}}]}}]}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "increment", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "x", ph_level = AnyLevel, ph_category = Reference {name = Name "nat_data"}}},MorphismTerm {m_type = Return, m_category = Membership {big_category = Reference {name = Name "nat_data"}, small_category = Composite {composition_type = Product, inner = [Composite {composition_type = Product, inner = []},Reference {name = Name "x"}]}}}]}}},MorphismTerm {m_type = Definition, m_category = Label {name = Name "decrement", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "x", ph_level = AnyLevel, ph_category = Dereference {base_category = Reference {name = Name "nat_data"}, category_id = Name "nonzero"}}},MorphismTerm {m_type = Return, m_category = Dereference {base_category = Reference {name = Name "x"}, category_id = Index 1}}]}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Product, inner = [Label {name = Name "Nat", target = Reference {name = Name "nat_data"}},Label {name = Name "increment", target = Reference {name = Name "increment"}},Label {name = Name "decrement", target = Reference {name = Name "decrement"}}]}}]}}
         it "should increment & decrement correctly" $ do
-            category <- parseCategoryFile "/home/mpriam/git/mtpl_language/src/Categories/NaturalNumber.mtpl"
-            zero <- execute (parseCategoryString "import natural:$NaturalNumber -> return $natural.Nat.zero")
-            increment <- execute (parseCategoryString "import natural:$NaturalNumber -> return $natural.increment")
-            decrement <- execute (parseCategoryString "import natural:$NaturalNumber -> return $natural.decrement")
+            category <- loadModule "base.naturalnumber"
+            zero <- execute (parseCategoryString "import natural:$base.naturalnumber -> return $natural.Nat.zero")
+            increment <- execute (parseCategoryString "import natural:$base.naturalnumber -> return $natural.increment")
+            decrement <- execute (parseCategoryString "import natural:$base.naturalnumber -> return $natural.decrement")
             let one = errorableCall increment zero
             categoryToStr one `shouldBe` "((),())"
             let two = errorableCall increment one

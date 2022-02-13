@@ -9,11 +9,13 @@ import Text.Megaparsec.Char
 import Text.Megaparsec.Debug (dbg)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import Data.Text ( Text, pack, unpack, pack, unpack )
+import Data.Text ( Text, pack, unpack, unpack, )
+import Data.Char
 import Data.Void
 import Data.Maybe (fromJust, isJust)
 
 import Debug.Trace (trace)
+import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
 
 import qualified Data.Text.IO as TextIO
 
@@ -30,6 +32,31 @@ parseCategoryFileWith parser path_to_file = do
     contents <- TextIO.readFile path_to_file
     let category = baseParseCategory parser path_to_file contents
     return category
+
+basePath ::FilePath
+basePath = "/home/mpriam/git/mtpl_language/src/Categories/"
+
+loadModule :: FilePath -> IO Category
+loadModule fp =
+    let
+        repl '.' = '/'
+        repl c = c
+        file_name = basePath ++ map (toLower . repl) fp
+    in
+        do
+            file_exist <- trace ("PLOG initial: " ++ fp) doesFileExist (file_name ++ ".mtpl")
+            dir_exist <- doesDirectoryExist file_name
+            if file_exist
+                then parseCategoryFile (file_name ++ ".mtpl")
+            else if dir_exist
+                then do
+                    dirContents <- listDirectory file_name
+                    loadedDir <- mapM loadModule dirContents
+                    let label_cat = zip dirContents loadedDir
+                    trace (show dirContents) $ return Composite{composition_type=Product, inner=
+                        map (\x -> CategoryData.Label{name=Name (fst x), target=snd x}) label_cat
+                    }
+            else error $ "Unable to load package " ++ fp ++ " " ++ file_name ++ " does not exist."
 
 parseCategoryFile :: FilePath -> IO Category
 parseCategoryFile = parseCategoryFileWith pCategory

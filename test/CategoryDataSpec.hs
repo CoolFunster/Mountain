@@ -8,7 +8,6 @@ import FrontEnds.Textual.V1.CategoryWriter (categoryToText, categoryToStr)
 
 import Data.Maybe (fromJust)
 import Language.Python.Common.AST (Expr(Tuple))
-import CategoryCore (importCategories)
 import FrontEnds.Textual.V1.CategoryParser (parseCategoryString)
 
 -- TODO Split into respective files
@@ -339,7 +338,7 @@ spec = do
             result <- importCategories test_item
             result `shouldBe` test_item
         it "should import intermediate morphisms " $ do
-            let test_item = IntermediateMorphism [MorphismTerm{m_type=CategoryData.Import, m_category=Label{name=Name "l", target=Reference{name=Name "List"}}}]
+            let test_item = IntermediateMorphism [MorphismTerm{m_type=CategoryData.Import, m_category=Label{name=Name "l", target=Dereference{base_category=Reference{name=Name "base"},category_id=Name "list"}}}]
             result <- importCategories test_item
             result `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Definition, m_category = Label {name = Name "l", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = AnyLevel, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}}]}
     describe "RecursiveCategory" $ do
