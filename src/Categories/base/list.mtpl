@@ -1,4 +1,4 @@
-List: 
+list: 
     given list_type@Any
     ->  return |
             empty: `empty_list,

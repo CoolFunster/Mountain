@@ -33,6 +33,7 @@ dependencies:
 - megaparsec
 - text
 - parser-combinators
+- filepath
 
 library:
   source-dirs: src

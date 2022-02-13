@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a05c9b26419b44e206d51aee17de578a5e2a9047d23897f0602fdbebbb0377ff
+-- hash: 0622fc97dce5bc85afab16e3ace8aa98a16734f79460de955a05e89b2238364a
 
 name:           MTPL
 version:        0.1.0.0
@@ -46,6 +46,7 @@ library
     , base >=4.7 && <5
     , containers
     , directory
+    , filepath
     , hspec
     , hspec-discover
     , hspec-megaparsec
@@ -68,6 +69,7 @@ executable MTPL-exe
     , base >=4.7 && <5
     , containers
     , directory
+    , filepath
     , hspec
     , hspec-discover
     , hspec-megaparsec
@@ -101,6 +103,7 @@ test-suite spec
     , base >=4.7 && <5
     , containers
     , directory
+    , filepath
     , hspec ==2.*
     , hspec-discover
     , hspec-megaparsec

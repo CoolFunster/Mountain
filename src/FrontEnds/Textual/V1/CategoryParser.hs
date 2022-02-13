@@ -9,13 +9,14 @@ import Text.Megaparsec.Char
 import Text.Megaparsec.Debug (dbg)
 import qualified Text.Megaparsec.Char.Lexer as L
 
-import Data.Text ( Text, pack, unpack, unpack, )
+import Data.Text ( Text, pack, unpack, unpack, replace)
 import Data.Char
 import Data.Void
 import Data.Maybe (fromJust, isJust)
 
 import Debug.Trace (trace)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
+import System.FilePath.Posix
 
 import qualified Data.Text.IO as TextIO
 
@@ -44,17 +45,17 @@ loadModule fp =
         file_name = basePath ++ map (toLower . repl) fp
     in
         do
-            file_exist <- trace ("PLOG initial: " ++ fp) doesFileExist (file_name ++ ".mtpl")
+            file_exist <- doesFileExist (file_name ++ ".mtpl")
             dir_exist <- doesDirectoryExist file_name
             if file_exist
                 then parseCategoryFile (file_name ++ ".mtpl")
             else if dir_exist
                 then do
                     dirContents <- listDirectory file_name
-                    loadedDir <- mapM loadModule dirContents
-                    let label_cat = zip dirContents loadedDir
-                    trace (show dirContents) $ return Composite{composition_type=Product, inner=
-                        map (\x -> CategoryData.Label{name=Name (fst x), target=snd x}) label_cat
+                    let baseDirContents = map takeBaseName dirContents
+                    loadedDir <- mapM (loadModule . (++) (fp ++ ".")) baseDirContents
+                    trace (show baseDirContents) $ return Composite{composition_type=Product, inner=
+                        loadedDir
                     }
             else error $ "Unable to load package " ++ fp ++ " " ++ file_name ++ " does not exist."
 

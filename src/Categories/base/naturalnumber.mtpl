@@ -1,4 +1,4 @@
-NaturalNumber:
+naturalnumber:
     define nat_data:|
         zero:(),
         nonzero: (head:(), rest:$nat_data)

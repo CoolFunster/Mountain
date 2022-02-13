@@ -7,8 +7,7 @@ import CategoryData
 
 import Data.Maybe (fromJust)
 import Data.Either (fromRight)
-import FrontEnds.Textual.V1.CategoryWriter
-    ( categoryToText, categoryToCharList )
+    
 import Text.Megaparsec.Debug (dbg)
 import Test.QuickCheck (Arbitrary(arbitrary), arbitraryPrintableChar)
 import Test.QuickCheck.Arbitrary (Arbitrary(arbitrary))
@@ -16,6 +15,7 @@ import System.Posix.Internals (puts)
 import qualified Data.Text.IO as TextIO
 import Debug.Trace
 import FrontEnds.Textual.V1.CategoryParser (loadModule, parseCategoryString, parseCategoryStringWith, pTuple)
+import FrontEnds.Textual.V1.CategoryWriter (categoryToStr, categoryToText, categoryToCharList )
 
 spec :: Spec
 spec = do
@@ -86,4 +86,7 @@ spec = do
         it "should load files" $ do
             result <- loadModule "base.list"
             result `shouldBe` result
+        it "should load directories" $ do
+            result <- loadModule "base"
+            result `shouldBe` trace (categoryToStr result) result
             

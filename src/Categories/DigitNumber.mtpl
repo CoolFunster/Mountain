@@ -7,17 +7,17 @@ DigitNumber:
         given a@$digit
         -> given b@$digit
         -> return *|
-        (`0, `1) -> $Bool.True
-        (`1, `2) -> $Bool.True
-        (`2, `3) -> $Bool.True
-        (`3, `4) -> $Bool.True
-        (`4, `5) -> $Bool.True
-        (`5, `6) -> $Bool.True
-        (`6, `7) -> $Bool.True
-        (`7, `8) -> $Bool.True
-        (`8, `9) -> $Bool.True
-        x@Any -> 
-    |
+            given (`0, `1) -> return $Bool.True
+            given (`1, `2) -> return $Bool.True
+            given (`2, `3) -> return $Bool.True
+            given (`3, `4) -> return $Bool.True
+            given (`4, `5) -> return $Bool.True
+            given (`5, `6) -> return $Bool.True
+            given (`6, `7) -> return $Bool.True
+            given (`7, `8) -> return $Bool.True
+            given (`8, `9) -> return $Bool.True
+            given (x@Any,y@Any) -> return $lessThan
+        |
     -> return (
         Nat:$nat_data,
         increment: $increment,
