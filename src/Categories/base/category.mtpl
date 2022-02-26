@@ -1,0 +1,18 @@
+category:
+    import $list
+    -> import $char
+    -> import $naturalnumber
+    -> define id: | name: $list[$char], index: $naturalnumber, `unnamed |  
+    -> define composition_type:| `Set, `Product, `Sum, `Higher, `Composition, `Sumposition|
+    -> define level: | `Infinite, `AnyLevel, `Specific |
+    -> return |
+        thing: $id,
+        composition:($composition_type, $list[$category]),
+        morphism:(
+            input:$category,
+            output:$category,
+        ),
+        placeholder:(
+            name:$id,
+            ph_level:
+        )

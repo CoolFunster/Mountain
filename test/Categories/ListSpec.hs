@@ -14,11 +14,11 @@ spec = do
         it "should parse list correctly" $ do
             category <- loadModule "base.list"
             -- print category
-            category `shouldBe` Label {name = Name "List", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = AnyLevel, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}
+            category `shouldBe` Label {name = Name "list", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = AnyLevel, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composition_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composition_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}
         it "should have list elements" $ do
             list <- loadModule "base.list"
             list_on_anything <- execute MorphismCall{base_morphism=list,argument=universal}
-            fromJust (dereference (Name "empty") list_on_anything) `shouldBe` Thing (Name "empty_list")
+            fromJust (dereference (Name "empty") list_on_anything) `shouldBe` Special {special_type = Flexible}
             (list_on_anything `has` Thing (Name "empty_list")) `shouldBe` True
             list_on_anything `has` parseCategoryString "( () , `empty_list )" `shouldBe` True
             list_on_anything `has` parseCategoryString "( `anything , `empty_list )" `shouldBe` True

@@ -18,7 +18,7 @@ isName :: Id -> Bool
 isName Name{} = True
 isName _ = False
 
-data SpecialCategoryType = Flexible | Universal deriving (Show, Eq)
+data SpecialCategoryType = Flexible | Universal | Has | Equal | NotEqual deriving (Show, Eq)
 data CompositionType =
     Set | -- enumerated category
     Product | -- tuple
@@ -65,6 +65,10 @@ data Category =
     Special {
         special_type::SpecialCategoryType
     } |
+    Membership {
+        big_category::Category,
+        small_category::Category
+    } |
     -- language constructs
     Label {
         name::Id,
@@ -80,10 +84,6 @@ data Category =
     Dereference {
         base_category::Category,
         category_id::Id
-    } |
-    Membership {
-        big_category::Category,
-        small_category::Category
     } |
     IntermediateMorphism {
         chain::[MorphismTerm]
