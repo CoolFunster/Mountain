@@ -1,9 +1,0 @@
-list: 
-    given list_type@Any
-    ->  return |
-            empty: `empty_list,
-            nonempty: (
-                head: $list_type,
-                tail: $List[$list_type]
-            )
-        |

@@ -1,9 +1,0 @@
-//https://www.investopedia.com/terms/b/balancesheet.asp
-Liabilities:(
-    current_liabilities:$CurrentLiabilities,
-    long_term_debt:$DollarAmount,
-    postretirement_benefits_reserve:$DollarAmount,
-    deferred_income_tax_liabilities:$DollarAmount,
-    longterm_obligations:$DollarAmount,
-    other_longterm_obligations:$DollarAmount
-)

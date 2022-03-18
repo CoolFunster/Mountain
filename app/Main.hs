@@ -1,13 +1,12 @@
 module Main where
 
 import CategoryData
-import CategoryCore
 
 main :: IO ()
 main = do
   let a = Thing (Name "a")
   let b = Thing (Name "b")
-  let a_b = Morphism a b
+  let a_b = Composite{composite_type=Function, inner_categories=[a,b]}
 
-  let expr = MorphismCall a_b a
-  putStr "Hello world"
+  let expr = FunctionCall{base=a_b, argument=a}
+  putStr $ show expr

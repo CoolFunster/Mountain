@@ -1,44 +1,57 @@
+{-# LANGUAGE LambdaCase #-}
 module CategoryData where
 
 import Data.List ( intercalate, find )
-import Data.Maybe (mapMaybe, catMaybes, fromJust)
+import Data.Either
 import Data.Dynamic
 import Data.Typeable
 
 import Debug.Trace (trace)
 import Control.Monad
+import GHC.Base (Monad)
+import System.Directory (doesFileExist)
 
-data Id = Name [Char] | Index Int | Unnamed deriving (Show, Eq)
-getNameStr :: Id -> [Char]
-getNameStr (Name n) = n
-getNameStr (Index idx) = show idx
-getNameStr Unnamed = ""
+{- add specific name for symbolic execution cases-}
+data Id =
+    Name [Char] |
+    Index Int |
+    Unnamed
+    deriving (Eq, Show, Read)
 
-isName :: Id -> Bool
-isName Name{} = True
-isName _ = False
+data SpecialCategoryType =
+    Flexible |
+    Universal
+    deriving (Eq, Show, Read)
 
-data SpecialCategoryType = Flexible | Universal | Has | Equal | NotEqual deriving (Show, Eq)
 data CompositionType =
     Set | -- enumerated category
-    Product | -- tuple
-    Sum | -- a or b, union
-    Higher | -- the type operator
+    Tuple | -- tuple
+    Sumple | -- a or b, union
     Composition | -- a chain of functions (a->b, b->c = a->c)
-    Sumposition -- a case statement of functions (a->b, b->c = a->c)
-    deriving (Show, Eq)
+    Case | -- a case statement of functions     (a->b, b->c = a->c)
+    Function -- a function
+    deriving (Eq, Show, Read)
+
+data PlaceholderType =
+    Label |
+    Element
+    deriving (Eq, Show, Read)
 
 data CategoryLevel =
     Infinite |
     AnyLevel |
+    LessThan Integer |
     Specific Integer
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
 
 instance Ord CategoryLevel where
     (compare) (Specific a) (Specific b)  = compare a b
-    (compare) Infinite (Specific b) = GT
     (compare) Infinite Infinite = EQ
-    (compare) (Specific b) Infinite = LT
+    (compare) Infinite _ = GT
+    (compare) _ Infinite = LT
+    (compare) (LessThan a) (LessThan b) = compare (Specific a) (Specific b)
+    (compare) (LessThan a) (Specific b) = compare (Specific a) (Specific b)
+    (compare) (Specific a) (LessThan b) = compare (Specific a) (Specific b)
     (compare) AnyLevel _ = EQ
     (compare) _ AnyLevel = EQ
 
@@ -46,137 +59,206 @@ data Category =
     -- categories
     Thing { name::Id } | -- a concrete object
     Composite {  -- a group of things
-        composition_type::CompositionType,
-        inner::[Category]
-    } |
-    Morphism {
-        input::Category,
-        output::Category
+        composite_type::CompositionType,
+        inner_categories::[Category]
     } |
     Placeholder {
         name::Id,
-        ph_level::CategoryLevel, -- if nothing then is interpreted as any level
-        ph_category::Category
+        placeholder_type::PlaceholderType,
+        placeholder_category::Category
     } |
-    RefinedCategory {
-        base_category::Category,
+    Refined {
+        base::Category,
         predicate::Category -- specifically predicates are morphisms of Category -> Bool
     } |
     Special {
         special_type::SpecialCategoryType
     } |
-    Membership {
-        big_category::Category,
-        small_category::Category
-    } |
-    -- language constructs
-    Label {
-        name::Id,
-        target::Category
-    } |
     Reference {
         name::Id
     } |
-    MorphismCall {
-        base_morphism::Category,
+    -- language constructs
+    FunctionCall {
+        base::Category,
         argument::Category
     } |
-    Dereference {
-        base_category::Category,
-        category_id::Id
+    Access {
+        base::Category,
+        access_id::Id
     } |
-    IntermediateMorphism {
-        chain::[MorphismTerm]
+    Import {
+        category_uri::String
+    } |
+    Definition {
+        definition_category::Category
+    } |
+    Membership {
+        big_category::Category,
+        small_category::Category
     }
-    deriving (Eq, Show)
+    deriving (Eq, Show, Read)
+
+-- Error types
+data ErrorType =
+    EmptyAccess |
+    EmptyAccessID |
+    BadAccess |
+    UnresolvedReference |
+    SubstituteArgOnEmptyCategory |
+    CallingADataCompositeCategory |
+    UnnamedCategory |
+    EmptyFunctionalComposite |
+    BadFunctionalComposite |
+    PredicateHasBadArgument |
+    NonFunctioninFunctionCallBase |
+    NotSubstitutableArgs |
+    BadRefinementPredicateInput |
+    AccessIndexBelowZero |
+    AccessIndexOutsideRange |
+    BadImport |
+    BadExportFileExists |
+    CannotTypecheckRawImport |
+    BadMembership
+    deriving (Eq, Show, Read)
+
+data Error = Error {
+    error_type::ErrorType,
+    error_stack::[Category]
+} deriving (Eq, Show, Read)
+
+data Errorable a =
+    Valid a |
+    ErrorList [Error]
+    deriving (Eq, Show, Read)
+
+instance Functor Errorable where
+    fmap foo (Valid x) = Valid $ foo x
+    fmap foo (ErrorList list) = ErrorList list
+
+instance Applicative Errorable where
+    pure x = Valid x
+    Valid foo <*> any = fmap foo any
+    ErrorList el <*> any = ErrorList el
+
+instance Monad Errorable where
+    Valid a >>= foo = foo a
+    ErrorList error_list >>= foo = ErrorList error_list
+
+newtype ErrorableT m a = ErrorableT { runErrorableT :: m (Errorable a)}
+instance Monad m => Monad (ErrorableT m) where
+    return = ErrorableT . return . Valid
+    x >>= f = ErrorableT $ do
+        errorable_value <- runErrorableT x
+        case errorable_value of
+            ErrorList ers  -> return (ErrorList ers)
+            Valid value -> runErrorableT $ f value
+
+instance Monad m => Applicative (ErrorableT m) where
+    pure = return
+    (<*>) = ap
+
+instance Monad m => Functor (ErrorableT m) where
+    fmap = liftM
+
+partitionErrorable :: [Errorable a] -> ([a], [Error])
+partitionErrorable = foldr (
+    \new_errorable (l,r) ->
+        case new_errorable of
+            Valid something -> (something:l, r)
+            ErrorList errors -> (l, errors ++ r)) ([],[])
+
+addToErrorStack :: Category -> Error -> Error
+addToErrorStack input_a e@Error{error_stack=stack} = e{error_stack=stack++[input_a]}
+
+fromValid :: Errorable a -> a
+fromValid (Valid x) = x
+fromValid other = error "bad fromValid"
+
+-- useful categories
+
+valid :: Category
+valid = Composite Tuple []
+
+empty :: Category
+empty = Composite Sumple []
+
+universal :: Category
+universal = Special{special_type=Universal}
+
+flex :: Category
+flex = Special{special_type=Flexible}
 
 -- checks for data constructor type
+isName :: Id -> Bool
+isName Name{} = True
+isName _ = False
+
 isThing :: Category -> Bool
 isThing Thing{} = True
 isThing _ = False
-
-isMorphism :: Category -> Bool
-isMorphism Morphism{} = True
-isMorphism _ = False
 
 isComposite :: Category -> Bool
 isComposite Composite{} = True
 isComposite _ = False
 
-isCompositeType :: CompositionType -> Category -> Bool
-isCompositeType input_comp_type Composite{composition_type=cmp_comp_type} = input_comp_type == cmp_comp_type
-isCompositeType _ _ = False
+isCompositeOfType :: CompositionType -> Category -> Bool
+isCompositeOfType input_comp_type Composite{composite_type=cmp_comp_type} = input_comp_type == cmp_comp_type
+isCompositeOfType _ _ = False
+
+isDataCompositeType :: CompositionType -> Bool
+isDataCompositeType Tuple = True
+isDataCompositeType Sumple = True
+isDataCompositeType Set = True
+isDataCompositeType _ = False
+
+isFunctionCompositeType :: CompositionType -> Bool
+isFunctionCompositeType = not . isDataCompositeType
+
+isFunctionComposite :: Category -> Bool
+isFunctionComposite Composite{composite_type=c_type}
+    | isFunctionCompositeType c_type = True
+    | otherwise = False
+isFunctionComposite _ = False
 
 isPlaceholder :: Category -> Bool
 isPlaceholder Placeholder{} = True
 isPlaceholder _ = False
 
-isMorphismCall :: Category -> Bool
-isMorphismCall MorphismCall{} = True
-isMorphismCall _ = False
+isPlaceholderType :: PlaceholderType -> Category -> Bool
+isPlaceholderType inp_ph_type Placeholder{placeholder_type=ph_type} = inp_ph_type == ph_type
+isPlaceholderType _ _ = False
+
+isLabelOfName :: Id -> Category -> Bool
+isLabelOfName id p@Placeholder{name=name, placeholder_type=Label} = name == id
+isLabelOfName id other = False
+
+isFunctionCall :: Category -> Bool
+isFunctionCall FunctionCall{} = True
+isFunctionCall _ = False
 
 isReference :: Category -> Bool
 isReference Reference{} = True
 isReference _ = False
 
-isLabel :: Category -> Bool
-isLabel Label{} = True
-isLabel _ = False
-
-isIntermediateMorphism :: Category -> Bool
-isIntermediateMorphism IntermediateMorphism{} = True
-isIntermediateMorphism _ = False
-
-isSpecialCategory :: SpecialCategoryType -> Category -> Bool
-isSpecialCategory sctype Special{special_type=c_type} = sctype == c_type
-isSpecialCategory sctype other = False
+isReferenceOfName :: Id -> Category -> Bool
+isReferenceOfName id r@Reference{name=n} = id == n
+isReferenceOfName _ _ = False
 
 isSpecial :: Category -> Bool
 isSpecial Special{} = True
 isSpecial _ = False
 
-isDereference :: Category -> Bool
-isDereference Dereference{} = True
-isDereference _ = False
+isSpecialType :: SpecialCategoryType -> Category -> Bool
+isSpecialType sctype Special{special_type=c_type} = sctype == c_type
+isSpecialType sctype other = False
 
-isMembership :: Category -> Bool
-isMembership Membership{} = True
-isMembership _ = False
+isAccess :: Category -> Bool
+isAccess Access{} = True
+isAccess _ = False
 
-isRefinedCategory :: Category -> Bool
-isRefinedCategory RefinedCategory{} = True
-isRefinedCategory _ = False
-
-isCategoricalObject :: Category -> Bool
-isCategoricalObject object =
-    isThing object ||
-    isMorphism object ||
-    isIntermediateMorphism object ||
-    isComposite object ||
-    isPlaceholder object ||
-    isRefinedCategory object ||
-    isSpecial  object ||
-    isMorphismCall object && isCategoricalObject (output (asMorphism (base_morphism object)))
-
-isCategoricalConstruct :: Category -> Bool
-isCategoricalConstruct = not . isCategoricalObject
-
-isLanguageConstruct :: Category -> Bool
-isLanguageConstruct thing =
-    isMorphismCall thing ||
-    isDereference thing ||
-    isMembership thing
-
-isMorphic :: Category -> Bool
-isMorphic Morphism{} = True
-isMorphic IntermediateMorphism{} = True
-isMorphic Composite{composition_type=Sumposition} = True
-isMorphic Composite{composition_type=Composition} = True
-isMorphic Dereference{} = True
-isMorphic Special{} = True
-isMorphic RefinedCategory{base_category=bc} = isMorphic bc
-isMorphic Label{target=target} = isMorphic target
-isMorphic _ = False
+isRefined :: Category -> Bool
+isRefined Refined{} = True
+isRefined _ = False
 
 isNamedCategory :: Category -> Bool
 isNamedCategory Thing{} = True
@@ -190,244 +272,517 @@ getName input_category
     | otherwise = Just $ name input_category
 -- end checks for data constructor type
 
--- some basic functionality on categories
+-- AST manipulation
 
-level :: Category -> CategoryLevel
+checkAST :: ([Bool] -> Bool) -> (Category -> Bool) -> Category -> Bool
+checkAST aggregator checker  t@Thing{} = checker t
+checkAST aggregator checker c@Composite{inner_categories=inner} = aggregator $ checker c : map checker inner
+checkAST aggregator checker p@Placeholder{placeholder_category=ph_c} = aggregator [checker ph_c, checker p]
+checkAST aggregator checker r@Refined{base=b, predicate=p} = aggregator [checker b, checker p, checker r]
+checkAST aggregator checker s@Special{} = checker s
+checkAST aggregator checker r@Reference{} = checker r
+checkAST aggregator checker fc@FunctionCall{base=b, argument=a} = aggregator [checker b, checker a, checker fc]
+checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker b, checker a]
+checkAST aggregator checker i@Import{} = checker i
+checkAST aggregator checker Definition{definition_category=d} = checker d
+checkAST aggregator checker Membership{big_category=bc, small_category=sc} = aggregator [checker bc, checker sc]
+
+manipulateAST :: (Category -> Maybe (Errorable Category)) -> (Category -> Errorable Category) -> Category -> Errorable Category
+manipulateAST premanipulator postmanipulator category =
+    let
+        manipulateRecursively = manipulateAST premanipulator postmanipulator
+
+        manipulateASTInner :: (Category -> Errorable Category) -> Category -> Errorable Category
+        manipulateASTInner manipulator t@Thing{} = manipulator t
+        manipulateASTInner manipulator c@Composite{inner_categories=inner} =
+            case partitionErrorable (map manipulateRecursively inner) of
+                (all_good_cats, []) -> manipulator c{inner_categories=all_good_cats}
+                (_, some_errors) -> ErrorList (map (addToErrorStack c) some_errors)
+        manipulateASTInner manipulator p@Placeholder{placeholder_category=ph_c} =
+            case manipulateRecursively ph_c of
+                Valid cat -> manipulator p{placeholder_category=cat}
+                ErrorList errors -> ErrorList (map (addToErrorStack p) errors)
+        manipulateASTInner manipulator r@Refined{base=b, predicate=p} =
+            case partitionErrorable (map manipulateRecursively [b, p]) of
+                ([good_b, good_p], []) -> manipulator r{base=good_b, predicate=good_p}
+                (_, some_errors) -> ErrorList (map (addToErrorStack r) some_errors)
+        manipulateASTInner manipulator s@Special{} = manipulator s
+        manipulateASTInner manipulator r@Reference{} = manipulator r
+        manipulateASTInner manipulator fc@FunctionCall{base=b, argument=a} =
+            case partitionErrorable (map manipulateRecursively [b, a]) of
+                ([good_b, good_a], []) -> manipulator fc{base=good_b, predicate=good_a}
+                (_, some_errors) -> ErrorList (map (addToErrorStack fc) some_errors)
+        manipulateASTInner manipulator a@Access{base=b, access_id=id} =
+            case manipulateRecursively b of
+                Valid cat -> manipulator a{base=cat}
+                ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
+        manipulateASTInner manipulator i@Import{} = Valid i
+        manipulateASTInner manipulator def@Definition{definition_category=d} =
+            case manipulateRecursively d of
+                Valid cat -> manipulator def{definition_category=cat}
+                ErrorList errors -> ErrorList (map (addToErrorStack def) errors)
+        manipulateASTInner manipulator mem@Membership{big_category=bc, small_category=sc} =
+            case partitionErrorable (map manipulateRecursively [bc, sc]) of
+                ([good_bc, good_sc], []) -> manipulator mem{big_category=good_bc, small_category=good_sc}
+                (_, some_errors) -> ErrorList (map (addToErrorStack mem) some_errors)
+    in
+        case premanipulator category of
+            Nothing -> manipulateASTInner postmanipulator category
+            Just error_or_category -> error_or_category
+
+preManipulateAST :: (Category -> Maybe (Errorable Category)) -> Category -> Errorable Category
+preManipulateAST premanipulator = manipulateAST premanipulator Valid
+
+postManipulateAST :: (Category -> Errorable Category) -> Category -> Errorable Category
+postManipulateAST = manipulateAST (const Nothing)
+
+postManipulateASTIO :: (Category -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+postManipulateASTIO foo input = do foo input
+
+-- {- Category Functions -}
+
+isRecursiveCategory :: Category -> Bool
+isRecursiveCategory Placeholder{name=ph_name, placeholder_type=Label, placeholder_category=ph_c} = checkAST or (isReferenceOfName ph_name) ph_c
+isRecursiveCategory _ = False
+
+replaceReferences :: Category -> Category -> Category -> Category
+replaceReferences base_expr r@Reference{name=n} new_cat =
+    let
+        replacePremanipulator :: (Category -> Maybe (Errorable Category))
+        replacePremanipulator p@Placeholder{name=n} = Just (Valid p)
+        replacePremanipulator c@Composite{composite_type=Function, inner_categories=Placeholder{name=n}:rest} = Just (Valid c)
+        replacePremanipulator other = Nothing
+
+        replacePostmanipulator :: (Category -> Errorable Category)
+        replacePostmanipulator Reference{name=n} = Valid new_cat
+        replacePostmanipulator other = Valid other
+    in
+        fromValid $ manipulateAST replacePremanipulator replacePostmanipulator base_expr
+replaceReferences be ref new = error $ "ReplaceReferences error. Cannot replace using non label/ph: \n" ++ show ref
+
+data UnrollType = Flat | Recursive
+unroll :: UnrollType -> Category -> Category
+unroll Flat l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
+    replaceReferences rec_cat Reference{name=rec_name} Special{special_type=Flexible}
+unroll Recursive l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
+    replaceReferences rec_cat Reference{name=rec_name} l
+unroll _ something_else = error $ "Cannot unfold a non labeled category: " ++ show something_else
+
+substituteArg :: Category -> Category -> Errorable Category
+substituteArg new_arg c@Composite{inner_categories=[]} =
+    ErrorList [Error{error_type=SubstituteArgOnEmptyCategory, error_stack=[new_arg, c]}]
+substituteArg new_arg c@Composite{composite_type=c_type, inner_categories=[something]} = substituteArg new_arg something
+substituteArg new_arg c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:tail} =
+    Valid $ c{inner_categories=p:(map replaceReferences tail <*> [Reference{name=id}] <*> [new_arg])}
+substituteArg new_arg c@Composite{composite_type=Function, inner_categories=head:tail}
+    | head `isValidArgument` new_arg = Valid c{inner_categories=new_arg:tail}
+    | otherwise = ErrorList [Error{error_type=NotSubstitutableArgs, error_stack=[new_arg, c]}]
+substituteArg new_arg c@Composite{composite_type=Case, inner_categories=inner} = do
+    let substituteResults = map (substituteArg new_arg) inner
+    case partitionErrorable substituteResults of
+        (good_list,[]) -> Valid c{inner_categories=good_list}
+        (_, some_errors) -> ErrorList $ map (addToErrorStack c) some_errors
+substituteArg new_arg c@Composite{composite_type=Composition, inner_categories=head:tail} =
+    case substituteArg new_arg head of
+        Valid cat -> Valid c{inner_categories=cat:tail}
+        ErrorList some_errors -> ErrorList $ map (addToErrorStack c) some_errors
+substituteArg new_arg something_weird = error $ "What is this case? " ++ show new_arg ++ show something_weird
+
+uncheckedCall :: Category -> Category -> Errorable Category
+uncheckedCall arg base = do
+    let result = substituteArg arg base
+    case result of
+        e@ErrorList{} -> e
+        Valid c@Composite{composite_type=c_type, inner_categories=inner} ->
+            let
+                tailed_inner = tail inner
+            in
+                if length tailed_inner == 1
+                    then Valid (head tailed_inner)
+                    else Valid c{inner_categories=tail inner}
+        Valid other -> error $ "what is this case? " ++ show other
+
+symbolicallyCall :: Category -> Errorable Category
+symbolicallyCall p@Placeholder{}
+    | isRecursiveCategory p = symbolicallyCall (unroll Recursive p)
+symbolicallyCall c@Composite{composite_type=c_type,inner_categories=[]}
+    | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
+    | otherwise = ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
+symbolicallyCall c@Composite{composite_type=c_type, inner_categories=[something]}
+    | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
+    | otherwise = symbolicallyCall something
+symbolicallyCall c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:[tail]} =
+    Valid $ replaceReferences tail Reference{name=id} p
+symbolicallyCall c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:tail} =
+    Valid c{inner_categories=map replaceReferences tail <*> [Reference{name=id}] <*> [p]}
+symbolicallyCall c@Composite{composite_type=Function, inner_categories=something:[rest]} =
+    Valid rest
+symbolicallyCall c@Composite{composite_type=Function, inner_categories=something:rest} =
+    Valid c{inner_categories=rest}
+symbolicallyCall c@Composite{composite_type=Composition, inner_categories=head:tail} = foldr (\list_elem state ->
+    case state of
+        e@ErrorList{} -> e
+        Valid cat -> uncheckedCall cat list_elem) (symbolicallyCall head) tail
+symbolicallyCall anything_else = Valid anything_else
+
+uncheckedCompositeToFunction :: Category -> Errorable Category
+uncheckedCompositeToFunction c@Composite{composite_type=Composition, inner_categories=head@Composite{composite_type=Function, inner_categories=inner_head:inner_rest}:rest} =
+    case symbolicallyCall c of
+        ErrorList errors -> ErrorList errors
+        Valid cat -> Valid c{composite_type=Function,inner_categories=[inner_head, cat]}
+uncheckedCompositeToFunction c@Composite{composite_type=Function, inner_categories=inner} = Valid c
+uncheckedCompositeToFunction c@Composite{composite_type=Case, inner_categories=inner} =
+    case partitionErrorable $ map uncheckedCompositeToFunction inner of
+        (valid_categories, []) -> Valid $ Composite{composite_type=Function, inner_categories=[
+            Composite{composite_type=Sumple, inner_categories=map (head . inner_categories) valid_categories},
+            Composite{composite_type=Sumple, inner_categories=concatMap (tail . inner_categories) valid_categories}
+        ]}
+        (_, some_errors) -> ErrorList (map (addToErrorStack c) some_errors)
+uncheckedCompositeToFunction other = error $ "bad argument to uncheckedCompositeToFunction: " ++ show other
+
+
+evaluateAccess :: Category -> Errorable Category
+evaluateAccess a@Access{base=Composite{inner_categories=[]}, access_id=id} =
+    ErrorList [Error{error_type=EmptyAccess,error_stack=[a]}]
+evaluateAccess a@Access{base=c@Composite{inner_categories=inner}, access_id=id} =
+    case id of
+        Index idx -> Valid (inner!!idx)
+        Name str_name -> do
+            case filter (\x -> isPlaceholder x && name x == Name str_name)  inner of
+                [] -> ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
+                stuff -> Valid $ head stuff
+        Unnamed -> ErrorList [Error{error_type=EmptyAccessID,error_stack=[a]}]
+evaluateAccess a@Access{base=p@Placeholder{placeholder_category=ph_c}, access_id=id} =
+    case evaluateAccess a{base=ph_c} of
+        ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
+        Valid cat -> Valid cat
+evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
+        {- TODO: handle predicates -}
+        error "Not handled atm. need some subtle stuff"
+evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Valid Special{special_type=Flexible}
+evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=output} =
+    case uncheckedCall arg b of
+        ErrorList errors -> ErrorList errors
+        Valid cat -> evaluateAccess a{base=cat}
+evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
+    case evaluateAccess a_inner of
+        ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
+        Valid cat -> evaluateAccess a{base=cat}
+evaluateAccess a@Access{} = ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
+evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
+
+level :: Category -> Either CategoryLevel [Error]
 level input_category =
     let
-        getInnerLevel [] = Specific 0
-        getInnerLevel inner_categories = 
-            case filter (AnyLevel /=) (map level inner_categories) of
-                [] -> AnyLevel 
-                other_levels -> maximum other_levels  
+        levelOfCategoryList :: [Category] -> Either CategoryLevel [Error]
+        levelOfCategoryList [] = Left $ Specific 0
+        levelOfCategoryList inner_categories =
+            case partitionEithers (map level inner_categories) of
+                (just_valid_levels, []) ->
+                    case filter (AnyLevel /=) just_valid_levels of
+                        [] -> Left AnyLevel
+                        other_levels -> Left $ maximum other_levels
+                (_, some_errors) -> Right $ concat some_errors
+
+        incrementLevel :: CategoryLevel -> CategoryLevel
         incrementLevel some_level =
             case some_level of
                 Specific l -> Specific (1 + l)
                 anything_else -> anything_else
-        basicLevel a_category =
+
+        level_inner :: Category -> Either CategoryLevel [Error]
+        level_inner input_category =
             case input_category of
-                (Thing t) -> Specific 0
-                (Composite Set inner) -> incrementLevel (getInnerLevel inner)
-                (Composite Higher inner) -> incrementLevel (getInnerLevel inner)
-                (Composite _ inner) -> getInnerLevel inner
-                m@Morphism{input=p@Placeholder{name=name, ph_category=ph_cat},output=output} -> getInnerLevel [p, replace output Reference{name=name} p{ph_level=level ph_cat}]
-                m@Morphism{input=input,output=output} -> maximum [Specific 0, level output]
-                Placeholder{ph_level=AnyLevel, ph_category=ph_c} -> level ph_c 
-                Placeholder{ph_level=other} -> other
-                m@MorphismCall{base_morphism=bm, argument=a} -> if isMorphic bm then level $ output (asMorphism bm) else getInnerLevel [bm, a]
-                Special{special_type=Flexible} -> AnyLevel
-                Special{special_type=Universal} -> Infinite
-                Reference{} -> AnyLevel
-                l@Label{target=target} -> 
-                    if isRecursiveCategory l 
-                        then do 
-                            let unfolded = unfold Flat l
-                            incrementLevel $ level unfolded
-                        else
-                            level target 
-                Dereference{base_category=bc,category_id=id} ->
-                    case dereference id bc of
-                        Nothing -> level bc
-                        Just something -> level something
-                RefinedCategory {base_category=_base_category, predicate=_predicate} -> level _base_category
-                Membership {small_category=sc} -> level sc
-                im@IntermediateMorphism{} -> level (asMorphism im)
+                (Thing t) -> Left $ Specific 0
+                c@(Composite Set inner) ->
+                    case levelOfCategoryList inner of
+                        Left level -> Left (incrementLevel level)
+                        Right errors -> Right $ map (addToErrorStack c) errors
+                (Composite _ inner) -> levelOfCategoryList inner
+                p@Placeholder{placeholder_type=Element, placeholder_category=ph_c} ->
+                    case level ph_c of
+                        Right errors -> Right $ map (addToErrorStack p) errors
+                        Left (Specific l) -> Left (LessThan l)
+                        Left (LessThan l) -> Left $ LessThan l
+                        Left Infinite -> Left AnyLevel
+                        Left AnyLevel -> Left AnyLevel
+                l@Placeholder{placeholder_type=Label, placeholder_category=ph_c} ->
+                    let
+                        category_of_interest =
+                            if isRecursiveCategory ph_c
+                                then unroll Flat l
+                                else ph_c
+                    in
+                        case level category_of_interest of
+                            Left level -> Left level
+                            Right errors -> Right $ map (addToErrorStack l) errors
+                Refined {base=_base_category, predicate=_predicate} -> level _base_category
+                Special{special_type=Flexible} -> Left AnyLevel
+                Special{special_type=Universal} -> Left Infinite
+                Reference{} -> Left AnyLevel
+                FunctionCall{base=b, argument=a} ->
+                    case uncheckedCall a b of
+                        ErrorList errors -> Right errors
+                        Valid cat -> level cat
+                a@Access{base=bc,access_id=id} ->
+                    case evaluateAccess a of
+                        Valid cat -> level cat
+                        ErrorList errors -> Right (map (addToErrorStack a) errors)
+                i@Import{} -> Left AnyLevel
+                def@Definition{definition_category=d} -> level d
+                mem@Membership{big_category=bc, small_category=sc} -> level sc
     in
-        basicLevel input_category
+        if isRecursiveCategory input_category
+            then case level_inner input_category of
+                Left level -> Left (incrementLevel level)
+                Right errors -> Right errors
+            else level_inner input_category
 
-isRecursiveCategory :: Category -> Bool
-isRecursiveCategory Label{name=rec_name,target=rec_category} = rec_name `elem` map name (freeVariables rec_category)
-isRecursiveCategory _ = False
+tracedHas :: Category -> Category -> Errorable Bool
+-- tracedHas a b = trace ("big: " ++ show a ++ "\nsmall: " ++ show b ++ "\n") (has a b)
+tracedHas = has
 
-freeVariables :: Category -> [Category]
-freeVariables (Thing _) = []
-freeVariables (Morphism input output) = freeVariables input ++ freeVariables output
-freeVariables (Composite _ inner) = concatMap freeVariables inner
-freeVariables ph@(Placeholder _ _ ph_category) = ph : freeVariables ph_category
-freeVariables MorphismCall{base_morphism=bm, argument=a} = freeVariables bm ++ freeVariables a
-freeVariables f@Special{} = []
-freeVariables r@Reference{} = [r]
-freeVariables RefinedCategory{base_category=bc} = freeVariables bc
-freeVariables Dereference{base_category=bc, category_id=_category_id} =
-    case dereference _category_id bc of
-        Just something -> freeVariables something
-        _ -> []
-freeVariables Membership{small_category=sc} = freeVariables sc
-freeVariables Label{name=name,target=category} = filter (/= Reference{name=name}) $ freeVariables category
-freeVariables i@IntermediateMorphism{} = freeVariables (asMorphism i)
+has :: Category -> Category -> Errorable Bool
+has big_category small_category
+    | big_category == small_category = Valid True
+    | otherwise = has_inner big_category small_category
+        where
+            has_inner :: Category -> Category -> Errorable Bool
+            {- substitutive rules -}
+            has_inner (Composite _ [category]) small_category = tracedHas category small_category
+            has_inner big_category (Composite _ [category]) = tracedHas big_category category
+            has_inner (Placeholder _ Element category) small_category
+                | category == small_category = Valid False
+                | otherwise = tracedHas category small_category
+            has_inner big_category (Placeholder _ Element category) = tracedHas big_category category
+            has_inner (Placeholder _ Label category) small_category
+                | isRecursiveCategory big_category = tracedHas (unroll Recursive big_category) small_category
+                | otherwise = tracedHas category small_category
+            has_inner big_category (Placeholder _ Label category)
+                | isRecursiveCategory small_category = tracedHas big_category (unroll Recursive big_category)
+                | otherwise = tracedHas category small_category
+            has_inner c_big@Composite{composite_type=Composition} other_category =
+                case uncheckedCompositeToFunction c_big of
+                    ErrorList errors -> ErrorList errors
+                    Valid cat -> tracedHas cat other_category
+            has_inner other_category c_small@Composite{composite_type=Composition} =
+                case uncheckedCompositeToFunction c_small of
+                    ErrorList errors -> ErrorList errors
+                    Valid cat -> tracedHas cat other_category
 
--- replace :: base_expr -> old -> new -> new_expr 
--- idea compare base expr to old. if same replace with new. otherwise return old. recurse
-replace :: Category -> Category -> Category -> Category
-replace base_expr old new
-    | base_expr == old = new
-    | otherwise =
-        case base_expr of
-            Thing _ -> base_expr
-            Composite composite_type inner -> Composite composite_type (map replace inner <*> [old] <*> [new])
-            Morphism input output -> Morphism (replace input old new) (replace output old new)
-            Placeholder id ph_level ph_category -> Placeholder id ph_level (replace ph_category old new)
-            MorphismCall bm a -> MorphismCall (replace bm old new) (replace a old new)
-            Dereference base_category id -> Dereference (replace base_category old new) id
-            Special{} -> base_expr
-            Reference{} -> base_expr
-            l@Label{name=name, target=target} -> l{target=replace target old new}
-            Membership{big_category=bc, small_category=sc} -> Membership{big_category=replace bc old new, small_category=replace sc old new}
-            RefinedCategory {base_category=bc, predicate=p} -> RefinedCategory{base_category=replace bc old new, predicate=replace p old new}
-            IntermediateMorphism{chain=im_chain} -> IntermediateMorphism{chain=map replaceMorphismTerm im_chain <*> [old] <*> [new]}
+            {- Composite Categories -}
+            has_inner (Composite big_type []) (Composite small_type []) = Valid $ big_type == small_type
+            has_inner (Composite big_type []) _ = Valid False
+            {- Composite Set -}
+            has_inner (Composite Set set_inner) small_category = do
+                let result = map tracedHas set_inner <*> [small_category]
+                case partitionErrorable result of
+                    ([], some_stuff) -> Valid False
+                    (results, some_stuff) -> Valid $ or results
+            has_inner big_category (Composite Set set_inner) = do
+                let result = map (tracedHas big_category) set_inner
+                case partitionErrorable result of
+                    ([], some_stuff) -> Valid False
+                    (results, some_stuff) -> Valid $ and results
+            {- Composite Tuple -}
+            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Tuple small_inner)
+                | length big_inner /= length small_inner = Valid False
+                | otherwise =
+                    case partitionErrorable $ map tracedHas big_inner <*> small_inner of
+                        (intermediate_results, []) -> Valid $ and intermediate_results
+                        (_, some_errors) -> ErrorList some_errors
+            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Sumple small_inner)
+                | length big_inner /= length small_inner = Valid False
+                | otherwise =
+                    {- TODO: Verify this logic... -}
+                    case partitionErrorable $ map (tracedHas c_big) small_inner of
+                        ([], some_errors) -> Valid False
+                        (intermediate_results, some_errors) -> Valid $ or intermediate_results
+            has_inner c_big@(Composite Tuple _) other = Valid False
+            {- Composite Sumple -}
+            has_inner (Composite Sumple sum_inner) other_category = do
+                let result = map tracedHas sum_inner <*> [other_category]
+                case partitionErrorable result of
+                    ([], some_stuff) -> Valid False
+                    (results, some_stuff) -> Valid $ and results
+            has_inner other_category (Composite Sumple sum_inner) = do
+                let result = map tracedHas sum_inner <*> [other_category]
+                case partitionErrorable result of
+                    ([], some_stuff) -> Valid False
+                    (results, some_stuff) -> Valid $ or results
+            {- Composite Case -}
+            has_inner big@(Composite Case case_inner) other_category = has_inner big{composite_type=Set} other_category
+            {- Composite Function -}
+            has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} c2@Composite{composite_type=c2_type}
+                | isDataCompositeType c2_type = Valid False
+                | otherwise = tracedHas c1{composite_type=Tuple} c2{composite_type=Tuple}
+            has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} other = Valid False
+            {- Refined -}
+            {- TODO: Handle refinements via SMT solver and approximate methods -}
+            has_inner Refined{base=base, predicate=p} Refined{base=base_other, predicate=p_other} =
+                case partitionErrorable [tracedHas base base_other, tracedHas p p_other] of
+                    (results, []) -> Valid (and results)
+                    (_, any_errors) -> ErrorList any_errors
+            has_inner Refined{base=base, predicate=p} other
+                | base == other = Valid True
+                | otherwise = Valid False
+            {- Special -}
+            has_inner Special{} _ = Valid True
+            has_inner _ Special{special_type=Flexible} = Valid True
+            has_inner _ Special{special_type=Universal} = Valid False
+            {- Reference -}
+            has_inner r@Reference{} other = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r, other]}]
+            has_inner other r@Reference{} = ErrorList [Error{error_type=UnresolvedReference, error_stack=[other, r]}]
+            {- Function Call -}
+            has_inner mc@FunctionCall{base=bm, argument=a} other =
+                case uncheckedCall a bm of
+                    ErrorList some_errors -> ErrorList some_errors
+                    Valid some_cat -> tracedHas some_cat other
+            has_inner other mc@FunctionCall{base=bm, argument=a} =
+                case uncheckedCall a bm of
+                    ErrorList some_errors -> ErrorList some_errors
+                    Valid some_cat -> tracedHas other some_cat
+            {- Access -}
+            has_inner a@Access{base=b, access_id=id} other =
+                case evaluateAccess a of
+                    ErrorList some_errors -> ErrorList some_errors
+                    Valid cat -> tracedHas cat other
+            has_inner i@Import{} other = ErrorList [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
+            has_inner def@Definition{definition_category=d} other = tracedHas d other
+            has_inner mem@Membership{big_category=bc, small_category=sc} other = tracedHas sc other
+            {- Things -}
+            -- equal things and other cases are handled above
+            has_inner (Thing t) _ = Valid False
 
-replaceReferences :: Category -> Category -> Category
-replaceReferences base_expr l@Label{name=label_name, target=c_target} = replace base_expr Reference{name=label_name} (unfold Recursive l)
-replaceReferences base_expr p@Placeholder{name=ph_name} = replace base_expr Reference{name=ph_name} p
-replaceReferences be l = error $ "ReplaceReferences error. Cannot replace non label/ph in: \n" ++ show be ++ "\n With attempted label/ph: \n" ++ show l
+isValidArgument :: Category -> Category -> Bool
+isValidArgument base_category argument =
+    case base_category of
+        Placeholder{placeholder_type=Element, placeholder_category=category} ->
+            case category `has` argument of
+                Valid result -> result
+                ErrorList errors -> False
+        c@Composite{composite_type=Case, inner_categories=inner_categories} -> isValidArgument c{composite_type=Sumple} argument
+        c@Composite{composite_type=Sumple, inner_categories=inner_categories} ->
+            case partitionErrorable (map tracedHas inner_categories <*> [argument]) of
+                (results,_) -> or results
+        _ -> base_category == argument
 
-data UnfoldType = Flat | Recursive
-unfold :: UnfoldType -> Category -> Category
-unfold Flat l@Label{name=rec_name, target=rec_cat} = replace rec_cat Reference{name=rec_name} Special{special_type=Flexible}
-unfold Recursive l@Label{name=rec_name, target=rec_cat} = replace rec_cat Reference{name=rec_name} l
-unfold _ something_else = error $ "Cannot unfold a non labeled category: " ++ show something_else
+isValidArgumentTo :: Category -> Category -> Bool
+isValidArgumentTo argument c@Composite{composite_type=c_type, inner_categories=inner}
+    | not (isFunctionCompositeType c_type) = error "Bad check"
+    | otherwise = head inner `isValidArgument` argument
+isValidArgumentTo _ _ = False
 
-dereference :: Id -> Category -> Maybe Category
-dereference id Label{name=l_name, target=l_target}
-    | l_name == id = Just l_target
-    | otherwise = dereference id l_target
-dereference id t@Thing{name=t_name}
-    | id == t_name = Just t
-    | otherwise = Nothing
-dereference id p@Placeholder{name=p_name,ph_category=ph_category}
-    | id == p_name = Just p
-    | otherwise =
-        case dereference id ph_category of
-            Nothing -> Nothing
-            Just something -> Just p{name=Unnamed, ph_category=something}
-dereference id r@Reference{name=r_name}
-    | id == r_name = Just r
-    | otherwise = Nothing
-dereference id c@Composite{inner=inner} =
-    case id of
-        Index idx -> Just (inner!!idx)
-        Name str_name ->
-            case mapMaybe (dereference id) inner of
-                [] -> Nothing
-                x:stuff -> Just x
-        Unnamed -> error "Cannot dereference with an Unnamed"
-dereference id m@Morphism{input=input, output=output} =
-    case id of
-        Name "input" -> Just input
-        Name "output" -> Just output
-        _ -> Nothing
-dereference id m@IntermediateMorphism{chain=[]} = Nothing
-dereference id m@IntermediateMorphism{chain=[head,tail]} =
-    case id of
-        Name "input" -> Just (m_category head)
-        Name "output" -> Just (m_category tail)
-        _ -> Nothing
-dereference id m@IntermediateMorphism{chain=(head:tail)} =
-    case id of
-        Name "input" -> Just (m_category head)
-        Name "output" -> Just (IntermediateMorphism{chain=tail})
-        _ -> Nothing
-dereference id d@Dereference{base_category=bc,category_id=c_id} =
+validateCategoryInner :: Category -> Errorable Category
+validateCategoryInner t@(Thing Unnamed) = ErrorList [Error{error_type=UnnamedCategory, error_stack=[t]}]
+validateCategoryInner t@(Thing (Index _)) = ErrorList [Error{error_type=UnnamedCategory, error_stack=[t]}]
+validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=[]}
+    | isFunctionCompositeType composition_type =
+        ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
+    | otherwise = Valid c
+validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=inner_cats}
+    | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
+        ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[c]}]
+    | otherwise = Valid c
+validateCategoryInner ph@Placeholder{name=Unnamed} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
+validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
+validateCategoryInner ph@Placeholder{name=(Name _), placeholder_category=ph_cat} = validateCategoryInner ph_cat
+validateCategoryInner r@Refined{base=cat,predicate=p}
+    | not (isFunctionComposite p) = ErrorList [Error{error_type=PredicateHasBadArgument, error_stack=[r]}]
+    | Composite{inner_categories=head:rest} <- cat, not (isValidArgument head cat) = ErrorList [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
+    | otherwise = Valid r
+{- TODO: missed case here of nested function calls -}
+validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inner_categories=head:rest}, argument=a}
+    | not (isFunctionCompositeType c_type) = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
+    | otherwise = substituteArg a head
+validateCategoryInner f@FunctionCall{base=b, argument=a} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
+validateCategoryInner a@Access{base=b@Composite{inner_categories=inner}, access_id=Index num}
+    | num < 0 = ErrorList [Error{error_type=AccessIndexBelowZero, error_stack=[a]}]
+    | length inner <= num = ErrorList [Error{error_type=AccessIndexOutsideRange, error_stack=[a]}]
+    | otherwise = validateCategoryInner b
+validateCategoryInner a@Access{base=bc, access_id=Unnamed} = ErrorList [Error{error_type=EmptyAccessID, error_stack=[a]}]
+validateCategoryInner a@Access{base=bc, access_id=a_id} =
+    case evaluateAccess a of
+        Valid cat -> validateCategoryInner bc
+        ErrorList errors -> ErrorList errors
+validateCategoryInner other = Valid other
+
+validateCategory :: Category -> Errorable Category
+validateCategory = postManipulateAST validateCategoryInner
+
+simplifyInner :: Category -> Errorable Category
+simplifyInner (Composite _ [any]) = Valid any
+simplifyInner ph@Placeholder{placeholder_type=Element, placeholder_category=category}
+    | level category == Left (Specific 0) = Valid category
+    | otherwise = Valid ph
+simplifyInner input_category = Valid input_category
+
+simplify :: Category -> Errorable Category
+simplify = postManipulateAST simplifyInner
+
+-- IO to files and stuff --
+
+basePath :: String
+basePath = "/home/mpriam/git/mtpl_language/src/Categories/"
+
+categoryURIToFilePath :: String -> String
+categoryURIToFilePath input_str =
     let
-        intermediate_deref = dereference c_id bc
+        repl '.' = '/'
+        repl c = c
     in
-        case intermediate_deref of
-            Nothing -> Nothing
-            Just some_category -> dereference id some_category
-dereference id f@Special{special_type=Flexible} = Just f
-dereference id other = Nothing
+        map repl input_str
 
-asMorphism :: Category -> Category
-asMorphism input_category
-    | not . isMorphic $ input_category = error $ "unable to represent as morphism: " ++ show input_category
-    | otherwise =
-        case input_category of
-            m@Morphism{} -> m
-            (Composite Composition comp_inner) -> Morphism (input (head morphised_comp_inner)) (output (last morphised_comp_inner))
-                where
-                    morphised_comp_inner = map asMorphism comp_inner
-            (Composite Sumposition comp_inner) -> Morphism (Composite Sum (map (input . asMorphism) comp_inner)) (Composite Sum (map (output . asMorphism) comp_inner))
-            f@Special{special_type=Flexible} -> Morphism f f
-            Dereference{base_category=bc, category_id=id} -> asMorphism $ fromJust $ dereference id bc
-            Label{target=target} -> asMorphism target
-            im@IntermediateMorphism{} -> imToMorphism im
-            something -> error $ "Missing definition in isMorphic: " ++ show something
+categoryToStr :: Category -> String
+categoryToStr = show
 
--- useful categories
+categoryToFile :: String -> Category -> IO (Either () Error)
+categoryToFile category_uri cat = do
+    let full_path = basePath ++ categoryURIToFilePath category_uri ++ ".ast.mtpl"
+    fileExist <- doesFileExist full_path
+    if fileExist
+        then return (Right Error{error_type=BadExportFileExists, error_stack=[Reference (Name category_uri)]})
+        else fmap Left (writeFile full_path (show cat))
 
-valid :: Category
-valid = Composite Product []
+strToCategory :: String -> Category
+strToCategory = read
 
-empty :: Category
-empty = Composite Sum []
+fileToCategory :: String -> IO (Either Category Error)
+fileToCategory category_uri = do
+    let full_path = basePath ++ categoryURIToFilePath category_uri ++ ".ast.mtpl"
+    fileExist <- doesFileExist full_path
+    if fileExist
+        then return (Right Error{error_type=BadExportFileExists, error_stack=[Reference (Name category_uri)]})
+        else fmap (Left . strToCategory) (readFile full_path)
 
-universal :: Category
-universal = Special{special_type=Universal}
+evaluateImport :: Category -> ErrorableT IO Category
+evaluateImport Import{category_uri=cat_uri} = ErrorableT $ do
+    result <- fileToCategory cat_uri
+    case result of
+        Left cat -> return $ Valid cat
+        Right error -> return $ ErrorList [error]
+evaluateImport other = error $ "called on bad input: " ++ show other
 
-flex :: Category
-flex = Special{special_type=Flexible}
+evaluateInner :: Category -> ErrorableT IO Category
+evaluateInner FunctionCall{base=bc, argument=a} = ErrorableT (return $ uncheckedCall a bc) >>= evaluateInner
+evaluateInner a@Access{} = ErrorableT (return $ evaluateAccess a) >>= evaluateInner
+evaluateInner i@Import{} = evaluateImport i >>= evaluateInner
+evaluateInner mem@Membership{big_category=bc, small_category=sc} = ErrorableT (
+    case tracedHas bc sc of
+        Valid b -> if b
+            then return $ Valid sc
+            else return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
+        ErrorList ers -> return $ ErrorList ers) >>= evaluateInner
+evaluateInner cat = ErrorableT $ return $ Valid cat
 
--- Intermediate morphism representation for parsing
+evaluate :: Category -> ErrorableT IO Category
+evaluate c = do
+    cat <- postManipulateASTIO evaluateInner c
+    if cat == c then return c else evaluate cat
 
-data MorphismTermType = Import | Given | Definition | Return deriving (Show, Eq)
-data MorphismTerm =
-    MorphismTerm {
-        m_type::MorphismTermType,
-        m_category::Category
-    } |
-    MorphismTermChain {
-        c_input::MorphismTerm,
-        c_output::MorphismTerm
-    } deriving (Show, Eq)
-
--- NEXT TODO: Fix this to handle definitions and replacing things in the chain
-imToMorphism :: Category -> Category
-imToMorphism IntermediateMorphism{chain=chain} = morphismTermListToCategory chain
-imToMorphism somthing_weird = error $ "Only supports Intermediate Morphisms. Passed in " ++ show somthing_weird
-
-morphismToTermList :: Category -> [MorphismTerm]
-morphismToTermList Morphism{input=m_input, output=m@Morphism{}} = MorphismTerm{m_type=Given, m_category=m_input}:morphismToTermList m
-morphismToTermList Morphism{input=m_input, output=anything_else} = [MorphismTerm{m_type=Given, m_category=m_input}, MorphismTerm{m_type=Return,m_category=anything_else}]
-morphismToTermList anything_else = error $ "categoryToIM only supports Morphisms. gave " ++ show anything_else
-
-morphismToIm :: Category -> Category
-morphismToIm m@Morphism{} = IntermediateMorphism{chain=morphismToTermList m}
-morphismToIm something_else = error $ "morphismToIm must take in a Morphism specifically. Got " ++ show something_else
-
-replaceMorphismTerm :: MorphismTerm -> Category -> Category -> MorphismTerm
-replaceMorphismTerm mt@MorphismTerm{m_category=base_category} old_category new_category = mt{m_category=replace base_category old_category new_category}
-replaceMorphismTerm MorphismTermChain{c_input=input, c_output=output} old_category new_category = MorphismTermChain{c_input=replaceMorphismTerm input old_category new_category, c_output=replaceMorphismTerm output old_category new_category}
-
-isMorphismTermOfTypes :: [MorphismTermType] -> MorphismTerm -> Bool
-isMorphismTermOfTypes allowable_term_types morphism_term = m_type morphism_term `elem` allowable_term_types
-
-uncurryMorphismTermChain :: MorphismTerm -> [MorphismTerm]
-uncurryMorphismTermChain MorphismTermChain{c_input=input, c_output=mc@MorphismTermChain{}} = input:uncurryMorphismTermChain mc
-uncurryMorphismTermChain MorphismTermChain{c_input=input, c_output=anything_else} = [input, anything_else]
-uncurryMorphismTermChain m@MorphismTerm{} = error $ "Bad morphism term chain with only one term. " ++ show (m_category m)
-
-validMorphismTermSequence :: [MorphismTerm] -> Bool
-validMorphismTermSequence [] = False
-validMorphismTermSequence populated_term_list = and ([
-        isMorphismTermOfTypes [Import, Given, Definition, Return] (head populated_term_list),
-        isMorphismTermOfTypes [Return] (last populated_term_list)
-    ] ++ map (isMorphismTermOfTypes [Given,Definition,Return]) (tail populated_term_list))
-
-makeNoDefMorphismTermSequence :: [MorphismTerm] -> [MorphismTerm]
-makeNoDefMorphismTermSequence [] = []
-makeNoDefMorphismTermSequence (m@MorphismTermChain{}:rest) = makeNoDefMorphismTermSequence $ uncurryMorphismTermChain m ++ makeNoDefMorphismTermSequence rest
-makeNoDefMorphismTermSequence (MorphismTerm{m_type=Definition, m_category=Label{name=l_name, target=t_category}}:rest) = makeNoDefMorphismTermSequence $ map replaceMorphismTerm rest <*> [Reference{name=l_name}] <*> [t_category]
-makeNoDefMorphismTermSequence (MorphismTerm{m_type=Definition, m_category=other}:rest) = rest
-makeNoDefMorphismTermSequence (other:rest) = other:makeNoDefMorphismTermSequence rest
-
-morphismTermListToCategory :: [MorphismTerm] -> Category
-morphismTermListToCategory input_list =
-    let
-        removed_defs = makeNoDefMorphismTermSequence input_list
-    in
-        case removed_defs of
-            [] -> error "bad term list to category []"
-            [MorphismTerm{m_type=Return, m_category=cat}] -> cat
-            s@[other] -> error $ "bad term list to category " ++ show s
-            [head,tail] -> Morphism{input=m_category head, output=m_category tail}
-            (head:tail) -> Morphism{input=m_category head, output=morphismTermListToCategory tail}
+execute :: Category -> ErrorableT IO Category
+execute input_cat = do
+    let step1 = validateCategory input_cat >>= simplify
+    case step1 of
+        ErrorList ers -> ErrorableT $ return $ ErrorList ers
+        Valid cat -> evaluate cat
