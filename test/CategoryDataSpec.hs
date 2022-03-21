@@ -305,15 +305,15 @@ spec = do
     --             }
     --         }
     --         unfold Recursive simple_ab `shouldBe` Composite {composite_type = Product, inner_categories= [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_type=Label, placeholder_category= Composite {composite_type = Product, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}]}
-    -- describe "importCategories" $ do
-    --     it "should passthrough things" $ do
-    --         let test_item = Thing{name=Name "name"}
-    --         result <- importCategories test_item
-    --         result `shouldBe` test_item
-    --     it "should import intermediate morphisms " $ do
-    --         let test_item = IntermediateMorphism [MorphismTerm{m_type=CategoryData.Import, m_category=Label{name=Name "l", placeholder_type=Label,placeholder_category=Dereference{base_category=Reference{name=Name "base"},category_id=Name "list"}}}]
-    --         result <- importCategories test_item
-    --         result `shouldBe` IntermediateMorphism {chain = [MorphismTerm {m_type = Definition, m_category = Label {name = Name "l", target = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "list_type", ph_level = AnyLevel, ph_category = Special {special_type = Universal}}},MorphismTerm {m_type = Return, m_category = Composite {composite_type = Sum, inner = [Label {name = Name "empty", target = Thing {name = Name "empty_list"}},Label {name = Name "nonempty", target = Composite {composite_type = Product, inner = [Label {name = Name "head", target = Reference {name = Name "list_type"}},Label {name = Name "tail", target = MorphismCall {base_morphism = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}}]}}]}}]}}}]}
+    describe "importCategories" $ do
+        it "should import categories test1" $ do
+            let test_item = Import{category_uri="test.test1"}
+            result <- runErrorableT $ evaluateImport test_item
+            result `shouldBe` Valid (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
+        it "should import categories test2" $ do
+            let test_item = Import{category_uri="test.test2"}
+            result <- runErrorableT $ evaluateImport test_item
+            result `shouldBe` Valid Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
     -- describe "RecursiveCategory" $ do
     --     it "(isRecursiveCat) example 1 " $ do
     --         let parsed = parseCategoryString "nat_data:|zero:(),nonzero:(head:(),rest:$nat_data)|"

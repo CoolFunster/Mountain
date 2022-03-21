@@ -1,0 +1,4 @@
+test2:*|
+    (`first, `a -> `b),
+    (`second, `b -> `c)
+|*

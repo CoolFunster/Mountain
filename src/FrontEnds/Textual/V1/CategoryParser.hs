@@ -43,7 +43,7 @@ loadPrettyModule fp =
     let
         repl '.' = '/'
         repl c = c
-        file_name = basePath ++ map repl fp
+        file_name = prettyBasePath ++ map repl fp
     in
         do
             file_exist <- doesFileExist (file_name ++ ".mtpl")

@@ -748,12 +748,16 @@ strToCategory :: String -> Category
 strToCategory = read
 
 fileToCategory :: String -> IO (Either Category Error)
-fileToCategory category_uri = do
-    let full_path = basePath ++ categoryURIToFilePath category_uri ++ ".ast.mtpl"
-    fileExist <- doesFileExist full_path
-    if fileExist
-        then return (Right Error{error_type=BadExportFileExists, error_stack=[Reference (Name category_uri)]})
-        else fmap (Left . strToCategory) (readFile full_path)
+fileToCategory category_uri = 
+    let
+        repl '.' = '/'
+        repl c = c
+        full_path = basePath ++ categoryURIToFilePath category_uri ++ ".ast.mtpl"
+    in do
+        fileExist <- doesFileExist full_path
+        if not fileExist
+            then return (Right Error{error_type=BadImport, error_stack=[Reference (Name category_uri)]})
+            else fmap (Left . strToCategory) (readFile full_path)
 
 evaluateImport :: Category -> ErrorableT IO Category
 evaluateImport Import{category_uri=cat_uri} = ErrorableT $ do

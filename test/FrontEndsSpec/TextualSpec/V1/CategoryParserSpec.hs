@@ -55,6 +55,12 @@ spec = do
             parseCategoryString "x@`a" `shouldBe` Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}
             parseCategoryString "x@(`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Element, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}
             parseCategoryString "@`a" `shouldBe` Placeholder{name=Unnamed, placeholder_type=Element, placeholder_category=Thing (Name "a")}
+        it "(Placeholder) should parse labels" $ do
+            parseCategoryString "x:`a" `shouldBe` Placeholder{name=Name "x", placeholder_type=Label, placeholder_category=Thing (Name "a")}
+            parseCategoryString "x:(`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}
+            parseCategoryString ":`a" `shouldBe` Placeholder{name=Unnamed, placeholder_type=Label, placeholder_category=Thing (Name "a")}
+        it "(Placeholder) should parse nested labels" $ do
+            parseCategoryString "x:(x:`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "a"}}]}}
         it "(Refinement) should parse refinement" $ do
             parseCategoryString "{x@(`a) | `a -> `b}" `shouldBe` Refined {base = Placeholder {name = Name "x", placeholder_type = Element, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}, predicate = Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}}
         it "(Special) should parse flexible" $ do
@@ -78,11 +84,11 @@ spec = do
             parseCategoryString "$base_category::$child_category" `shouldBe` Membership{big_category=Reference (Name "base_category") , small_category=Reference (Name "child_category") }
         it "(Recursive) should parse recursion" $ do
             parseCategoryString "self:(`a -> $self[`b])" `shouldBe`  Placeholder {name = Name "self", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},FunctionCall {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
-    -- describe "Module loader" $ do
-    --     it "should load files" $ do
-    --         result <- loadModule "base.list"
-    --         result `shouldBe` result
-    --     it "should load directories" $ do
-    --         result <- loadModule "base"
-    --         result `shouldBe` trace (categoryToStr result) result
+    describe "Module loader" $ do
+        it "should load files - test1" $ do
+            result <- loadPrettyModule "test.test1"
+            result `shouldBe` Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}}
+        it "should load files - test2" $ do
+            result <- loadPrettyModule "test.test2"
+            result `shouldBe` Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
             
