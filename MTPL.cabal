@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4c1fcee6ad88444d7c93718bd36a086c42383243b60a5c6555aa3e27bf846b18
+-- hash: 680283cdfd08b2380604f7b734868eccadb301aabf0ace032566ad30ef852cf7
 
 name:           MTPL
 version:        0.1.0.0
@@ -28,6 +28,8 @@ source-repository head
 library
   exposed-modules:
       CategoryData
+      FrontEnds.Textual.V1.CategoryParser
+      FrontEnds.Textual.V1.CategoryWriter
   other-modules:
       Paths_MTPL
   hs-source-dirs:
@@ -35,6 +37,7 @@ library
   build-depends:
       QuickCheck
     , algebraic-graphs
+    , array
     , base >=4.7 && <5
     , containers
     , directory
@@ -58,6 +61,7 @@ executable MTPL-exe
       MTPL
     , QuickCheck
     , algebraic-graphs
+    , array
     , base >=4.7 && <5
     , containers
     , directory
@@ -84,6 +88,7 @@ test-suite spec
       MTPL
     , QuickCheck
     , algebraic-graphs
+    , array
     , base >=4.7 && <5
     , containers
     , directory

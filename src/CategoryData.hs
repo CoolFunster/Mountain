@@ -23,7 +23,7 @@ data SpecialCategoryType =
     Universal
     deriving (Eq, Show, Read)
 
-data CompositionType =
+data CompositeType =
     Set | -- enumerated category
     Tuple | -- tuple
     Sumple | -- a or b, union
@@ -59,7 +59,7 @@ data Category =
     -- categories
     Thing { name::Id } | -- a concrete object
     Composite {  -- a group of things
-        composite_type::CompositionType,
+        composite_type::CompositeType,
         inner_categories::[Category]
     } |
     Placeholder {
@@ -86,11 +86,11 @@ data Category =
         base::Category,
         access_id::Id
     } |
-    Import {
-        category_uri::String
+    Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
+        category_uri::[Char]
     } |
     Definition {
-        definition_category::Category
+        def_category::Category
     } |
     Membership {
         big_category::Category,
@@ -201,17 +201,17 @@ isComposite :: Category -> Bool
 isComposite Composite{} = True
 isComposite _ = False
 
-isCompositeOfType :: CompositionType -> Category -> Bool
+isCompositeOfType :: CompositeType -> Category -> Bool
 isCompositeOfType input_comp_type Composite{composite_type=cmp_comp_type} = input_comp_type == cmp_comp_type
 isCompositeOfType _ _ = False
 
-isDataCompositeType :: CompositionType -> Bool
+isDataCompositeType :: CompositeType -> Bool
 isDataCompositeType Tuple = True
 isDataCompositeType Sumple = True
 isDataCompositeType Set = True
 isDataCompositeType _ = False
 
-isFunctionCompositeType :: CompositionType -> Bool
+isFunctionCompositeType :: CompositeType -> Bool
 isFunctionCompositeType = not . isDataCompositeType
 
 isFunctionComposite :: Category -> Bool
@@ -284,7 +284,7 @@ checkAST aggregator checker r@Reference{} = checker r
 checkAST aggregator checker fc@FunctionCall{base=b, argument=a} = aggregator [checker b, checker a, checker fc]
 checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker b, checker a]
 checkAST aggregator checker i@Import{} = checker i
-checkAST aggregator checker Definition{definition_category=d} = checker d
+checkAST aggregator checker Definition{def_category=d} = checker d
 checkAST aggregator checker Membership{big_category=bc, small_category=sc} = aggregator [checker bc, checker sc]
 
 manipulateAST :: (Category -> Maybe (Errorable Category)) -> (Category -> Errorable Category) -> Category -> Errorable Category
@@ -317,9 +317,9 @@ manipulateAST premanipulator postmanipulator category =
                 Valid cat -> manipulator a{base=cat}
                 ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
         manipulateASTInner manipulator i@Import{} = Valid i
-        manipulateASTInner manipulator def@Definition{definition_category=d} =
+        manipulateASTInner manipulator def@Definition{def_category=d} =
             case manipulateRecursively d of
-                Valid cat -> manipulator def{definition_category=cat}
+                Valid cat -> manipulator def{def_category=cat}
                 ErrorList errors -> ErrorList (map (addToErrorStack def) errors)
         manipulateASTInner manipulator mem@Membership{big_category=bc, small_category=sc} =
             case partitionErrorable (map manipulateRecursively [bc, sc]) of
@@ -529,7 +529,7 @@ level input_category =
                         Valid cat -> level cat
                         ErrorList errors -> Right (map (addToErrorStack a) errors)
                 i@Import{} -> Left AnyLevel
-                def@Definition{definition_category=d} -> level d
+                def@Definition{def_category=d} -> level d
                 mem@Membership{big_category=bc, small_category=sc} -> level sc
     in
         if isRecursiveCategory input_category
@@ -648,7 +648,7 @@ has big_category small_category
                     ErrorList some_errors -> ErrorList some_errors
                     Valid cat -> tracedHas cat other
             has_inner i@Import{} other = ErrorList [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
-            has_inner def@Definition{definition_category=d} other = tracedHas d other
+            has_inner def@Definition{def_category=d} other = tracedHas d other
             has_inner mem@Membership{big_category=bc, small_category=sc} other = tracedHas sc other
             {- Things -}
             -- equal things and other cases are handled above
