@@ -3,11 +3,12 @@ module FrontEnds.Textual.V1.CategoryParser where
 import CategoryData
 
 import Text.Megaparsec
-import Control.Monad.Combinators.Expr
 import Text.Megaparsec.Error
 import Text.Megaparsec.Char
 import Text.Megaparsec.Debug (dbg)
 import qualified Text.Megaparsec.Char.Lexer as L
+
+import Control.Monad.Combinators.Expr
 
 import Data.Text ( Text, pack, unpack, unpack, replace)
 import Data.Char
@@ -21,8 +22,8 @@ import System.FilePath.Posix
 import qualified Data.Text.IO as TextIO
 
 
-baseParseCategory :: Parser a -> FilePath -> Text -> a
-baseParseCategory cat_parser file_path file_contents = do
+_baseParseCategory :: Parser a -> FilePath -> Text -> a
+_baseParseCategory cat_parser file_path file_contents = do
     let result = runParser cat_parser file_path file_contents
     case result of
         Left parse_error -> error (errorBundlePretty parse_error)
@@ -31,7 +32,7 @@ baseParseCategory cat_parser file_path file_contents = do
 parseCategoryFileWith :: Parser a -> FilePath -> IO a
 parseCategoryFileWith parser path_to_file = do
     contents <- TextIO.readFile path_to_file
-    let category = baseParseCategory parser path_to_file contents
+    let category = _baseParseCategory parser path_to_file contents
     return category
 
 prettyBasePath ::FilePath
@@ -42,7 +43,7 @@ loadPrettyModule fp =
     let
         repl '.' = '/'
         repl c = c
-        file_name = basePath ++ map (toLower . repl) fp
+        file_name = basePath ++ map repl fp
     in
         do
             file_exist <- doesFileExist (file_name ++ ".mtpl")
@@ -63,13 +64,13 @@ parseCategoryFile :: FilePath -> IO Category
 parseCategoryFile = parseCategoryFileWith pCategory
 
 parseCategoryStringWith :: Parser a -> [Char] -> a
-parseCategoryStringWith cat_parser input_str = baseParseCategory cat_parser "String" (pack input_str)
+parseCategoryStringWith cat_parser input_str = _baseParseCategory cat_parser "String" (pack input_str)
 
 parseCategoryString :: [Char] -> Category
 parseCategoryString = parseCategoryStringWith pCategory
 
 parseCategoryTextWith :: Parser a -> Text -> a
-parseCategoryTextWith cat_parser = baseParseCategory cat_parser "String"
+parseCategoryTextWith cat_parser = _baseParseCategory cat_parser "String"
 
 parseCategoryText :: Text -> Category
 parseCategoryText = parseCategoryTextWith pCategory
@@ -97,15 +98,20 @@ postfix inner_parser f = Postfix (f <$ inner_parser)
 integer :: Parser Integer
 integer = lexeme L.decimal
 
+pStringBetweenWS :: [Char] -> Parser Text
+pStringBetweenWS input_str = try $ between (optional spaceConsumer) (optional spaceConsumer) (symbol (pack input_str))
+
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
-pWrapBetween open_char close_char = between (optional spaceConsumer <* symbol (pack open_char) <* optional spaceConsumer) (optional spaceConsumer <* symbol (pack close_char) <* optional spaceConsumer)
+pWrapBetween open_char close_char = between (pStringBetweenWS open_char) (pStringBetweenWS close_char)
 -- {- megaparsec helpers end -}
 
 pCategoryName :: Parser Id
 pCategoryName = do
     name <- some (alphaNumChar <|> char '_')
-    return (Name name)
+    case name of
+        "Any" -> fail "Cannot name category Any"
+        _ -> return (Name name)
 
 pCategoryIdx :: Parser Id
 pCategoryIdx = do
@@ -113,6 +119,22 @@ pCategoryIdx = do
     Index . fromInteger <$> integer
 
 pCategory = pFunction
+
+pFunction :: Parser Category
+pFunction = 
+    let
+        combineFunctions :: Category -> Category -> Category
+        combineFunctions a c@Composite{composite_type=Function,inner_categories=inner} = c{inner_categories=a:inner}
+        combineFunctions a b = Composite{composite_type=Function, inner_categories=[a,b]}
+    in
+    makeExprParser pFunctionTerm [
+        [
+            binaryR (pStringBetweenWS "->") combineFunctions
+        ]
+    ]
+
+pFunctionTerm :: Parser Category
+pFunctionTerm = pImport <|> pDefinition <|> pMembership
 
 pImport :: Parser Category
 pImport = do
@@ -128,32 +150,13 @@ pDefinition = do
     category <- pCategory
     return Definition{def_category=category}
 
-pFunctionTerm :: Parser Category
-pFunctionTerm = pImport <|> pDefinition <|> pMembership
-
-pFunction :: Parser Category
-pFunction = 
-    let
-        expr_parser = makeExprParser pFunctionTerm [
-                [
-                    binaryN (symbol (pack "->")) (\x y -> FunctionCall{base=x,argument=y})
-                ]
-            ]
-    in
-        do
-            expr_parser
-
 pMembership :: Parser Category
 pMembership =
-    let
-        expr_parser = makeExprParser pPlaceholder [
-                [
-                    binaryN (symbol (pack "::")) (\x y -> Membership{big_category=x,small_category=y})
-                ]
-            ]
-    in
-        do
-            expr_parser
+    makeExprParser pPlaceholder [
+        [
+            binaryN (pStringBetweenWS "::") (\x y -> Membership{big_category=x,small_category=y})
+        ]
+    ]
 
 {- If not a placeholder, falls through to other categories -}
 pPlaceholder :: Parser Category
@@ -165,10 +168,10 @@ pPlaceholder = do
     parsed_ph_type <- optional (try (symbol at <|> symbol colon))
     let ph_type = case parsed_ph_type of
             Nothing -> Nothing
-            Just some_val -> 
+            Just some_val ->
                 if some_val == at
                     then Just Element
-                    else Just CategoryData.Label 
+                    else Just CategoryData.Label
     category <- pCategoryTerm
     case ph_type of
         Nothing -> return category
@@ -207,17 +210,16 @@ pDereferenceExtension = do
 
 pStandardCategory :: Parser Category
 pStandardCategory = choice [
+    try pUniversal,
     try pThing,
     try pReference,
-    try pUniversal,
     try pFlexible,
     try pComposition,
     try pTuple,
-    try pSumposition,
+    try pCase,
     try pSumple,
     try pSet,
-    try pRefinement,
-    try pFunction]
+    try pRefinement]
 
 pThing :: Parser Category
 pThing = do
@@ -241,14 +243,15 @@ pFlexible = do
     _ <- symbol (pack "(%)")
     return (Special Flexible)
 
+
 {- Parses composite types that have a beg & end character wrapping them -}
 pCompositeTemplate :: CompositeType -> ([Char], [Char]) -> Parser Category
 pCompositeTemplate c_type (beg_sep, end_sep) = do
     inner_categories <- pWrapBetween beg_sep end_sep pCategoryInnerList
     return Composite{composite_type=c_type, inner_categories=inner_categories}
-    where
-        pCategoryInnerList :: Parser [Category]
-        pCategoryInnerList = sepBy pCategory (try $ optional spaceConsumer <* symbol (pack ","))
+
+pCategoryInnerList :: Parser [Category]
+pCategoryInnerList = sepBy pCategory (pStringBetweenWS ",")
 
 
 pTuple :: Parser Category
@@ -263,8 +266,8 @@ pSet = pCompositeTemplate Set ("{", "}")
 pComposition :: Parser Category
 pComposition = pCompositeTemplate Composition ("*(", ")*")
 
-pSumposition :: Parser Category
-pSumposition = pCompositeTemplate Case ("*|", "|*")
+pCase :: Parser Category
+pCase = pCompositeTemplate Case ("*|", "|*")
 
 pRefinementInner :: Parser Category
 pRefinementInner = do
