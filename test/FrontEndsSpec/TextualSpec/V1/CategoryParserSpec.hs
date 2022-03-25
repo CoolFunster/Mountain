@@ -39,10 +39,8 @@ spec = do
             parseCategoryString "(`a -> `b, `b -> `c)" `shouldBe` Composite {composite_type = Tuple, inner_categories = [Composite {composite_type=Function, inner_categories=[Thing (Name "a"), Thing (Name "b")]}, Composite {composite_type=Function, inner_categories=[Thing (Name "b"), Thing (Name "c")]}]}
         it "(Tuples) should handle spaces better" $ do
              parseCategoryString "( `anything , `empty_list )" `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing (Name "anything"), Thing (Name "empty_list")]}
-        it "(Sumples) should parse sumples" $ do
-            parseCategoryString "|`a, `b|" `shouldBe` Composite {composite_type = Sumple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}
-        it "(Set) should parse set" $ do
-            parseCategoryString "{`a,`b}" `shouldBe` Composite {composite_type = Set, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}
+        it "(Unions) should parse sumples" $ do
+            parseCategoryString "|`a, `b|" `shouldBe` Composite {composite_type = Union, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}
         it "(Composition) should parse compositions" $ do
             let a_to_b = parseCategoryString "`a -> `b"
             let b_to_c = parseCategoryString "`b -> `c"
@@ -84,6 +82,10 @@ spec = do
             parseCategoryString "$base_category::$child_category" `shouldBe` Membership{big_category=Reference (Name "base_category") , small_category=Reference (Name "child_category") }
         it "(Recursive) should parse recursion" $ do
             parseCategoryString "self:(`a -> $self[`b])" `shouldBe`  Placeholder {name = Name "self", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},FunctionCall {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
+        it "(Import) should parse import" $ do
+            parseCategoryString "import test.test1" `shouldBe` Import{category_uri="test.test1"}
+        it "(Define) should parse define" $ do
+            parseCategoryString "define x:`something" `shouldBe` Definition{def_category=Placeholder{name=Name "x", placeholder_type=Label, placeholder_category=Thing (Name "something")}}
     describe "Module loader" $ do
         it "should load files - test1" $ do
             result <- loadPrettyModule "test.test1"
@@ -91,4 +93,7 @@ spec = do
         it "should load files - test2" $ do
             result <- loadPrettyModule "test.test2"
             result `shouldBe` Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
-            
+        it "should load files - test3" $ do
+            result <- loadPrettyModule "test.test_define"
+            result `shouldBe` Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}}
+        

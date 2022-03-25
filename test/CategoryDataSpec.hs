@@ -10,10 +10,10 @@ nat = Placeholder{
     name=Name "Nat",
     placeholder_type=Label,
     placeholder_category=Composite{
-        composite_type=Sumple,
+        composite_type=Union,
         inner_categories=[
             Thing (Name "0"),
-            Composite Function [valid, Reference (Name "Nat")]
+            Composite Tuple [Thing (Name "S"), Reference (Name "Nat")]
         ]
     }
 }
@@ -45,25 +45,22 @@ spec = do
     describe "isRecursiveCategory" $ do
         it "Simple recursion should be identified" $ do
             isRecursiveCategory simpleRecursiveCat `shouldBe` True
+        it "Nats should be recursive" $ do
+            isRecursiveCategory nat `shouldBe` True
     describe "level" $ do
         it "(things) should have a level of zero" $ do
             let thing = Thing (Name "thing")
             level thing `shouldBe` Left (Specific 0)
-        it "(higher categories) should have a level of 1 more than their parts" $ do
+        it "(Union categories) should have a level of 1 more than their parts" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
-            let higher_category = Composite Set [thing, thing2]
+            let higher_category = Composite Union [thing, thing2]
             level higher_category `shouldBe` Left (Specific 1)
         it "(Tuple categories) should have a level of their components" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
             let product_category = Composite Tuple [thing, thing2]
             level product_category `shouldBe` Left (Specific 0)
-        it "(Sumple categories) should have a level of their components" $ do
-            let thing = Thing (Name "thing")
-            let thing2 = Thing (Name "thing2")
-            let sum_category = Composite Sumple [thing, thing2]
-            level sum_category `shouldBe` Left (Specific 0)
         it "(Morphisms) should have a level of their components" $ do
             let thing = Thing (Name "thing")
             let thing2 = Thing (Name "thing2")
@@ -127,18 +124,18 @@ spec = do
             has product_things thing2 `shouldBe` Valid False
             has product_things product_things `shouldBe` Valid True
             has product_things (Composite Tuple [thing, thing2]) `shouldBe` Valid False
-        it "(Sumple) should make a sum of things have each of those things" $ do
-            let sum_things = Composite Sumple [thing, thing2]
-            has sum_things thing `shouldBe` Valid False
-            has sum_things thing2 `shouldBe` Valid False
+        it "(Union) should make a sum of things have each of those things" $ do
+            let sum_things = Composite Union [thing, thing2]
+            has sum_things thing `shouldBe` Valid True
+            has sum_things thing2 `shouldBe` Valid True
             has sum_things thing3 `shouldBe` Valid False
-            has thing sum_things `shouldBe` Valid True
-            has thing2 sum_things `shouldBe` Valid True
+            has thing sum_things `shouldBe` Valid False
+            has thing2 sum_things `shouldBe` Valid False
             has thing3 sum_things `shouldBe` Valid False
-
             has sum_things sum_things `shouldBe` Valid True
-            has sum_things (Composite Sumple [thing, thing3]) `shouldBe` Valid False
-            has sum_things (Composite Sumple [thing, thing2, thing3]) `shouldBe` Valid True
+            has sum_things (Composite Union [thing, thing3]) `shouldBe` Valid False
+            has sum_things (Composite Union [thing, thing2, thing3]) `shouldBe` Valid False
+            has (Composite Union [thing, thing2, thing3]) sum_things `shouldBe` Valid True
         it "(Composition) should only check input output of composite morphisms" $ do
             let composite_morphism = Composite Composition [a_b, b_c]
 
@@ -150,8 +147,8 @@ spec = do
             has sumposite_morphism a_b `shouldBe` Valid True
             has sumposite_morphism b_c `shouldBe` Valid True
             has sumposite_morphism a_c `shouldBe` Valid False
-        it "(Set) should have each of its inner categories" $ do
-            let higher_category = Composite Set [a,b,a_b,b_c]
+        it "(Union) should have each of its inner categories" $ do
+            let higher_category = Composite Union [a,b,a_b,b_c]
 
             has higher_category a `shouldBe` Valid True
             has higher_category b `shouldBe` Valid True
@@ -162,11 +159,15 @@ spec = do
             has higher_category d `shouldBe` Valid False
             has higher_category a_d `shouldBe` Valid False
         it "(Placeholder) should be contained by its category" $ do
-            let higher_category = Composite Set [a,b,a_b,b_c]
+            let higher_category = Composite Union [a,b,a_b,b_c]
             let ph_hc = Placeholder (Name "ph-all") Element higher_category
 
             has higher_category ph_hc `shouldBe` Valid True
             has ph_hc higher_category  `shouldBe` Valid False
+        it "(RecursiveCategory) should have each of the component elements" $ do
+            nat `has` Thing (Name "0") `shouldBe` Valid True
+            nat `has` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Valid True
+            nat `has` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Valid True
     -- describe "isSubstitutable" $ do
     --     it "(example 1) should be valid" $ do
     --         let morph_input = parseCategoryString "x@(((),nat_data:|(),((),$nat_data)|))"
@@ -213,57 +214,68 @@ spec = do
     --         call sumposite_morphism a `shouldBe` Just b
     --         call sumposite_morphism b `shouldBe` Just c
     --         call sumposite_morphism c `shouldBe` Nothing
-    -- describe "validateCategory" $ do
-    --     it "(Composite) should return False for empty sumposition/composition" $ do
-    --         let bad_category = Composite Function []
-    --         validateCategory bad_category `shouldNotBe` Valid bad_category
-    --         let bad_category2 = Composite Case []
-    --         validateCategory bad_category2 `shouldNotBe` Valid bad_category
-    -- describe "execute" $ do
-    --     it "(Thing) should just return the thing" $ do
-    --         let a = Thing (Name "a")
-    --         result <- execute a
-    --         result `shouldBe` a
-    --     it "(Composite) should just return the composite" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let ab = Composite Tuple [a,b]
-    --         result <- execute ab
-    --         result `shouldBe` ab
-    --     it "(Morphism) should just return the morphism" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let a2b = Morphism a b
-    --         result <- execute a2b
-    --         result `shouldBe` a2b
-    --     it "(Placeholder) should just return the placeholder" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let a_b = Composite Set [a,b]
-    --         let x_elem_a_b = Placeholder (Name "x") (Specific 0) a_b
-    --         result <- execute x_elem_a_b
-    --         result `shouldBe` x_elem_a_b
-    --     it "(Placeholder) should just return the placeholder" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let a_b = Composite Set [a,b]
-    --         let x_elem_a_b = Placeholder (Name "x") (Specific 0) a_b
-    --         result <- execute x_elem_a_b
-    --         result `shouldBe` x_elem_a_b
-    --     it "(MorphismCall) should just call the morphism" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let a2b = Morphism a b
-    --         let a2b_on_a = MorphismCall a2b a
-    --         result <- execute a2b_on_a
-    --         result `shouldBe` b
-    --     it "(RecursiveCategory) should just return itself" $ do
-    --         result <- execute nat
-    --         result `shouldBe` unfold Recursive nat
-    --     it "(RecursiveCategory) should have each of the component elements" $ do
-    --         nat `has` Thing (Name "0") `shouldBe` True
-    --         nat `has` Morphism valid (Thing (Name "0")) `shouldBe` True
-    --         nat `has` Morphism valid (Morphism valid (Thing (Name "0"))) `shouldBe` True
+    describe "validateCategory" $ do
+        it "(Placeholder) should not modify this placeholder" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a_b = Composite Union [a,b]
+            let x_elem_a_b = Placeholder (Name "x") Element a_b
+            validateCategory x_elem_a_b `shouldBe` Valid x_elem_a_b
+        it "(Placeholder) should not modify this function call" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a2b = Composite Function [a,b]
+            let a2b_on_a = FunctionCall a2b a
+            let result = validateCategory a2b_on_a
+            result `shouldBe` Valid a2b_on_a
+    describe "simplify" $ do
+        it "(simplify) should not modify this placeholder" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a_b = Composite Union [a,b]
+            let x_elem_a_b = Placeholder (Name "x") Element a_b
+            simplify x_elem_a_b `shouldBe` Valid x_elem_a_b
+        it "(simplify) should not modify this function call" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a2b = Composite Function [a,b]
+            let a2b_on_a = FunctionCall a2b a
+            let result = simplify a2b_on_a
+            result `shouldBe` Valid a2b_on_a
+    describe "execute" $ do
+        it "(Thing) should just return the thing" $ do
+            let a = Thing (Name "a")
+            result <- runErrorableT $ execute a
+            result `shouldBe` Valid a
+        it "(Composite) should just return the composite" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let ab = Composite Tuple [a,b]
+            result <- runErrorableT $ execute ab
+            result `shouldBe` Valid ab
+        it "(Morphism) should just return the morphism" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a2b = Composite Function [a, b]
+            result <- runErrorableT $ execute a2b
+            result `shouldBe` Valid a2b
+        it "(Placeholder) should just return the placeholder" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a_b = Composite Union [a,b]
+            let x_elem_a_b = Placeholder (Name "x") Element a_b
+            result <- runErrorableT $ execute x_elem_a_b
+            result `shouldBe` Valid x_elem_a_b
+        it "(FunctionCall) should just call the function" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let a2b = Composite Function [a,b]
+            let a2b_on_a = FunctionCall a2b a
+            result <- runErrorableT $ execute a2b_on_a
+            result `shouldBe` Valid b
+        it "(RecursiveCategory) should just return itself" $ do
+            result <- runErrorableT $ execute nat
+            result `shouldBe` Valid nat
     --     it "(RecursiveCategory) should be callable in a morphism call" $ do
     --         let a = Thing (Name "a")
     --         let b = Thing (Name "b")

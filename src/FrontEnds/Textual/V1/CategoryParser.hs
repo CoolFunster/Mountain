@@ -140,14 +140,14 @@ pImport :: Parser Category
 pImport = do
     import_str <- symbol $ pack "import"
     _ <- spaceConsumer
-    category_uri <- someTill printChar spaceChar
+    category_uri <- some printChar
     return Import{category_uri=category_uri}  
 
 pDefinition :: Parser Category
 pDefinition = do
     define_str <- symbol $ pack "define"
     _ <- spaceConsumer
-    category <- pCategory
+    category <- pPlaceholder
     return Definition{def_category=category}
 
 pMembership :: Parser Category
@@ -217,8 +217,7 @@ pStandardCategory = choice [
     try pComposition,
     try pTuple,
     try pCase,
-    try pSumple,
-    try pSet,
+    try pUnion,
     try pRefinement]
 
 pThing :: Parser Category
@@ -257,11 +256,8 @@ pCategoryInnerList = sepBy pCategory (pStringBetweenWS ",")
 pTuple :: Parser Category
 pTuple = pCompositeTemplate Tuple ("(", ")")
 
-pSumple :: Parser Category
-pSumple = pCompositeTemplate Sumple ("|", "|")
-
-pSet :: Parser Category
-pSet = pCompositeTemplate Set ("{", "}")
+pUnion :: Parser Category
+pUnion = pCompositeTemplate Union ("|", "|")
 
 pComposition :: Parser Category
 pComposition = pCompositeTemplate Composition ("*(", ")*")

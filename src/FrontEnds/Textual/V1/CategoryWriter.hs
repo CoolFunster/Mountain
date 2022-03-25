@@ -20,8 +20,7 @@ categoryToText = pack . categoryToString
 categoryToString :: Category -> [Char]
 categoryToString (Thing name) = "`" ++ nameToText name
 categoryToString (Composite Tuple inner) = "(" ++ intercalate "," (map categoryToString inner) ++ ")"
-categoryToString (Composite Sumple inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
-categoryToString (Composite Set inner) = "{" ++ intercalate "," (map categoryToString inner) ++ "}"
+categoryToString (Composite Union inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
 categoryToString (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToString inner) ++ ")"
 categoryToString (Composite Case inner) = "*|" ++ intercalate "," (map categoryToString inner) ++ "|"
 categoryToString (Composite Function inner) = intercalate " -> " (map categoryToString inner)

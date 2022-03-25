@@ -24,9 +24,8 @@ data SpecialCategoryType =
     deriving (Eq, Show, Read)
 
 data CompositeType =
-    Set | -- enumerated category
     Tuple | -- tuple
-    Sumple | -- a or b, union
+    Union | -- union
     Composition | -- a chain of functions (a->b, b->c = a->c)
     Case | -- a case statement of functions     (a->b, b->c = a->c)
     Function -- a function
@@ -180,7 +179,7 @@ valid :: Category
 valid = Composite Tuple []
 
 empty :: Category
-empty = Composite Sumple []
+empty = Composite Union []
 
 universal :: Category
 universal = Special{special_type=Universal}
@@ -207,8 +206,7 @@ isCompositeOfType _ _ = False
 
 isDataCompositeType :: CompositeType -> Bool
 isDataCompositeType Tuple = True
-isDataCompositeType Sumple = True
-isDataCompositeType Set = True
+isDataCompositeType Union = True
 isDataCompositeType _ = False
 
 isFunctionCompositeType :: CompositeType -> Bool
@@ -275,17 +273,17 @@ getName input_category
 -- AST manipulation
 
 checkAST :: ([Bool] -> Bool) -> (Category -> Bool) -> Category -> Bool
-checkAST aggregator checker  t@Thing{} = checker t
-checkAST aggregator checker c@Composite{inner_categories=inner} = aggregator $ checker c : map checker inner
-checkAST aggregator checker p@Placeholder{placeholder_category=ph_c} = aggregator [checker ph_c, checker p]
-checkAST aggregator checker r@Refined{base=b, predicate=p} = aggregator [checker b, checker p, checker r]
+checkAST aggregator checker t@Thing{} = checker t
+checkAST aggregator checker c@Composite{inner_categories=inner} = aggregator $ checker c : map (checkAST aggregator checker) inner
+checkAST aggregator checker p@Placeholder{placeholder_category=ph_c} = aggregator [checker p, checkAST aggregator checker ph_c]
+checkAST aggregator checker r@Refined{base=b, predicate=p} = aggregator (checker r : map (checkAST aggregator checker) [b,p])
 checkAST aggregator checker s@Special{} = checker s
 checkAST aggregator checker r@Reference{} = checker r
-checkAST aggregator checker fc@FunctionCall{base=b, argument=a} = aggregator [checker b, checker a, checker fc]
-checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker b, checker a]
+checkAST aggregator checker fc@FunctionCall{base=b, argument=a} = aggregator (checker fc: map (checkAST aggregator checker) [b,a])
+checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker a, checkAST aggregator checker b]
 checkAST aggregator checker i@Import{} = checker i
-checkAST aggregator checker Definition{def_category=d} = checker d
-checkAST aggregator checker Membership{big_category=bc, small_category=sc} = aggregator [checker bc, checker sc]
+checkAST aggregator checker def@Definition{def_category=d} = aggregator [checker def, checkAST aggregator checker d]
+checkAST aggregator checker mem@Membership{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
 
 manipulateAST :: (Category -> Maybe (Errorable Category)) -> (Category -> Errorable Category) -> Category -> Errorable Category
 manipulateAST premanipulator postmanipulator category =
@@ -310,7 +308,7 @@ manipulateAST premanipulator postmanipulator category =
         manipulateASTInner manipulator r@Reference{} = manipulator r
         manipulateASTInner manipulator fc@FunctionCall{base=b, argument=a} =
             case partitionErrorable (map manipulateRecursively [b, a]) of
-                ([good_b, good_a], []) -> manipulator fc{base=good_b, predicate=good_a}
+                ([good_b, good_a], []) -> manipulator fc{base=good_b, argument=good_a}
                 (_, some_errors) -> ErrorList (map (addToErrorStack fc) some_errors)
         manipulateASTInner manipulator a@Access{base=b, access_id=id} =
             case manipulateRecursively b of
@@ -366,7 +364,13 @@ unroll Flat l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_cat
     replaceReferences rec_cat Reference{name=rec_name} Special{special_type=Flexible}
 unroll Recursive l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
     replaceReferences rec_cat Reference{name=rec_name} l
-unroll _ something_else = error $ "Cannot unfold a non labeled category: " ++ show something_else
+unroll _ something_else = something_else
+
+unrollRecursive :: UnrollType -> Category -> Category
+unrollRecursive unroll_type cat =
+    case preManipulateAST (Just . Valid . unroll unroll_type) cat of
+        Valid cat -> cat
+        ErrorList errors -> error "bad flatten"
 
 substituteArg :: Category -> Category -> Errorable Category
 substituteArg new_arg c@Composite{inner_categories=[]} =
@@ -434,8 +438,8 @@ uncheckedCompositeToFunction c@Composite{composite_type=Function, inner_categori
 uncheckedCompositeToFunction c@Composite{composite_type=Case, inner_categories=inner} =
     case partitionErrorable $ map uncheckedCompositeToFunction inner of
         (valid_categories, []) -> Valid $ Composite{composite_type=Function, inner_categories=[
-            Composite{composite_type=Sumple, inner_categories=map (head . inner_categories) valid_categories},
-            Composite{composite_type=Sumple, inner_categories=concatMap (tail . inner_categories) valid_categories}
+            Composite{composite_type=Union, inner_categories=map (head . inner_categories) valid_categories},
+            Composite{composite_type=Union, inner_categories=concatMap (tail . inner_categories) valid_categories}
         ]}
         (_, some_errors) -> ErrorList (map (addToErrorStack c) some_errors)
 uncheckedCompositeToFunction other = error $ "bad argument to uncheckedCompositeToFunction: " ++ show other
@@ -494,10 +498,6 @@ level input_category =
         level_inner input_category =
             case input_category of
                 (Thing t) -> Left $ Specific 0
-                c@(Composite Set inner) ->
-                    case levelOfCategoryList inner of
-                        Left level -> Left (incrementLevel level)
-                        Right errors -> Right $ map (addToErrorStack c) errors
                 (Composite _ inner) -> levelOfCategoryList inner
                 p@Placeholder{placeholder_type=Element, placeholder_category=ph_c} ->
                     case level ph_c of
@@ -532,7 +532,7 @@ level input_category =
                 def@Definition{def_category=d} -> level d
                 mem@Membership{big_category=bc, small_category=sc} -> level sc
     in
-        if isRecursiveCategory input_category
+        if isRecursiveCategory input_category || isCompositeOfType Union input_category
             then case level_inner input_category of
                 Left level -> Left (incrementLevel level)
                 Right errors -> Right errors
@@ -573,25 +573,14 @@ has big_category small_category
             {- Composite Categories -}
             has_inner (Composite big_type []) (Composite small_type []) = Valid $ big_type == small_type
             has_inner (Composite big_type []) _ = Valid False
-            {- Composite Set -}
-            has_inner (Composite Set set_inner) small_category = do
-                let result = map tracedHas set_inner <*> [small_category]
-                case partitionErrorable result of
-                    ([], some_stuff) -> Valid False
-                    (results, some_stuff) -> Valid $ or results
-            has_inner big_category (Composite Set set_inner) = do
-                let result = map (tracedHas big_category) set_inner
-                case partitionErrorable result of
-                    ([], some_stuff) -> Valid False
-                    (results, some_stuff) -> Valid $ and results
             {- Composite Tuple -}
             has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Tuple small_inner)
                 | length big_inner /= length small_inner = Valid False
                 | otherwise =
-                    case partitionErrorable $ map tracedHas big_inner <*> small_inner of
+                    case partitionErrorable $ zipWith tracedHas big_inner small_inner of
                         (intermediate_results, []) -> Valid $ and intermediate_results
                         (_, some_errors) -> ErrorList some_errors
-            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Sumple small_inner)
+            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Union small_inner)
                 | length big_inner /= length small_inner = Valid False
                 | otherwise =
                     {- TODO: Verify this logic... -}
@@ -599,19 +588,19 @@ has big_category small_category
                         ([], some_errors) -> Valid False
                         (intermediate_results, some_errors) -> Valid $ or intermediate_results
             has_inner c_big@(Composite Tuple _) other = Valid False
-            {- Composite Sumple -}
-            has_inner (Composite Sumple sum_inner) other_category = do
-                let result = map tracedHas sum_inner <*> [other_category]
+            {- Composite Union -}
+            has_inner other_category (Composite Union sum_inner) = do
+                let result = map (tracedHas other_category) sum_inner
                 case partitionErrorable result of
                     ([], some_stuff) -> Valid False
                     (results, some_stuff) -> Valid $ and results
-            has_inner other_category (Composite Sumple sum_inner) = do
+            has_inner (Composite Union sum_inner) other_category = do
                 let result = map tracedHas sum_inner <*> [other_category]
                 case partitionErrorable result of
                     ([], some_stuff) -> Valid False
                     (results, some_stuff) -> Valid $ or results
             {- Composite Case -}
-            has_inner big@(Composite Case case_inner) other_category = has_inner big{composite_type=Set} other_category
+            has_inner big@(Composite Case case_inner) other_category = has_inner big{composite_type=Union} other_category
             {- Composite Function -}
             has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} c2@Composite{composite_type=c2_type}
                 | isDataCompositeType c2_type = Valid False
@@ -661,8 +650,8 @@ isValidArgument base_category argument =
             case category `has` argument of
                 Valid result -> result
                 ErrorList errors -> False
-        c@Composite{composite_type=Case, inner_categories=inner_categories} -> isValidArgument c{composite_type=Sumple} argument
-        c@Composite{composite_type=Sumple, inner_categories=inner_categories} ->
+        c@Composite{composite_type=Case, inner_categories=inner_categories} -> isValidArgument c{composite_type=Union} argument
+        c@Composite{composite_type=Union, inner_categories=inner_categories} ->
             case partitionErrorable (map tracedHas inner_categories <*> [argument]) of
                 (results,_) -> or results
         _ -> base_category == argument
@@ -686,7 +675,10 @@ validateCategoryInner c@Composite{composite_type=composition_type, inner_categor
     | otherwise = Valid c
 validateCategoryInner ph@Placeholder{name=Unnamed} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
 validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
-validateCategoryInner ph@Placeholder{name=(Name _), placeholder_category=ph_cat} = validateCategoryInner ph_cat
+validateCategoryInner ph@Placeholder{name=(Name _), placeholder_category=ph_cat} = do
+    case validateCategoryInner ph_cat of
+        ErrorList errors -> ErrorList errors
+        Valid cat -> Valid ph
 validateCategoryInner r@Refined{base=cat,predicate=p}
     | not (isFunctionComposite p) = ErrorList [Error{error_type=PredicateHasBadArgument, error_stack=[r]}]
     | Composite{inner_categories=head:rest} <- cat, not (isValidArgument head cat) = ErrorList [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
@@ -694,7 +686,7 @@ validateCategoryInner r@Refined{base=cat,predicate=p}
 {- TODO: missed case here of nested function calls -}
 validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inner_categories=head:rest}, argument=a}
     | not (isFunctionCompositeType c_type) = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
-    | otherwise = substituteArg a head
+    | otherwise = Valid f
 validateCategoryInner f@FunctionCall{base=b, argument=a} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
 validateCategoryInner a@Access{base=b@Composite{inner_categories=inner}, access_id=Index num}
     | num < 0 = ErrorList [Error{error_type=AccessIndexBelowZero, error_stack=[a]}]
@@ -748,7 +740,7 @@ strToCategory :: String -> Category
 strToCategory = read
 
 fileToCategory :: String -> IO (Either Category Error)
-fileToCategory category_uri = 
+fileToCategory category_uri =
     let
         repl '.' = '/'
         repl c = c

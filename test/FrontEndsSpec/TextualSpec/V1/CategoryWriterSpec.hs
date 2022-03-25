@@ -18,7 +18,7 @@ spec = do
         --     categoryToText Composite {composition_type = Product, inner = [Thing {name = Name "a"},Thing {name = Name "b"},Thing {name = Name "c"}]} `shouldBe` "(`a,`b,`c)" 
         -- it "(Tuples) should write recursive tuples" $ do
         --     categoryToText Composite {composition_type = Product, inner = [Thing {name = Name "a"},Composite {composition_type = Product, inner = [Thing {name = Name "b"},Thing {name = Name "c"}]}]} `shouldBe` "(`a,(`b,`c))"
-        -- it "(Sumples) should write sumples" $ do
+        -- it "(Unions) should write sumples" $ do
         --     categoryToText Composite {composition_type = Sum, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "|`a,`b|"
         -- it "(Higher) should write higher categories" $ do
         --     categoryToText Composite {composition_type = Higher, inner = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "^{`a,`b}"

@@ -9,7 +9,7 @@ ID -> Name | Idx
 
 Thing -> `  Name
 Tuple -> OptionalName:([categories])
-Sumple -> OptionalName:|[categories]|
+Union -> OptionalName:|[categories]|
 Group -> OptionalName:^{[categories]}
 Refined -> OptionalName:{category | placeholder -> x@{Bool}}
 Composition -> OptionalName:*([morphisms])
