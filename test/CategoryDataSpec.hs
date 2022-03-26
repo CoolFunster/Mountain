@@ -20,9 +20,13 @@ nat = Placeholder{
 
 simpleRecursiveCat::Category
 simpleRecursiveCat = Placeholder{
-                name=Name "self",
-                placeholder_type=Label,
-                placeholder_category=Composite{composite_type=Tuple,inner_categories=[Thing (Name "thing"), Reference{name=Name "self"}]}}
+    name=Name "self",
+    placeholder_type=Label,
+    placeholder_category=Composite{composite_type=Tuple,inner_categories=[
+        Thing (Name "thing"), 
+        Reference{name=Name "self"}]
+    }
+}
 
 spec :: Spec
 spec = do

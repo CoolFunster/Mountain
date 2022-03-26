@@ -23,7 +23,15 @@ categoryToString (Composite Tuple inner) = "(" ++ intercalate "," (map categoryT
 categoryToString (Composite Union inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
 categoryToString (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToString inner) ++ ")"
 categoryToString (Composite Case inner) = "*|" ++ intercalate "," (map categoryToString inner) ++ "|"
-categoryToString (Composite Function inner) = intercalate " -> " (map categoryToString inner)
+categoryToString (Composite Function inner) = 
+    let
+        innerFooToString :: [Category] -> [Char]
+        innerFooToString [] = ""
+        innerFooToString [something] = categoryToString something
+        innerFooToString (f@(Composite Function inner):rest) = "(" ++ categoryToString f ++ ")->" ++ innerFooToString rest
+        innerFooToString (head:rest) = categoryToString head ++ "->" ++ innerFooToString rest
+    in
+        innerFooToString inner
 categoryToString (Placeholder name Element ph_category) = nameToText name ++ "@" ++ categoryToString ph_category
 categoryToString (Placeholder name Label ph_category) = nameToText name ++ ":" ++ categoryToString ph_category
 categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ categoryToString _base_category ++ " | " ++ categoryToString _predicate ++ "}"
