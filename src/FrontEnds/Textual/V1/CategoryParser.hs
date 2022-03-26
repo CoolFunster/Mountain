@@ -141,7 +141,7 @@ pImport = do
     import_str <- symbol $ pack "import"
     _ <- spaceConsumer
     category_uri <- some printChar
-    return Import{category_uri=category_uri}  
+    return Import{category_uri=Reference (Name category_uri)}  
 
 pDefinition :: Parser Category
 pDefinition = do

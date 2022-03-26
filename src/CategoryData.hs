@@ -26,9 +26,9 @@ data SpecialCategoryType =
 data CompositeType =
     Tuple | -- tuple
     Union | -- union
+    Function | -- a function
     Composition | -- a chain of functions (a->b, b->c = a->c)
-    Case | -- a case statement of functions     (a->b, b->c = a->c)
-    Function -- a function
+    Case -- a case statement of functions     (a->b, b->c = a->c)
     deriving (Eq, Show, Read)
 
 data PlaceholderType =
@@ -86,7 +86,7 @@ data Category =
         access_id::Id
     } |
     Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
-        category_uri::[Char]
+        category_uri::Category
     } |
     Definition {
         def_category::Category
@@ -756,8 +756,8 @@ fileToCategory category_uri =
             else fmap (Left . strToCategory) (readFile full_path)
 
 evaluateImport :: Category -> ErrorableT IO Category
-evaluateImport Import{category_uri=cat_uri} = ErrorableT $ do
-    result <- fileToCategory cat_uri
+evaluateImport Import{category_uri=Reference{name=Name n}} = ErrorableT $ do
+    result <- fileToCategory n
     case result of
         Left cat -> return $ Valid cat
         Right error -> return $ ErrorList [error]

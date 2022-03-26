@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 module FrontEndsSpec.TextualSpec.V1.CategoryWriterSpec (spec) where
 
 import Test.Hspec

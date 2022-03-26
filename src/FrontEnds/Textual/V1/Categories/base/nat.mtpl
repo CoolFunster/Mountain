@@ -1,0 +1,4 @@
+natural:|
+    `zero,
+    (`successor, $natural)
+|
