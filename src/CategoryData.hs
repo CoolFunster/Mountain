@@ -110,6 +110,7 @@ data ErrorType =
     EmptyFunctionalComposite |
     BadFunctionalComposite |
     BadFunctionCall |
+    InvalidArgument |
     PredicateHasBadArgument |
     NonFunctioninFunctionCallBase |
     NotSubstitutableArgs |
@@ -402,67 +403,52 @@ substituteArg new_arg c@Composite{composite_type=Composition, inner_categories=h
         ErrorList some_errors -> ErrorList $ map (addCategoryToErrorStack c) some_errors
 substituteArg new_arg something_weird = ErrorList [Error{error_type=BadSubstituteArgs, error_stack=[new_arg, something_weird]}]
 
-uncheckedCall :: Category -> Category -> Errorable Category
-uncheckedCall arg p@Placeholder{placeholder_type=Label} = uncheckedCall arg (unroll Recursive p)
-uncheckedCall arg c@Composite{composite_type=Function, inner_categories=inner} =
-    let 
-        result = substituteArg arg c
-    in
-        case result of
-            e@(ErrorList errors) -> e
-            _ -> if length (tail inner) == 1
-                    then Valid (head (tail inner))
-                    else Valid c{inner_categories=tail inner}
-uncheckedCall arg c@Composite{composite_type=Case, inner_categories=inner} = 
-    case find isValid (map (uncheckedCall arg) inner) of
-        Just value -> value
-        Nothing -> ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
-uncheckedCall arg c@Composite{composite_type=Composition, inner_categories=inner} =
-    foldl (\next_arg cat -> 
-        case next_arg of
-            Valid narg -> uncheckedCall narg cat
-            other -> other
-    ) (Valid arg) inner
-uncheckedCall arg c = ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
-
-symbolicallyCall :: Category -> Errorable Category
-symbolicallyCall p@Placeholder{}
-    | isRecursiveCategory p = symbolicallyCall (unroll Recursive p)
-symbolicallyCall c@Composite{composite_type=c_type,inner_categories=[]}
+call :: Category -> Category -> Errorable Category
+call arg p@Placeholder{placeholder_type=Label} = call arg (unroll Recursive p)
+call arg c@Composite{composite_type=c_type,inner_categories=[]}
     | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
     | otherwise = ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
-symbolicallyCall c@Composite{composite_type=c_type, inner_categories=[something]}
+call arg c@Composite{composite_type=c_type, inner_categories=[something]}
     | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
-    | otherwise = symbolicallyCall something
-symbolicallyCall c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:[tail]} =
-    Valid $ replaceReferences tail Reference{name=id} p
-symbolicallyCall c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:tail} =
-    Valid c{inner_categories=map replaceReferences tail <*> [Reference{name=id}] <*> [p]}
-symbolicallyCall c@Composite{composite_type=Function, inner_categories=something:[rest]} =
-    Valid rest
-symbolicallyCall c@Composite{composite_type=Function, inner_categories=something:rest} =
-    Valid c{inner_categories=rest}
-symbolicallyCall c@Composite{composite_type=Composition, inner_categories=head:tail} = foldr (\list_elem state ->
-    case state of
-        e@ErrorList{} -> e
-        Valid cat -> uncheckedCall cat list_elem) (symbolicallyCall head) tail
-symbolicallyCall anything_else = Valid anything_else
+    | otherwise = ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[c]}]
+call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
+    case head `tracedHas` arg of
+        ErrorList errors -> ErrorList errors
+        Valid False -> ErrorList [Error{error_type=InvalidArgument, error_stack=[arg, c]}]
+        Valid True -> do
+            let new_tail = case head of
+                    p@Placeholder{name=id} -> map replaceReferences tail <*> [Reference{name=id}] <*> [p]
+                    _ -> tail
+            case new_tail of
+                [something] -> Valid something
+                [] -> ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[arg, c]}]
+                other -> Valid c{inner_categories=tail}
+call arg c@Composite{composite_type=Case, inner_categories=inner} = 
+    case find isValid (map (call arg) inner) of
+        Just value -> value
+        Nothing -> ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
+call arg c@Composite{composite_type=Composition, inner_categories=inner} =
+    foldl (\next_arg cat -> 
+        case next_arg of
+            Valid narg -> call narg cat
+            other -> other
+    ) (Valid arg) inner
+call arg c = ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
 
-uncheckedCompositeToFunction :: Category -> Errorable Category
-uncheckedCompositeToFunction c@Composite{composite_type=Composition, inner_categories=head@Composite{composite_type=Function, inner_categories=inner_head:inner_rest}:rest} =
-    case symbolicallyCall c of
+compositeToFlatFunction :: Category -> Errorable Category
+compositeToFlatFunction c@Composite{composite_type=Composition, inner_categories=head@Composite{composite_type=Function, inner_categories=inner_head:inner_rest}:rest} =
+    case call inner_head c of
         ErrorList errors -> ErrorList errors
         Valid cat -> Valid c{composite_type=Function,inner_categories=[inner_head, cat]}
-uncheckedCompositeToFunction c@Composite{composite_type=Function, inner_categories=inner} = Valid c
-uncheckedCompositeToFunction c@Composite{composite_type=Case, inner_categories=inner} =
-    case partitionErrorable $ map uncheckedCompositeToFunction inner of
+compositeToFlatFunction c@Composite{composite_type=Function, inner_categories=inner} = Valid c
+compositeToFlatFunction c@Composite{composite_type=Case, inner_categories=inner} =
+    case partitionErrorable $ map compositeToFlatFunction inner of
         (valid_categories, []) -> Valid $ Composite{composite_type=Function, inner_categories=[
             Composite{composite_type=Union, inner_categories=map (head . inner_categories) valid_categories},
             Composite{composite_type=Union, inner_categories=concatMap (tail . inner_categories) valid_categories}
         ]}
         (_, some_errors) -> ErrorList (map (addCategoryToErrorStack c) some_errors)
-uncheckedCompositeToFunction other = error $ "bad argument to uncheckedCompositeToFunction: " ++ show other
-
+compositeToFlatFunction other = error $ "bad argument to uncheckedCompositeToFunction: " ++ show other
 
 evaluateAccess :: Category -> Errorable Category
 evaluateAccess a@Access{base=Composite{inner_categories=[]}, access_id=id} =
@@ -484,7 +470,7 @@ evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
         error "Not handled atm. need some subtle stuff"
 evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Valid Special{special_type=Flexible}
 evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=output} =
-    case uncheckedCall arg b of
+    case call arg b of
         ErrorList errors -> ErrorList errors
         Valid cat -> evaluateAccess a{base=cat}
 evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
@@ -540,7 +526,7 @@ level input_category =
                 Special{special_type=Universal} -> Left Infinite
                 Reference{} -> Left AnyLevel
                 FunctionCall{base=b, argument=a} ->
-                    case uncheckedCall a b of
+                    case call a b of
                         ErrorList errors -> Right errors
                         Valid cat -> level cat
                 a@Access{base=bc,access_id=id} ->
@@ -581,14 +567,13 @@ has big_category small_category
                 | isRecursiveCategory small_category = tracedHas big_category (unroll Recursive big_category)
                 | otherwise = tracedHas category small_category
             has_inner c_big@Composite{composite_type=Composition} other_category =
-                case uncheckedCompositeToFunction c_big of
+                case compositeToFlatFunction c_big of
                     ErrorList errors -> ErrorList errors
                     Valid cat -> tracedHas cat other_category
             has_inner other_category c_small@Composite{composite_type=Composition} =
-                case uncheckedCompositeToFunction c_small of
+                case compositeToFlatFunction c_small of
                     ErrorList errors -> ErrorList errors
                     Valid cat -> tracedHas cat other_category
-
             {- Composite Categories -}
             has_inner (Composite big_type []) (Composite small_type []) = Valid $ big_type == small_type
             has_inner (Composite big_type []) _ = Valid False
@@ -643,11 +628,11 @@ has big_category small_category
             has_inner other r@Reference{} = ErrorList [Error{error_type=UnresolvedReference, error_stack=[other, r]}]
             {- Function Call -}
             has_inner mc@FunctionCall{base=bm, argument=a} other =
-                case uncheckedCall a bm of
+                case call a bm of
                     ErrorList some_errors -> ErrorList some_errors
                     Valid some_cat -> tracedHas some_cat other
             has_inner other mc@FunctionCall{base=bm, argument=a} =
-                case uncheckedCall a bm of
+                case call a bm of
                     ErrorList some_errors -> ErrorList some_errors
                     Valid some_cat -> tracedHas other some_cat
             {- Access -}
@@ -779,7 +764,7 @@ evaluateImport Import{category_uri=cat_uri} = ErrorableT $ do
 evaluateImport other = error $ "called on bad input: " ++ show other
 
 evaluateInner :: Category -> ErrorableT IO Category
-evaluateInner FunctionCall{base=bc, argument=a} = ErrorableT (return $ uncheckedCall a bc) >>= evaluateInner
+evaluateInner FunctionCall{base=bc, argument=a} = ErrorableT (return $ call a bc) >>= evaluateInner
 evaluateInner a@Access{} = ErrorableT (return $ evaluateAccess a) >>= evaluateInner
 evaluateInner i@Import{} = evaluateImport i >>= evaluateInner
 evaluateInner mem@Membership{big_category=bc, small_category=sc} = ErrorableT (

@@ -168,18 +168,18 @@ spec = do
             nat `has` Thing (Name "0") `shouldBe` Valid True
             nat `has` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Valid True
             nat `has` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Valid True
-    describe "uncheckedCall" $ do
+    describe "call" $ do
         it "(NonMorphism) should return Nothing" $ do
             let a = Thing (Name "a")
-            print $ uncheckedCall a a
-            isError (uncheckedCall a a) `shouldBe` True
+            print $ call a a
+            isError (call a a) `shouldBe` True
         it "(SimpleMorphism) should return b if inputs equal else nothing" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
 
             let a_b = Composite Function [a, b]
-            uncheckedCall a a_b `shouldBe` Valid b
-            isError (uncheckedCall b a_b) `shouldBe` True
+            call a a_b `shouldBe` Valid b
+            isError (call b a_b) `shouldBe` True
         it "(Composite Composition) should handle chains right" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
@@ -191,9 +191,9 @@ spec = do
 
             let composite_morphism = Composite Composition [a_b, b_c]
 
-            uncheckedCall a composite_morphism `shouldBe` Valid c
-            isError (uncheckedCall b composite_morphism) `shouldBe` True
-            isError (uncheckedCall c composite_morphism) `shouldBe` True
+            call a composite_morphism `shouldBe` Valid c
+            isError (call b composite_morphism) `shouldBe` True
+            isError (call c composite_morphism) `shouldBe` True
         it "(Composite Case) should handle sums right" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
@@ -205,9 +205,9 @@ spec = do
 
             let case_function = Composite Case [a_b, b_c]
 
-            uncheckedCall a case_function `shouldBe` Valid b
-            uncheckedCall b case_function `shouldBe` Valid c
-            isError (uncheckedCall c case_function) `shouldBe` True
+            call a case_function `shouldBe` Valid b
+            call b case_function `shouldBe` Valid c
+            isError (call c case_function) `shouldBe` True
     describe "validateCategory" $ do
         it "(Placeholder) should not modify this placeholder" $ do
             let a = Thing (Name "a")
