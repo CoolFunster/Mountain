@@ -168,52 +168,46 @@ spec = do
             nat `has` Thing (Name "0") `shouldBe` Valid True
             nat `has` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Valid True
             nat `has` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Valid True
-    -- describe "isSubstitutable" $ do
-    --     it "(example 1) should be valid" $ do
-    --         let morph_input = parseCategoryString "x@(((),nat_data:|(),((),$nat_data)|))"
-    --         let arg = parseCategoryString "x@(((),((),nat_data:|(),((),$nat_data)|)))"
-    --         morph_input `tracedHas` arg `shouldBe` Valid False
-    --         arg `isSubstitutable` morph_input `shouldBe` Valid False
-    -- describe "call" $ do
-    --     it "(NonMorphism) should return Nothing" $ do
-    --         let a = Thing (Name "a")
-    --         print $ uncheckedCall a a
-    --         uncheckedCall a a `shouldNotBe` Valid a
-    --     it "(SimpleMorphism) should return b if inputs equal else nothing" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
+    describe "uncheckedCall" $ do
+        it "(NonMorphism) should return Nothing" $ do
+            let a = Thing (Name "a")
+            print $ uncheckedCall a a
+            isError (uncheckedCall a a) `shouldBe` True
+        it "(SimpleMorphism) should return b if inputs equal else nothing" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
 
-    --         let a_b = Morphism a b
-    --         call a_b a `shouldBe` Just b
-    --         call a_b b `shouldBe` Nothing
-    --     it "(Composite Composition) should handle chains right" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let c = Thing (Name "c")
+            let a_b = Composite Function [a, b]
+            uncheckedCall a a_b `shouldBe` Valid b
+            isError (uncheckedCall b a_b) `shouldBe` True
+        it "(Composite Composition) should handle chains right" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let c = Thing (Name "c")
 
-    --         let a_b = Morphism a b
-    --         let b_c = Morphism b c
-    --         let a_c = Morphism a c
+            let a_b = Composite Function [a, b]
+            let b_c = Composite Function [b, c]
+            let a_c = Composite Function [a, c]
 
-    --         let composite_morphism = Composite Composition [a_b, b_c]
+            let composite_morphism = Composite Composition [a_b, b_c]
 
-    --         call composite_morphism a `shouldBe` Just c
-    --         call composite_morphism b `shouldBe` Nothing
-    --         call composite_morphism c `shouldBe` Nothing
-    --     it "(Composite Case) should handle sums right" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let c = Thing (Name "c")
+            uncheckedCall a composite_morphism `shouldBe` Valid c
+            isError (uncheckedCall b composite_morphism) `shouldBe` True
+            isError (uncheckedCall c composite_morphism) `shouldBe` True
+        it "(Composite Case) should handle sums right" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let c = Thing (Name "c")
 
-    --         let a_b = Morphism a b
-    --         let b_c = Morphism b c
-    --         let a_c = Morphism a c
+            let a_b = Composite Function [a, b]
+            let b_c = Composite Function [b, c]
+            let a_c = Composite Function [a, c]
 
-    --         let sumposite_morphism = Composite Case [a_b, b_c, a_c]
+            let case_function = Composite Case [a_b, b_c]
 
-    --         call sumposite_morphism a `shouldBe` Just b
-    --         call sumposite_morphism b `shouldBe` Just c
-    --         call sumposite_morphism c `shouldBe` Nothing
+            uncheckedCall a case_function `shouldBe` Valid b
+            uncheckedCall b case_function `shouldBe` Valid c
+            isError (uncheckedCall c case_function) `shouldBe` True
     describe "validateCategory" $ do
         it "(Placeholder) should not modify this placeholder" $ do
             let a = Thing (Name "a")
@@ -276,47 +270,55 @@ spec = do
         it "(RecursiveCategory) should just return itself" $ do
             result <- runErrorableT $ execute nat
             result `shouldBe` Valid nat
-    --     it "(RecursiveCategory) should be callable in a morphism call" $ do
-    --         let a = Thing (Name "a")
-    --         let b = Thing (Name "b")
-    --         let simple_ab = Placeholder{
-    --             name=Name "ab",
-    --             placeholder_type=Label,
-    --             placeholder_category=Composite {
-    --                 composite_type=Case,
-    --                 inner_categories=[
-    --                     Morphism a b,
-    --                     Morphism b (MorphismCall (Reference (Name "ab")) a)
-    --                 ]
-    --             }
-    --         }
-    --         let unfolded_simple_ab = unfold Recursive simple_ab
-    --         -- print $ inner_expr simple_ab
-    --         simplify (MorphismCall unfolded_simple_ab b) `shouldBe` MorphismCall unfolded_simple_ab b
-    --         simplify (MorphismCall unfolded_simple_ab a) `shouldBe` MorphismCall unfolded_simple_ab a
-    --         result <- execute (MorphismCall unfolded_simple_ab a)
-    --         result `shouldBe` b
-    -- describe "dereference" $ do
-    --     it "should handle indices on composites well" $ do
-    --         let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b")]
-    --         dereference (Index 0) composite_category `shouldBe` Just (Thing (Name "a"))
-    --         dereference (Index 1) composite_category `shouldBe` Just (Thing (Name "b"))
-    --         dereference (Name "a") composite_category `shouldBe` Just (Thing (Name "a"))
-    --         dereference (Name "b") composite_category `shouldBe` Just (Thing (Name "b"))
-    -- describe "unfold" $ do
-    --     it "should unfold recursive labels" $ do
-    --         let simple_ab = Placeholder{
-    --             name=Name "ab",
-    --             placeholder_type=Label,
-    --             placeholder_category=Composite {
-    --                 composite_type=Tuple,
-    --                 inner_categories=[
-    --                     Thing (Name "0"),
-    --                     Reference (Name "ab")
-    --                 ]
-    --             }
-    --         }
-    --         unfold Recursive simple_ab `shouldBe` Composite {composite_type = Product, inner_categories= [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_type=Label, placeholder_category= Composite {composite_type = Product, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}]}
+        it "(RecursiveCategory) should be callable in a morphism call" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let simple_ab = Placeholder{
+                name=Name "ab",
+                placeholder_type=Label,
+                placeholder_category=Composite {
+                    composite_type=Case,
+                    inner_categories=[
+                        Composite Function [a,b],
+                        Composite Function [b, FunctionCall (Reference (Name "ab")) a]
+                    ]
+                }
+            }
+            let unfolded_simple_ab = unroll Recursive simple_ab
+            let unfolded_on_a = FunctionCall unfolded_simple_ab a
+            let unfolded_on_b = FunctionCall unfolded_simple_ab b
+            -- print $ inner_expr simple_ab
+            simplify unfolded_on_b `shouldBe` Valid unfolded_on_b
+            simplify unfolded_on_a `shouldBe` Valid unfolded_on_a
+            validateCategory unfolded_on_a `shouldBe` Valid unfolded_on_a
+            validateCategory unfolded_on_b `shouldBe` Valid unfolded_on_b
+            result <- runErrorableT $ execute (FunctionCall unfolded_simple_ab a)
+            result `shouldBe` Valid b
+            result <- runErrorableT $ execute (FunctionCall unfolded_simple_ab b)
+            result `shouldBe` Valid b
+    describe "dereference" $ do
+        it "should handle indices on composites well" $ do
+            let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Placeholder{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
+            evaluateAccess Access{base=composite_category, access_id=Index 0} `shouldBe` Valid (Thing (Name "a"))
+            evaluateAccess Access{base=composite_category, access_id=Index 1} `shouldBe` Valid (Thing (Name "b"))
+            evaluateAccess Access{base=composite_category, access_id=Name "a"} `shouldBe` Valid (Thing (Name "a"))
+            evaluateAccess Access{base=composite_category, access_id=Name "b"} `shouldBe` Valid (Thing (Name "b"))
+            evaluateAccess Access{base=composite_category, access_id=Name "c"} `shouldBe` Valid Placeholder{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}
+            evaluateAccess Access{base=composite_category, access_id=Name "d"} `shouldBe` Valid Reference{name=Name "d"}
+    describe "unroll" $ do
+        it "should unroll recursive labels" $ do
+            let simple_ab = Placeholder{
+                name=Name "ab",
+                placeholder_type=Label,
+                placeholder_category=Composite {
+                    composite_type=Tuple,
+                    inner_categories=[
+                        Thing (Name "0"),
+                        Reference (Name "ab")
+                    ]
+                }
+            }
+            unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories= [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_type=Label, placeholder_category= Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}]}
     describe "importCategories" $ do
         it "should import categories test1" $ do
             let test_item = Import{category_uri="test.test1"}
@@ -326,7 +328,3 @@ spec = do
             let test_item = Import{category_uri="test.test2"}
             result <- runErrorableT $ evaluateImport test_item
             result `shouldBe` Valid Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
-    -- describe "RecursiveCategory" $ do
-    --     it "(isRecursiveCat) example 1 " $ do
-    --         let parsed = parseCategoryString "nat_data:|zero:(),nonzero:(head:(),rest:$nat_data)|"
-    --         isRecursiveCategory parsed `shouldBe` True

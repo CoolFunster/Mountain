@@ -104,10 +104,12 @@ data ErrorType =
     BadAccess |
     UnresolvedReference |
     SubstituteArgOnEmptyCategory |
+    BadSubstituteArgs |
     CallingADataCompositeCategory |
     UnnamedCategory |
     EmptyFunctionalComposite |
     BadFunctionalComposite |
+    BadFunctionCall |
     PredicateHasBadArgument |
     NonFunctioninFunctionCallBase |
     NotSubstitutableArgs |
@@ -159,6 +161,14 @@ instance Monad m => Applicative (ErrorableT m) where
 instance Monad m => Functor (ErrorableT m) where
     fmap = liftM
 
+isValid :: Errorable a -> Bool
+isValid (Valid _) = True
+isValid _ = False
+
+isError :: Errorable a -> Bool
+isError (ErrorList _) = True
+isError _ = False
+
 partitionErrorable :: [Errorable a] -> ([a], [Error])
 partitionErrorable = foldr (
     \new_errorable (l,r) ->
@@ -166,8 +176,8 @@ partitionErrorable = foldr (
             Valid something -> (something:l, r)
             ErrorList errors -> (l, errors ++ r)) ([],[])
 
-addToErrorStack :: Category -> Error -> Error
-addToErrorStack input_a e@Error{error_stack=stack} = e{error_stack=stack++[input_a]}
+addCategoryToErrorStack :: Category -> Error -> Error
+addCategoryToErrorStack input_a e@Error{error_stack=stack} = e{error_stack=stack++[input_a]}
 
 fromValid :: Errorable a -> a
 fromValid (Valid x) = x
@@ -295,34 +305,34 @@ manipulateAST premanipulator postmanipulator category =
         manipulateASTInner manipulator c@Composite{inner_categories=inner} =
             case partitionErrorable (map manipulateRecursively inner) of
                 (all_good_cats, []) -> manipulator c{inner_categories=all_good_cats}
-                (_, some_errors) -> ErrorList (map (addToErrorStack c) some_errors)
+                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack c) some_errors)
         manipulateASTInner manipulator p@Placeholder{placeholder_category=ph_c} =
             case manipulateRecursively ph_c of
                 Valid cat -> manipulator p{placeholder_category=cat}
-                ErrorList errors -> ErrorList (map (addToErrorStack p) errors)
+                ErrorList errors -> ErrorList (map (addCategoryToErrorStack p) errors)
         manipulateASTInner manipulator r@Refined{base=b, predicate=p} =
             case partitionErrorable (map manipulateRecursively [b, p]) of
                 ([good_b, good_p], []) -> manipulator r{base=good_b, predicate=good_p}
-                (_, some_errors) -> ErrorList (map (addToErrorStack r) some_errors)
+                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack r) some_errors)
         manipulateASTInner manipulator s@Special{} = manipulator s
         manipulateASTInner manipulator r@Reference{} = manipulator r
         manipulateASTInner manipulator fc@FunctionCall{base=b, argument=a} =
             case partitionErrorable (map manipulateRecursively [b, a]) of
                 ([good_b, good_a], []) -> manipulator fc{base=good_b, argument=good_a}
-                (_, some_errors) -> ErrorList (map (addToErrorStack fc) some_errors)
+                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack fc) some_errors)
         manipulateASTInner manipulator a@Access{base=b, access_id=id} =
             case manipulateRecursively b of
                 Valid cat -> manipulator a{base=cat}
-                ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
+                ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
         manipulateASTInner manipulator i@Import{} = Valid i
         manipulateASTInner manipulator def@Definition{def_category=d} =
             case manipulateRecursively d of
                 Valid cat -> manipulator def{def_category=cat}
-                ErrorList errors -> ErrorList (map (addToErrorStack def) errors)
+                ErrorList errors -> ErrorList (map (addCategoryToErrorStack def) errors)
         manipulateASTInner manipulator mem@Membership{big_category=bc, small_category=sc} =
             case partitionErrorable (map manipulateRecursively [bc, sc]) of
                 ([good_bc, good_sc], []) -> manipulator mem{big_category=good_bc, small_category=good_sc}
-                (_, some_errors) -> ErrorList (map (addToErrorStack mem) some_errors)
+                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack mem) some_errors)
     in
         case premanipulator category of
             Nothing -> manipulateASTInner postmanipulator category
@@ -384,27 +394,36 @@ substituteArg new_arg c@Composite{composite_type=Function, inner_categories=head
 substituteArg new_arg c@Composite{composite_type=Case, inner_categories=inner} = do
     let substituteResults = map (substituteArg new_arg) inner
     case partitionErrorable substituteResults of
-        (good_list,[]) -> Valid c{inner_categories=good_list}
-        (_, some_errors) -> ErrorList $ map (addToErrorStack c) some_errors
+        ([], some_errors) -> ErrorList $ map (addCategoryToErrorStack c) some_errors
+        (good_list, _) -> Valid c{inner_categories=good_list}
 substituteArg new_arg c@Composite{composite_type=Composition, inner_categories=head:tail} =
     case substituteArg new_arg head of
         Valid cat -> Valid c{inner_categories=cat:tail}
-        ErrorList some_errors -> ErrorList $ map (addToErrorStack c) some_errors
-substituteArg new_arg something_weird = error $ "What is this case? " ++ show new_arg ++ show something_weird
+        ErrorList some_errors -> ErrorList $ map (addCategoryToErrorStack c) some_errors
+substituteArg new_arg something_weird = ErrorList [Error{error_type=BadSubstituteArgs, error_stack=[new_arg, something_weird]}]
 
 uncheckedCall :: Category -> Category -> Errorable Category
-uncheckedCall arg base = do
-    let result = substituteArg arg base
-    case result of
-        e@ErrorList{} -> e
-        Valid c@Composite{composite_type=c_type, inner_categories=inner} ->
-            let
-                tailed_inner = tail inner
-            in
-                if length tailed_inner == 1
-                    then Valid (head tailed_inner)
+uncheckedCall arg p@Placeholder{placeholder_type=Label} = uncheckedCall arg (unroll Recursive p)
+uncheckedCall arg c@Composite{composite_type=Function, inner_categories=inner} =
+    let 
+        result = substituteArg arg c
+    in
+        case result of
+            e@(ErrorList errors) -> e
+            _ -> if length (tail inner) == 1
+                    then Valid (head (tail inner))
                     else Valid c{inner_categories=tail inner}
-        Valid other -> error $ "what is this case? " ++ show other
+uncheckedCall arg c@Composite{composite_type=Case, inner_categories=inner} = 
+    case find isValid (map (uncheckedCall arg) inner) of
+        Just value -> value
+        Nothing -> ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
+uncheckedCall arg c@Composite{composite_type=Composition, inner_categories=inner} =
+    foldl (\next_arg cat -> 
+        case next_arg of
+            Valid narg -> uncheckedCall narg cat
+            other -> other
+    ) (Valid arg) inner
+uncheckedCall arg c = ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
 
 symbolicallyCall :: Category -> Errorable Category
 symbolicallyCall p@Placeholder{}
@@ -441,7 +460,7 @@ uncheckedCompositeToFunction c@Composite{composite_type=Case, inner_categories=i
             Composite{composite_type=Union, inner_categories=map (head . inner_categories) valid_categories},
             Composite{composite_type=Union, inner_categories=concatMap (tail . inner_categories) valid_categories}
         ]}
-        (_, some_errors) -> ErrorList (map (addToErrorStack c) some_errors)
+        (_, some_errors) -> ErrorList (map (addCategoryToErrorStack c) some_errors)
 uncheckedCompositeToFunction other = error $ "bad argument to uncheckedCompositeToFunction: " ++ show other
 
 
@@ -452,13 +471,13 @@ evaluateAccess a@Access{base=c@Composite{inner_categories=inner}, access_id=id} 
     case id of
         Index idx -> Valid (inner!!idx)
         Name str_name -> do
-            case filter (\x -> isPlaceholder x && name x == Name str_name)  inner of
+            case filter (\x -> getName x == Just (Name str_name))  inner of
                 [] -> ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
                 stuff -> Valid $ head stuff
         Unnamed -> ErrorList [Error{error_type=EmptyAccessID,error_stack=[a]}]
 evaluateAccess a@Access{base=p@Placeholder{placeholder_category=ph_c}, access_id=id} =
     case evaluateAccess a{base=ph_c} of
-        ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
+        ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
         Valid cat -> Valid cat
 evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
         {- TODO: handle predicates -}
@@ -470,7 +489,7 @@ evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=out
         Valid cat -> evaluateAccess a{base=cat}
 evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
     case evaluateAccess a_inner of
-        ErrorList errors -> ErrorList (map (addToErrorStack a) errors)
+        ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
         Valid cat -> evaluateAccess a{base=cat}
 evaluateAccess a@Access{} = ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
@@ -501,7 +520,7 @@ level input_category =
                 (Composite _ inner) -> levelOfCategoryList inner
                 p@Placeholder{placeholder_type=Element, placeholder_category=ph_c} ->
                     case level ph_c of
-                        Right errors -> Right $ map (addToErrorStack p) errors
+                        Right errors -> Right $ map (addCategoryToErrorStack p) errors
                         Left (Specific l) -> Left (LessThan l)
                         Left (LessThan l) -> Left $ LessThan l
                         Left Infinite -> Left AnyLevel
@@ -515,7 +534,7 @@ level input_category =
                     in
                         case level category_of_interest of
                             Left level -> Left level
-                            Right errors -> Right $ map (addToErrorStack l) errors
+                            Right errors -> Right $ map (addCategoryToErrorStack l) errors
                 Refined {base=_base_category, predicate=_predicate} -> level _base_category
                 Special{special_type=Flexible} -> Left AnyLevel
                 Special{special_type=Universal} -> Left Infinite
@@ -527,7 +546,7 @@ level input_category =
                 a@Access{base=bc,access_id=id} ->
                     case evaluateAccess a of
                         Valid cat -> level cat
-                        ErrorList errors -> Right (map (addToErrorStack a) errors)
+                        ErrorList errors -> Right (map (addCategoryToErrorStack a) errors)
                 i@Import{} -> Left AnyLevel
                 def@Definition{def_category=d} -> level d
                 mem@Membership{big_category=bc, small_category=sc} -> level sc
@@ -687,15 +706,15 @@ validateCategoryInner r@Refined{base=cat,predicate=p}
 validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inner_categories=head:rest}, argument=a}
     | not (isFunctionCompositeType c_type) = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
     | otherwise = Valid f
-validateCategoryInner f@FunctionCall{base=b, argument=a} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
+validateCategoryInner f@FunctionCall{base=Thing{}} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
 validateCategoryInner a@Access{base=b@Composite{inner_categories=inner}, access_id=Index num}
     | num < 0 = ErrorList [Error{error_type=AccessIndexBelowZero, error_stack=[a]}]
     | length inner <= num = ErrorList [Error{error_type=AccessIndexOutsideRange, error_stack=[a]}]
-    | otherwise = validateCategoryInner b
+    | otherwise = Valid a
 validateCategoryInner a@Access{base=bc, access_id=Unnamed} = ErrorList [Error{error_type=EmptyAccessID, error_stack=[a]}]
 validateCategoryInner a@Access{base=bc, access_id=a_id} =
     case evaluateAccess a of
-        Valid cat -> validateCategoryInner bc
+        Valid cat -> Valid a
         ErrorList errors -> ErrorList errors
 validateCategoryInner other = Valid other
 
