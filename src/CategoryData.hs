@@ -182,7 +182,7 @@ addCategoryToErrorStack input_a e@Error{error_stack=stack} = e{error_stack=stack
 
 fromValid :: Errorable a -> a
 fromValid (Valid x) = x
-fromValid other = error "bad fromValid"
+fromValid (ErrorList e) = error $ "bad fromValid " ++ show e
 
 -- useful categories
 
@@ -273,9 +273,13 @@ isNamedCategory :: Category -> Bool
 isNamedCategory Thing{} = True
 isNamedCategory Placeholder{} = True
 isNamedCategory Reference{} = True
+isNamedCategory Import{category_uri=c} = isNamedCategory c
+isNamedCategory Definition{def_category=d} = isNamedCategory d
 isNamedCategory _ = False
 
 getName :: Category -> Maybe Id
+getName Import{category_uri=c} = getName c
+getName Definition{def_category=c} = getName c
 getName input_category
     | not $ isNamedCategory input_category = Nothing
     | otherwise = Just $ name input_category
@@ -755,6 +759,9 @@ fileToCategory category_uri =
             then return (Right Error{error_type=BadImport, error_stack=[Reference (Name category_uri)]})
             else fmap (Left . strToCategory) (readFile full_path)
 
+-- Basic Interpreter on AST file
+
+{- TODO: Handle access -}
 evaluateImport :: Category -> ErrorableT IO Category
 evaluateImport Import{category_uri=Reference{name=Name n}} = ErrorableT $ do
     result <- fileToCategory n

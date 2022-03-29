@@ -1,0 +1,4 @@
+natural:
+    import nat:$base.nat
+    -> import sign: $base.sign
+    -> ($sign, $nat),

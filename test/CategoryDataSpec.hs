@@ -305,7 +305,7 @@ spec = do
             let c = Composite Function [Definition (Placeholder (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
             result <- runErrorableT $ execute c
             result `shouldBe` Valid (Thing (Name "5"))
-    describe "dereference" $ do
+    describe "access" $ do
         it "should handle indices on composites well" $ do
             let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Placeholder{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
             evaluateAccess Access{base=composite_category, access_id=Index 0} `shouldBe` Valid (Thing (Name "a"))

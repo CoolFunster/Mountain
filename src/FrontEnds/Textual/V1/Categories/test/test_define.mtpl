@@ -1,4 +1,3 @@
 test_define:(
-    define x:`something
-    -> $x
+    define x:`something -> $x
 )
