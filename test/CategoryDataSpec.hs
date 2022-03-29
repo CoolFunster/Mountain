@@ -330,10 +330,10 @@ spec = do
             unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories= [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_type=Label, placeholder_category= Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}]}
     describe "importCategories" $ do
         it "should import categories test1" $ do
-            let test_item = Import{category_uri=Reference (Name "test.test1")}
+            let test_item = Import{import_category=Reference (Name "test.test1")}
             result <- runErrorableT $ evaluateImport test_item
             result `shouldBe` Valid (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
         it "should import categories test2" $ do
-            let test_item = Import{category_uri=Reference (Name "test.test2")}
+            let test_item = Import{import_category=Reference (Name "test.test2")}
             result <- runErrorableT $ evaluateImport test_item
             result `shouldBe` Valid Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}

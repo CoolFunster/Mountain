@@ -83,7 +83,7 @@ spec = do
         it "(Recursive) should parse recursion" $ do
             parseCategoryString "self:(`a -> $self[`b])" `shouldBe`  Placeholder {name = Name "self", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},FunctionCall {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
         it "(Import) should parse import" $ do
-            parseCategoryString "import $test.test1" `shouldBe` Import {category_uri = Access {base = Reference {name = Name "test"}, access_id = Name "test1"}}
+            parseCategoryString "import $test.test1" `shouldBe` Import {import_category = Access {base = Reference {name = Name "test"}, access_id = Name "test1"}}
         it "(Define) should parse define" $ do
             parseCategoryString "define x:`something" `shouldBe` Definition{def_category=Placeholder{name=Name "x", placeholder_type=Label, placeholder_category=Thing (Name "something")}}
     describe "evaluatePrettyImport" $ do
@@ -98,7 +98,7 @@ spec = do
             result `shouldBe` Valid (Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}})
         it "should load dirs" $ do
             result <- runErrorableT $ evaluatePrettyImport (Import (Reference (Name "test")))
-            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {category_uri = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {category_uri = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {category_uri = Reference {name = Name "test.test_define"}}}]})
+            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
         it "should load tuples" $ do
             result <- runErrorableT $ evaluatePrettyImport $ Import (Composite Tuple [Reference (Name "test.test1"), Reference (Name "test.test2"), Reference (Name "test.test_define")])
             result1 <- runErrorableT $ evaluatePrettyImport (Import (Reference (Name "test.test1")))
@@ -113,7 +113,7 @@ spec = do
         it "should evaluate import" $ do
             let parsed_result = parseCategoryString "import $test"
             result <- runErrorableT $ executePretty parsed_result
-            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {category_uri = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {category_uri = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {category_uri = Reference {name = Name "test.test_define"}}}]})
+            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
         it "should evaluate indexed imports" $ do
             let parsed_result = parseCategoryString "import $test.test1"
             result <- runErrorableT $ executePretty parsed_result

@@ -117,7 +117,7 @@ pImport = do
     import_str <- symbol $ pack "import"
     _ <- spaceConsumer
     import_cat <- pCategory
-    return Import{category_uri=import_cat}
+    return Import{import_category=import_cat}
 
 pDefinition :: Parser Category
 pDefinition = do

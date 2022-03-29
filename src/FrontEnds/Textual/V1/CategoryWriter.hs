@@ -41,5 +41,5 @@ categoryToString Reference{name=name} = "$" ++ nameToText name
 categoryToString FunctionCall{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_id=_id} = "(" ++ categoryToString bc ++ ")." ++ nameToText _id
 categoryToString Membership{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
-categoryToString Import{category_uri=import_str} = "import " ++ categoryToString import_str
+categoryToString Import{import_category=import_str} = "import " ++ categoryToString import_str
 categoryToString Definition{def_category=cat} = "define " ++ categoryToString cat

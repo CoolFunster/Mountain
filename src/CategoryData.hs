@@ -86,7 +86,7 @@ data Category =
         access_id::Id
     } |
     Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
-        category_uri::Category
+        import_category::Category
     } |
     Definition {
         def_category::Category
@@ -273,12 +273,12 @@ isNamedCategory :: Category -> Bool
 isNamedCategory Thing{} = True
 isNamedCategory Placeholder{} = True
 isNamedCategory Reference{} = True
-isNamedCategory Import{category_uri=c} = isNamedCategory c
+isNamedCategory Import{import_category=c} = isNamedCategory c
 isNamedCategory Definition{def_category=d} = isNamedCategory d
 isNamedCategory _ = False
 
 getName :: Category -> Maybe Id
-getName Import{category_uri=c} = getName c
+getName Import{import_category=c} = getName c
 getName Definition{def_category=c} = getName c
 getName input_category
     | not $ isNamedCategory input_category = Nothing
@@ -427,12 +427,12 @@ call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
                 [something] -> Valid something
                 [] -> ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[arg, c]}]
                 other -> Valid c{inner_categories=tail}
-call arg c@Composite{composite_type=Case, inner_categories=inner} = 
+call arg c@Composite{composite_type=Case, inner_categories=inner} =
     case find isValid (map (call arg) inner) of
         Just value -> value
         Nothing -> ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
 call arg c@Composite{composite_type=Composition, inner_categories=inner} =
-    foldl (\next_arg cat -> 
+    foldl (\next_arg cat ->
         case next_arg of
             Valid narg -> call narg cat
             other -> other
@@ -560,6 +560,9 @@ has big_category small_category
             {- substitutive rules -}
             has_inner (Composite _ [category]) small_category = tracedHas category small_category
             has_inner big_category (Composite _ [category]) = tracedHas big_category category
+            has_inner def@Definition{def_category=d} other = tracedHas d other
+            has_inner other def@Definition{def_category=d} = tracedHas other d
+            has_inner mem@Membership{big_category=bc, small_category=sc} other = tracedHas sc other
             has_inner (Placeholder _ Element category) small_category
                 | category == small_category = Valid False
                 | otherwise = tracedHas category small_category
@@ -645,8 +648,6 @@ has big_category small_category
                     ErrorList some_errors -> ErrorList some_errors
                     Valid cat -> tracedHas cat other
             has_inner i@Import{} other = ErrorList [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
-            has_inner def@Definition{def_category=d} other = tracedHas d other
-            has_inner mem@Membership{big_category=bc, small_category=sc} other = tracedHas sc other
             {- Things -}
             -- equal things and other cases are handled above
             has_inner (Thing t) _ = Valid False
@@ -737,33 +738,33 @@ categoryToStr :: Category -> String
 categoryToStr = show
 
 categoryToFile :: String -> Category -> IO (Either () Error)
-categoryToFile category_uri cat = do
-    let full_path = basePath ++ categoryURIToFilePath category_uri ++ ".ast.mtpl"
+categoryToFile import_category cat = do
+    let full_path = basePath ++ categoryURIToFilePath import_category ++ ".ast.mtpl"
     fileExist <- doesFileExist full_path
     if fileExist
-        then return (Right Error{error_type=BadExportFileExists, error_stack=[Reference (Name category_uri)]})
+        then return (Right Error{error_type=BadExportFileExists, error_stack=[Reference (Name import_category)]})
         else fmap Left (writeFile full_path (show cat))
 
 strToCategory :: String -> Category
 strToCategory = read
 
 fileToCategory :: String -> IO (Either Category Error)
-fileToCategory category_uri =
+fileToCategory import_category =
     let
         repl '.' = '/'
         repl c = c
-        full_path = basePath ++ categoryURIToFilePath category_uri ++ ".ast.mtpl"
+        full_path = basePath ++ categoryURIToFilePath import_category ++ ".ast.mtpl"
     in do
         fileExist <- doesFileExist full_path
         if not fileExist
-            then return (Right Error{error_type=BadImport, error_stack=[Reference (Name category_uri)]})
+            then return (Right Error{error_type=BadImport, error_stack=[Reference (Name import_category)]})
             else fmap (Left . strToCategory) (readFile full_path)
 
 -- Basic Interpreter on AST file
 
 {- TODO: Handle access -}
 evaluateImport :: Category -> ErrorableT IO Category
-evaluateImport Import{category_uri=Reference{name=Name n}} = ErrorableT $ do
+evaluateImport Import{import_category=Reference{name=Name n}} = ErrorableT $ do
     result <- fileToCategory n
     case result of
         Left cat -> return $ Valid cat
@@ -780,6 +781,15 @@ evaluateInner mem@Membership{big_category=bc, small_category=sc} = ErrorableT (
             then return $ Valid sc
             else return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
         ErrorList ers -> return $ ErrorList ers) >>= evaluateInner
+evaluateInner c@Composite{inner_categories=(i@(Import something):rest)} = do
+    result <- evaluateInner i
+    evaluateInner c{inner_categories=Definition result:rest}
+evaluateInner c@Composite{inner_categories=def@(Definition (Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
+    let result =map replaceReferences rest <*> [Reference ph_name] <*> [ph_c]
+    case result of
+        [] -> return $ ErrorList [Error BadFunctionalComposite [c]]
+        [something] -> return $ Valid something
+        something_else -> return $ Valid c{inner_categories=something_else}
 evaluateInner cat = ErrorableT $ return $ Valid cat
 
 evaluate :: Category -> ErrorableT IO Category
