@@ -77,6 +77,12 @@ integer = lexeme L.decimal
 pStringBetweenWS :: [Char] -> Parser Text
 pStringBetweenWS input_str = try $ between (optional spaceConsumer) (optional spaceConsumer) (symbol (pack input_str))
 
+validateParsing :: MonadFail m => Category -> m Category
+validateParsing category =
+    case validateCategoryInner category of
+        Valid cat -> return cat
+        ErrorList errors -> fail (show errors)
+
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
 pWrapBetween open_char close_char = between (pStringBetweenWS open_char) (pStringBetweenWS close_char)
@@ -94,9 +100,6 @@ pCategoryIdx = do
     _ <- symbol $ pack "#"
     Index . fromInteger <$> integer
 
-pErrorableCategory :: Parser (Errorable Category)
-pErrorableCategory = Valid <$> pFunction
-
 pCategory = pFunction
 
 pFunction :: Parser Category
@@ -105,13 +108,13 @@ pFunction =
         combineFunctions :: Category -> Category -> Category
         combineFunctions a c@Composite{composite_type=Function,inner_categories=inner} = c{inner_categories=a:inner}
         combineFunctions a b = Composite{composite_type=Function, inner_categories=[a,b]}
-    in
-    makeExprParser pFunctionTerm [
-        [
-            binaryR (pStringBetweenWS "->") combineFunctions
-        ]
-    ]
-
+        
+        expr_parser = makeExprParser pFunctionTerm [
+            [binaryR (pStringBetweenWS "->") combineFunctions]]
+    in do
+        result <- expr_parser
+        validateParsing result
+        
 pFunctionTerm :: Parser Category
 pFunctionTerm = pImport <|> pDefinition <|> pMembership
 
@@ -120,22 +123,24 @@ pImport = do
     import_str <- symbol $ pack "import"
     _ <- spaceConsumer
     import_cat <- pCategory
-    return Import{import_category=import_cat}
+    validateParsing Import{import_category=import_cat}
 
 pDefinition :: Parser Category
 pDefinition = do
     define_str <- symbol $ pack "define"
     _ <- spaceConsumer
     category <- pPlaceholder
-    return Definition{def_category=category}
+    validateParsing Definition{def_category=category}
 
 pMembership :: Parser Category
 pMembership =
-    makeExprParser pPlaceholder [
-        [
-            binaryN (pStringBetweenWS "::") (\x y -> Membership{big_category=x,small_category=y})
-        ]
-    ]
+    let expr_parser = makeExprParser pPlaceholder [
+            [
+                binaryN (pStringBetweenWS "::") (\x y -> Membership{big_category=x,small_category=y})
+            ]]
+    in do
+        result <- expr_parser
+        validateParsing result
 
 {- If not a placeholder, falls through to other categories -}
 pPlaceholder :: Parser Category
@@ -153,10 +158,9 @@ pPlaceholder = do
                     else Just CategoryData.Label
     category <- pCategoryTerm
     case ph_type of
-        Nothing -> return category
-        Just ph_t -> return $ Placeholder name ph_t category
+        Nothing -> validateParsing category
+        Just ph_t -> validateParsing $ Placeholder name ph_t category
 
-{- -}
 pCategoryTerm :: Parser Category
 pCategoryTerm = do
     base <- pStandardCategory
@@ -166,7 +170,7 @@ pCategoryTerm = do
                 mc@FunctionCall{} -> mc{base=e}
                 anything_else -> anything_else
             )
-    return (foldl collector base extension)
+    validateParsing (foldl collector base extension)
 
 pCategoryExtension :: Parser Category
 pCategoryExtension = choice [
@@ -197,36 +201,36 @@ pStandardCategory = choice [
     try pTuple,
     try pCase,
     try pUnion,
-    try pRefinement]
+    try pRefinement] 
 
 pThing :: Parser Category
 pThing = do
     _ <- symbol (pack "`")
     thing_name <- pCategoryName
-    return Thing{name=thing_name}
+    validateParsing Thing{name=thing_name}
 
 pReference :: Parser Category
 pReference = do
     _ <- symbol (pack "$")
     name <- pCategoryName
-    return Reference{name=name}
+    validateParsing Reference{name=name}
 
 pUniversal :: Parser Category
 pUniversal = do
     _ <- symbol (pack "Any")
-    return (Special Universal)
+    validateParsing (Special Universal)
 
 pFlexible :: Parser Category
 pFlexible = do
     _ <- symbol (pack "(%)")
-    return (Special Flexible)
+    validateParsing (Special Flexible)
 
 
 {- Parses composite types that have a beg & end character wrapping them -}
 pCompositeTemplate :: CompositeType -> ([Char], [Char]) -> Parser Category
 pCompositeTemplate c_type (beg_sep, end_sep) = do
     inner_categories <- pWrapBetween beg_sep end_sep pCategoryInnerList
-    return Composite{composite_type=c_type, inner_categories=inner_categories}
+    validateParsing Composite{composite_type=c_type, inner_categories=inner_categories}
 
 pCategoryInnerList :: Parser [Category]
 pCategoryInnerList = sepBy pCategory (pStringBetweenWS ",")
@@ -251,7 +255,7 @@ pRefinementInner = do
     _ <- symbol (pack "|")
     _ <- spaceConsumer
     refinement <- pCategory
-    return Refined{base=ph,predicate=refinement}
+    validateParsing Refined{base=ph,predicate=refinement}
 
 pRefinement :: Parser Category
 pRefinement = pWrapBetween "{" "}" pRefinementInner
@@ -263,6 +267,9 @@ textualBasePath = "/home/mpriam/git/mtpl_language/src/FrontEnds/Textual/V1/Categ
 
 textualFileExt :: String
 textualFileExt = ".mtpl"
+
+pErrorableCategory :: Parser (Errorable Category)
+pErrorableCategory = Valid <$> pCategory
 
 pTextualFile :: FilePath -> ErrorableT IO Category
 pTextualFile fp = ErrorableT $ parseCategoryFileWith pErrorableCategory fp

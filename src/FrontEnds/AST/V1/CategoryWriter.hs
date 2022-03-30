@@ -6,8 +6,8 @@ import CategoryData
 import System.Directory (doesFileExist)
 
 
-categoryToStr :: Category -> String
-categoryToStr = show
+categoryToString :: Category -> String
+categoryToString = show
 
 categoryURIToFilePath :: String -> String
 categoryURIToFilePath input_str =

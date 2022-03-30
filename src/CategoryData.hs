@@ -226,8 +226,9 @@ isFunctionCompositeType :: CompositeType -> Bool
 isFunctionCompositeType = not . isDataCompositeType
 
 isFunctionComposite :: Category -> Bool
-isFunctionComposite Composite{composite_type=c_type}
+isFunctionComposite Composite{composite_type=c_type, inner_categories=inner}
     | isFunctionCompositeType c_type = True
+    | isDataCompositeType c_type && length inner == 1 = isFunctionComposite (head inner)
     | otherwise = False
 isFunctionComposite _ = False
 
@@ -483,6 +484,7 @@ evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
     case evaluateAccess a_inner of
         ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
         Valid cat -> evaluateAccess a{base=cat}
+evaluateAccess a@Access{base=Reference{}, access_id=id} = Valid (Special{special_type=Flexible})
 evaluateAccess a@Access{} = ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
 

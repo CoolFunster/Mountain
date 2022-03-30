@@ -53,11 +53,9 @@ spec = do
         it "(Placeholder) should parse placeholders" $ do
             parseCategoryString "x@`a" `shouldBe` Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}
             parseCategoryString "x@(`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Element, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}
-            parseCategoryString "@`a" `shouldBe` Placeholder{name=Unnamed, placeholder_type=Element, placeholder_category=Thing (Name "a")}
         it "(Placeholder) should parse labels" $ do
             parseCategoryString "x:`a" `shouldBe` Placeholder{name=Name "x", placeholder_type=Label, placeholder_category=Thing (Name "a")}
             parseCategoryString "x:(`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}
-            parseCategoryString ":`a" `shouldBe` Placeholder{name=Unnamed, placeholder_type=Label, placeholder_category=Thing (Name "a")}
         it "(Placeholder) should parse nested labels" $ do
             parseCategoryString "x:(x:`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "a"}}]}}
         it "(Refinement) should parse refinement" $ do
@@ -93,7 +91,7 @@ spec = do
             result `shouldBe` Valid (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
         it "should load files - test2" $ do
             result <- runErrorableT $ executeTextual (Import (Reference (Name "test.test2")))
-            result `shouldBe` Valid (Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
+            result `shouldBe` Valid (Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
         it "should load files - test3" $ do
             result <- runErrorableT $ executeTextual (Import (Reference (Name "test.test_define")))
             result `shouldBe` Valid (Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}})
