@@ -94,6 +94,9 @@ pCategoryIdx = do
     _ <- symbol $ pack "#"
     Index . fromInteger <$> integer
 
+pErrorableCategory :: Parser (Errorable Category)
+pErrorableCategory = Valid <$> pFunction
+
 pCategory = pFunction
 
 pFunction :: Parser Category
@@ -253,69 +256,16 @@ pRefinementInner = do
 pRefinement :: Parser Category
 pRefinement = pWrapBetween "{" "}" pRefinementInner
 
--- Pretty Interpreter
+-- Pretty loader
 
-prettyBasePath ::FilePath
-prettyBasePath = "/home/mpriam/git/mtpl_language/src/FrontEnds/Textual/V1/Categories/"
+textualBasePath :: FilePath
+textualBasePath = "/home/mpriam/git/mtpl_language/src/FrontEnds/Textual/V1/Categories/"
 
-loadPrettyModulePath :: FilePath -> ErrorableT IO Category
-loadPrettyModulePath fp =
-    let
-        repl '.' = '/'
-        repl c = c
-        file_name = prettyBasePath ++ map repl fp
-    in
-        ErrorableT $ do
-            file_exist <- doesFileExist (file_name ++ ".mtpl")
-            dir_exist <- doesDirectoryExist file_name
-            if file_exist
-                then do
-                    result <- parseCategoryFile (file_name ++ ".mtpl")
-                    return (Valid result)
-            else if dir_exist
-                then do
-                    dirContents <- listDirectory file_name
-                    let baseDirContents = sort $ map takeBaseName dirContents
-                    let loadedDir = map ((fp ++ ".") ++) baseDirContents
-                    let zipped_dir = zip baseDirContents loadedDir
-                    trace (show baseDirContents) $ return $ Valid $ Composite{composite_type=Tuple, inner_categories=
-                        map (\(ref, path) -> Placeholder (Name ref) CategoryData.Label ((Import . Reference . Name) path)) zipped_dir
-                    }
-            else return $ ErrorList [Error BadImport [Reference (Name fp)]]
+textualFileExt :: String
+textualFileExt = ".mtpl"
 
-evaluatePrettyImport :: Category -> ErrorableT IO Category
-evaluatePrettyImport (Import i@(Import _)) = evaluatePrettyImport i
-evaluatePrettyImport (Import (Reference (Name n))) = loadPrettyModulePath n
-evaluatePrettyImport (Import a@Access{base=bc, access_id=id}) = 
-    let
-        extractFilePath :: Category -> FilePath
-        extractFilePath (Reference (Name n)) = n
-        extractFilePath (Access bc (Name n)) = extractFilePath bc ++ "." ++ n
-        extractFilePath _ = error "Something weird"
-    in  
-        loadPrettyModulePath (extractFilePath a)
-evaluatePrettyImport (Import c@(Composite Tuple inner)) = do
-    result <- mapM (evaluatePrettyImport . Import) inner
-    return c{inner_categories=result}
-evaluatePrettyImport (Import p@Placeholder{name=n, placeholder_type=CategoryData.Label, placeholder_category=pc}) = do
-    result <- evaluatePrettyImport (Import pc)
-    case result of
-        p@Placeholder{placeholder_type=label, placeholder_category=ph_c} -> return $ p{name=n}
-        _ -> return $ p{placeholder_category=result}
-evaluatePrettyImport something = error $ "what is this import case? " ++ categoryToStr something
+pTextualFile :: FilePath -> ErrorableT IO Category
+pTextualFile fp = ErrorableT $ parseCategoryFileWith pErrorableCategory fp
 
-evaluatePrettyInner :: Category -> ErrorableT IO Category
-evaluatePrettyInner i@Import{} = evaluatePrettyImport i >>= evaluatePrettyInner
-evaluatePrettyInner other = evaluateInner other
-
-evaluatePretty :: Category -> ErrorableT IO Category
-evaluatePretty c = do
-    cat <- postManipulateASTIO evaluatePrettyInner c
-    if cat == c then return c else evaluatePretty cat
-
-executePretty :: Category -> ErrorableT IO Category
-executePretty input_cat = do
-    let step1 = validateCategory input_cat >>= simplify
-    case step1 of
-        ErrorList ers -> ErrorableT $ return $ ErrorList ers
-        Valid cat -> evaluatePretty cat
+loadTextual :: FilePath -> ErrorableT IO Category
+loadTextual = loadModule textualBasePath textualFileExt pTextualFile

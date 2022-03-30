@@ -9,7 +9,9 @@ import Data.Typeable
 import Debug.Trace (trace)
 import Control.Monad
 import GHC.Base (Monad)
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
+import System.FilePath.Posix (takeBaseName)
+import Data.List (sort)
 
 {- add specific name for symbolic execution cases-}
 data Id =
@@ -721,85 +723,87 @@ simplifyInner input_category = Valid input_category
 simplify :: Category -> Errorable Category
 simplify = postManipulateAST simplifyInner
 
--- IO to files and stuff --
+-- Basic Interpreter makers
 
-basePath :: String
-basePath = "/home/mpriam/git/mtpl_language/src/Categories/"
-
-categoryURIToFilePath :: String -> String
-categoryURIToFilePath input_str =
+loadModule :: FilePath -> String -> (FilePath -> ErrorableT IO Category) -> FilePath -> ErrorableT IO Category
+loadModule module_base_path file_ext importer fp =
     let
         repl '.' = '/'
         repl c = c
+        file_name = module_base_path ++ map repl fp
+
+        removeFileExt :: FilePath -> FilePath
+        removeFileExt str = if str == file_ext then "" else  head str:removeFileExt (tail str)
     in
-        map repl input_str
+        ErrorableT $ do
+            file_exist <- doesFileExist (file_name ++ file_ext)
+            dir_exist <- doesDirectoryExist file_name
+            if file_exist
+                then do
+                    runErrorableT $ importer (file_name ++ file_ext)
+            else if dir_exist
+                then do
+                    dirContents <- listDirectory file_name
+                    let baseDirContents = sort $ map removeFileExt dirContents
+                    let loadedDir = map ((fp ++ ".") ++) baseDirContents
+                    let zipped_dir = zip baseDirContents loadedDir
+                    return $ Valid $ Composite{composite_type=Tuple, inner_categories=
+                        map (\(ref, path) -> Placeholder (Name ref) CategoryData.Label ((Import . Reference . Name) path)) zipped_dir
+                    }
+            else return $ ErrorList [Error BadImport [Reference (Name fp)]]
 
-categoryToStr :: Category -> String
-categoryToStr = show
-
-categoryToFile :: String -> Category -> IO (Either () Error)
-categoryToFile import_category cat = do
-    let full_path = basePath ++ categoryURIToFilePath import_category ++ ".ast.mtpl"
-    fileExist <- doesFileExist full_path
-    if fileExist
-        then return (Right Error{error_type=BadExportFileExists, error_stack=[Reference (Name import_category)]})
-        else fmap Left (writeFile full_path (show cat))
-
-strToCategory :: String -> Category
-strToCategory = read
-
-fileToCategory :: String -> IO (Either Category Error)
-fileToCategory import_category =
+evaluateImport :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+evaluateImport importer (Import i@(Import _)) = evaluateImport importer i
+evaluateImport importer (Import (Reference (Name n))) = importer n
+evaluateImport importer (Import a@Access{base=bc, access_id=id}) =
     let
-        repl '.' = '/'
-        repl c = c
-        full_path = basePath ++ categoryURIToFilePath import_category ++ ".ast.mtpl"
-    in do
-        fileExist <- doesFileExist full_path
-        if not fileExist
-            then return (Right Error{error_type=BadImport, error_stack=[Reference (Name import_category)]})
-            else fmap (Left . strToCategory) (readFile full_path)
-
--- Basic Interpreter on AST file
-
-{- TODO: Handle access -}
-evaluateImport :: Category -> ErrorableT IO Category
-evaluateImport Import{import_category=Reference{name=Name n}} = ErrorableT $ do
-    result <- fileToCategory n
+        extractFilePath :: Category -> FilePath
+        extractFilePath (Reference (Name n)) = n
+        extractFilePath (Access bc (Name n)) = extractFilePath bc ++ "." ++ n
+        extractFilePath _ = error "Something weird"
+    in
+        importer (extractFilePath a)
+evaluateImport importer (Import c@(Composite Tuple inner)) = do
+    result <- mapM (evaluateImport importer . Import) inner
+    return c{inner_categories=result}
+evaluateImport importer (Import p@Placeholder{name=n, placeholder_type=CategoryData.Label, placeholder_category=pc}) = do
+    result <- evaluateImport importer (Import pc)
     case result of
-        Left cat -> return $ Valid cat
-        Right error -> return $ ErrorList [error]
-evaluateImport other = error $ "called on bad input: " ++ show other
+        p@Placeholder{placeholder_type=label, placeholder_category=ph_c} -> return $ p{name=n}
+        _ -> return $ p{placeholder_category=result}
+evaluateImport importer something = error $ "what is this import case? " ++ show something
 
-evaluateInner :: Category -> ErrorableT IO Category
-evaluateInner FunctionCall{base=bc, argument=a} = ErrorableT (return $ call a bc) >>= evaluateInner
-evaluateInner a@Access{} = ErrorableT (return $ evaluateAccess a) >>= evaluateInner
-evaluateInner i@Import{} = evaluateImport i >>= evaluateInner
-evaluateInner mem@Membership{big_category=bc, small_category=sc} = ErrorableT (
+evaluateInner :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+evaluateInner importer FunctionCall{base=bc, argument=a} = ErrorableT (return $ call a bc) >>= evaluateInner importer
+evaluateInner importer a@Access{} = ErrorableT (return $ evaluateAccess a) >>= evaluateInner importer
+evaluateInner importer i@Import{} = evaluateImport importer i >>= evaluateInner importer
+evaluateInner importer mem@Membership{big_category=bc, small_category=sc} = ErrorableT (
     case tracedHas bc sc of
         Valid b -> if b
             then return $ Valid sc
             else return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
-        ErrorList ers -> return $ ErrorList ers) >>= evaluateInner
-evaluateInner c@Composite{inner_categories=(i@(Import something):rest)} = do
-    result <- evaluateInner i
-    evaluateInner c{inner_categories=Definition result:rest}
-evaluateInner c@Composite{inner_categories=def@(Definition (Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
+        ErrorList ers -> return $ ErrorList ers) >>= evaluateInner importer
+evaluateInner importer c@Composite{inner_categories=(i@(Import something):rest)} = do
+    result <- evaluateInner importer i
+    evaluateInner importer c{inner_categories=Definition result:rest}
+evaluateInner importer c@Composite{inner_categories=def@(Definition (Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
     let result =map replaceReferences rest <*> [Reference ph_name] <*> [ph_c]
     case result of
         [] -> return $ ErrorList [Error BadFunctionalComposite [c]]
         [something] -> return $ Valid something
         something_else -> return $ Valid c{inner_categories=something_else}
-evaluateInner cat = ErrorableT $ return $ Valid cat
+evaluateInner importer cat = ErrorableT $ return $ Valid cat
 
-evaluate :: Category -> ErrorableT IO Category
-evaluate c = do
-    cat <- postManipulateASTIO evaluateInner c
-    if cat == c then return c else evaluate cat
+evaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+evaluate importer c = do
+    cat <- postManipulateASTIO (evaluateInner importer) c
+    if cat == c then return c else evaluate importer cat
 
-execute :: Category -> ErrorableT IO Category
-execute input_cat = do
+execute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+execute importer input_cat = do
     let step1 = validateCategory input_cat >>= simplify
     case step1 of
         ErrorList ers -> ErrorableT $ return $ ErrorList ers
-        Valid cat -> evaluate cat
+        Valid cat -> evaluate importer cat
+
+
