@@ -21,6 +21,7 @@ import System.FilePath.Posix
 
 import qualified Data.Text.IO as TextIO
 import Data.List (sort)
+import qualified Data.Set as Set
 
 
 _baseParseCategory :: Parser a -> FilePath -> Text -> a
@@ -77,11 +78,13 @@ integer = lexeme L.decimal
 pStringBetweenWS :: [Char] -> Parser Text
 pStringBetweenWS input_str = try $ between (optional spaceConsumer) (optional spaceConsumer) (symbol (pack input_str))
 
-validateParsing :: MonadFail m => Category -> m Category
-validateParsing category =
-    case validateCategoryInner category of
+withValidation :: Parser Category -> Parser Category
+withValidation parser = do
+    offset <- getOffset
+    result <- parser
+    case validateCategoryInner result of
         Valid cat -> return cat
-        ErrorList errors -> fail (show errors)
+        ErrorList errors -> region (setErrorOffset offset) (fail (show errors))
 
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
@@ -108,43 +111,37 @@ pFunction =
         combineFunctions :: Category -> Category -> Category
         combineFunctions a c@Composite{composite_type=Function,inner_categories=inner} = c{inner_categories=a:inner}
         combineFunctions a b = Composite{composite_type=Function, inner_categories=[a,b]}
-        
-        expr_parser = makeExprParser pFunctionTerm [
+    in 
+        withValidation $ makeExprParser pFunctionTerm [
             [binaryR (pStringBetweenWS "->") combineFunctions]]
-    in do
-        result <- expr_parser
-        validateParsing result
-        
+
 pFunctionTerm :: Parser Category
 pFunctionTerm = pImport <|> pDefinition <|> pMembership
 
 pImport :: Parser Category
-pImport = do
+pImport = withValidation $ do
     import_str <- symbol $ pack "import"
     _ <- spaceConsumer
     import_cat <- pCategory
-    validateParsing Import{import_category=import_cat}
+    return Import{import_category=import_cat}
 
 pDefinition :: Parser Category
-pDefinition = do
+pDefinition = withValidation $ do
+    o <- getOffset
     define_str <- symbol $ pack "define"
     _ <- spaceConsumer
     category <- pPlaceholder
-    validateParsing Definition{def_category=category}
+    return Definition{def_category=category}
 
 pMembership :: Parser Category
-pMembership =
-    let expr_parser = makeExprParser pPlaceholder [
+pMembership = withValidation $ makeExprParser pPlaceholder [
             [
                 binaryN (pStringBetweenWS "::") (\x y -> Membership{big_category=x,small_category=y})
             ]]
-    in do
-        result <- expr_parser
-        validateParsing result
 
 {- If not a placeholder, falls through to other categories -}
 pPlaceholder :: Parser Category
-pPlaceholder = do
+pPlaceholder = withValidation $ do
     parsed_name <- optional (try pCategoryName)
     let name = fromMaybe Unnamed parsed_name
     let at = pack "@"
@@ -158,11 +155,11 @@ pPlaceholder = do
                     else Just CategoryData.Label
     category <- pCategoryTerm
     case ph_type of
-        Nothing -> validateParsing category
-        Just ph_t -> validateParsing $ Placeholder name ph_t category
+        Nothing -> return category
+        Just ph_t -> return $ Placeholder name ph_t category
 
 pCategoryTerm :: Parser Category
-pCategoryTerm = do
+pCategoryTerm = withValidation $ do
     base <- pStandardCategory
     extension <- many pCategoryExtension
     let collector = (\e b -> case b of
@@ -170,7 +167,7 @@ pCategoryTerm = do
                 mc@FunctionCall{} -> mc{base=e}
                 anything_else -> anything_else
             )
-    validateParsing (foldl collector base extension)
+    return (foldl collector base extension)
 
 pCategoryExtension :: Parser Category
 pCategoryExtension = choice [
@@ -201,36 +198,36 @@ pStandardCategory = choice [
     try pTuple,
     try pCase,
     try pUnion,
-    try pRefinement] 
+    try pRefinement]
 
 pThing :: Parser Category
-pThing = do
+pThing = withValidation $ do
     _ <- symbol (pack "`")
     thing_name <- pCategoryName
-    validateParsing Thing{name=thing_name}
+    return Thing{name=thing_name}
 
 pReference :: Parser Category
-pReference = do
+pReference = withValidation $ do
     _ <- symbol (pack "$")
     name <- pCategoryName
-    validateParsing Reference{name=name}
+    return Reference{name=name}
 
 pUniversal :: Parser Category
-pUniversal = do
+pUniversal = withValidation $ do
     _ <- symbol (pack "Any")
-    validateParsing (Special Universal)
+    return (Special Universal)
 
 pFlexible :: Parser Category
-pFlexible = do
+pFlexible = withValidation $ do
     _ <- symbol (pack "(%)")
-    validateParsing (Special Flexible)
+    return (Special Flexible)
 
 
 {- Parses composite types that have a beg & end character wrapping them -}
 pCompositeTemplate :: CompositeType -> ([Char], [Char]) -> Parser Category
-pCompositeTemplate c_type (beg_sep, end_sep) = do
+pCompositeTemplate c_type (beg_sep, end_sep) = withValidation $ do
     inner_categories <- pWrapBetween beg_sep end_sep pCategoryInnerList
-    validateParsing Composite{composite_type=c_type, inner_categories=inner_categories}
+    return Composite{composite_type=c_type, inner_categories=inner_categories}
 
 pCategoryInnerList :: Parser [Category]
 pCategoryInnerList = sepBy pCategory (pStringBetweenWS ",")
@@ -249,13 +246,13 @@ pCase :: Parser Category
 pCase = pCompositeTemplate Case ("*|", "|*")
 
 pRefinementInner :: Parser Category
-pRefinementInner = do
+pRefinementInner = withValidation $ do
     ph <- pPlaceholder
     _ <- spaceConsumer
     _ <- symbol (pack "|")
     _ <- spaceConsumer
     refinement <- pCategory
-    validateParsing Refined{base=ph,predicate=refinement}
+    return Refined{base=ph,predicate=refinement}
 
 pRefinement :: Parser Category
 pRefinement = pWrapBetween "{" "}" pRefinementInner
