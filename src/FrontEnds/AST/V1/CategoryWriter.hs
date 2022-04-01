@@ -5,7 +5,6 @@ import FrontEnds.AST.V1.CategoryParser (basePath)
 import CategoryData
 import System.Directory (doesFileExist)
 
-
 categoryToString :: Category -> String
 categoryToString = show
 

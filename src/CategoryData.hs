@@ -105,17 +105,19 @@ data ErrorType =
     EmptyAccessID |
     BadAccess |
     UnresolvedReference |
-    SubstituteArgOnEmptyCategory |
-    BadSubstituteArgs |
+    -- SubstituteArgOnEmptyCategory |
+    -- BadSubstituteArgs |
     CallingADataCompositeCategory |
     UnnamedCategory |
+    IndexedNamed |
     EmptyFunctionalComposite |
-    BadFunctionalComposite |
+    InsufficientFunctionTerms |
+    DataInFunctionComposite |
     BadFunctionCall |
     InvalidArgument |
-    PredicateHasBadArgument |
+    PredicateHasNonFunctionArgument |
     NonFunctioninFunctionCallBase |
-    NotSubstitutableArgs |
+    -- NotSubstitutableArgs |
     BadRefinementPredicateInput |
     AccessIndexBelowZero |
     AccessIndexOutsideRange |
@@ -390,25 +392,25 @@ unrollRecursive unroll_type cat =
         Valid cat -> cat
         ErrorList errors -> error "bad flatten"
 
-substituteArg :: Category -> Category -> Errorable Category
-substituteArg new_arg c@Composite{inner_categories=[]} =
-    ErrorList [Error{error_type=SubstituteArgOnEmptyCategory, error_stack=[new_arg, c]}]
-substituteArg new_arg c@Composite{composite_type=c_type, inner_categories=[something]} = substituteArg new_arg something
-substituteArg new_arg c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:tail} =
-    Valid $ c{inner_categories=p:(map replaceReferences tail <*> [Reference{name=id}] <*> [new_arg])}
-substituteArg new_arg c@Composite{composite_type=Function, inner_categories=head:tail}
-    | head `isValidArgument` new_arg = Valid c{inner_categories=new_arg:tail}
-    | otherwise = ErrorList [Error{error_type=NotSubstitutableArgs, error_stack=[new_arg, c]}]
-substituteArg new_arg c@Composite{composite_type=Case, inner_categories=inner} = do
-    let substituteResults = map (substituteArg new_arg) inner
-    case partitionErrorable substituteResults of
-        ([], some_errors) -> ErrorList $ map (addCategoryToErrorStack c) some_errors
-        (good_list, _) -> Valid c{inner_categories=good_list}
-substituteArg new_arg c@Composite{composite_type=Composition, inner_categories=head:tail} =
-    case substituteArg new_arg head of
-        Valid cat -> Valid c{inner_categories=cat:tail}
-        ErrorList some_errors -> ErrorList $ map (addCategoryToErrorStack c) some_errors
-substituteArg new_arg something_weird = ErrorList [Error{error_type=BadSubstituteArgs, error_stack=[new_arg, something_weird]}]
+-- substituteArg :: Category -> Category -> Errorable Category
+-- substituteArg new_arg c@Composite{inner_categories=[]} =
+--     ErrorList [Error{error_type=SubstituteArgOnEmptyCategory, error_stack=[new_arg, c]}]
+-- substituteArg new_arg c@Composite{composite_type=c_type, inner_categories=[something]} = substituteArg new_arg something
+-- substituteArg new_arg c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:tail} =
+--     Valid $ c{inner_categories=p:(map replaceReferences tail <*> [Reference{name=id}] <*> [new_arg])}
+-- substituteArg new_arg c@Composite{composite_type=Function, inner_categories=head:tail}
+--     | head `isValidArgument` new_arg = Valid c{inner_categories=new_arg:tail}
+--     | otherwise = ErrorList [Error{error_type=NotSubstitutableArgs, error_stack=[new_arg, c]}]
+-- substituteArg new_arg c@Composite{composite_type=Case, inner_categories=inner} = do
+--     let substituteResults = map (substituteArg new_arg) inner
+--     case partitionErrorable substituteResults of
+--         ([], some_errors) -> ErrorList $ map (addCategoryToErrorStack c) some_errors
+--         (good_list, _) -> Valid c{inner_categories=good_list}
+-- substituteArg new_arg c@Composite{composite_type=Composition, inner_categories=head:tail} =
+--     case substituteArg new_arg head of
+--         Valid cat -> Valid c{inner_categories=cat:tail}
+--         ErrorList some_errors -> ErrorList $ map (addCategoryToErrorStack c) some_errors
+-- substituteArg new_arg something_weird = ErrorList [Error{error_type=BadSubstituteArgs, error_stack=[new_arg, something_weird]}]
 
 call :: Category -> Category -> Errorable Category
 call arg p@Placeholder{placeholder_type=Label} = call arg (unroll Recursive p)
@@ -417,7 +419,7 @@ call arg c@Composite{composite_type=c_type,inner_categories=[]}
     | otherwise = ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
 call arg c@Composite{composite_type=c_type, inner_categories=[something]}
     | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
-    | otherwise = ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[c]}]
+    | otherwise = Valid c
 call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
     case head `tracedHas` arg of
         ErrorList errors -> ErrorList errors
@@ -428,7 +430,7 @@ call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
                     _ -> tail
             case new_tail of
                 [something] -> Valid something
-                [] -> ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[arg, c]}]
+                [] -> ErrorList [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
                 other -> Valid c{inner_categories=tail}
 call arg c@Composite{composite_type=Case, inner_categories=inner} =
     case find isValid (map (call arg) inner) of
@@ -635,8 +637,8 @@ has big_category small_category
             has_inner _ Special{special_type=Flexible} = Valid True
             has_inner _ Special{special_type=Universal} = Valid False
             {- Reference -}
-            has_inner r@Reference{} other = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r, other]}]
-            has_inner other r@Reference{} = ErrorList [Error{error_type=UnresolvedReference, error_stack=[other, r]}]
+            has_inner r@Reference{} other = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r]}]
+            has_inner other r@Reference{} = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r]}]
             {- Function Call -}
             has_inner mc@FunctionCall{base=bm, argument=a} other =
                 case call a bm of
@@ -677,23 +679,19 @@ isValidArgumentTo _ _ = False
 
 validateCategoryInner :: Category -> Errorable Category
 validateCategoryInner t@(Thing Unnamed) = ErrorList [Error{error_type=UnnamedCategory, error_stack=[t]}]
-validateCategoryInner t@(Thing (Index _)) = ErrorList [Error{error_type=UnnamedCategory, error_stack=[t]}]
+validateCategoryInner t@(Thing (Index _)) = ErrorList [Error{error_type=IndexedNamed, error_stack=[t]}]
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=[]}
     | isFunctionCompositeType composition_type =
         ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
     | otherwise = Valid c
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=inner_cats}
     | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
-        ErrorList [Error{error_type=BadFunctionalComposite, error_stack=[c]}]
+        ErrorList [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
     | otherwise = Valid c
 validateCategoryInner ph@Placeholder{name=Unnamed} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
-validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
-validateCategoryInner ph@Placeholder{name=(Name _), placeholder_category=ph_cat} = do
-    case validateCategoryInner ph_cat of
-        ErrorList errors -> ErrorList errors
-        Valid cat -> Valid ph
+validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=IndexedNamed, error_stack=[ph]}]
 validateCategoryInner r@Refined{base=cat,predicate=p}
-    | not (isFunctionComposite p) = ErrorList [Error{error_type=PredicateHasBadArgument, error_stack=[r]}]
+    | not (isFunctionComposite p) = ErrorList [Error{error_type=PredicateHasNonFunctionArgument, error_stack=[r]}]
     | Composite{inner_categories=head:rest} <- cat, not (isValidArgument head cat) = ErrorList [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
     | otherwise = Valid r
 {- TODO: missed case here of nested function calls -}
@@ -791,7 +789,7 @@ evaluateInner importer c@Composite{inner_categories=(i@(Import something):rest)}
 evaluateInner importer c@Composite{inner_categories=def@(Definition (Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
     let result =map replaceReferences rest <*> [Reference ph_name] <*> [ph_c]
     case result of
-        [] -> return $ ErrorList [Error BadFunctionalComposite [c]]
+        [] -> return $ ErrorList [Error InsufficientFunctionTerms [c]]
         [something] -> return $ Valid something
         something_else -> return $ Valid c{inner_categories=something_else}
 evaluateInner importer cat = ErrorableT $ return $ Valid cat

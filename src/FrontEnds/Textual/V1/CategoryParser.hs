@@ -1,6 +1,7 @@
 module FrontEnds.Textual.V1.CategoryParser where
 
 import CategoryData
+import FrontEnds.Textual.V1.CategoryWriter
 
 import Text.Megaparsec
 import Text.Megaparsec.Error
@@ -84,7 +85,7 @@ withValidation parser = do
     result <- parser
     case validateCategoryInner result of
         Valid cat -> return cat
-        ErrorList errors -> region (setErrorOffset offset) (fail (show errors))
+        ErrorList errors -> region (setErrorOffset offset) (fail (concatMap errorToString errors))
 
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
@@ -111,7 +112,7 @@ pFunction =
         combineFunctions :: Category -> Category -> Category
         combineFunctions a c@Composite{composite_type=Function,inner_categories=inner} = c{inner_categories=a:inner}
         combineFunctions a b = Composite{composite_type=Function, inner_categories=[a,b]}
-    in 
+    in
         withValidation $ makeExprParser pFunctionTerm [
             [binaryR (pStringBetweenWS "->") combineFunctions]]
 
