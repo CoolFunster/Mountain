@@ -503,7 +503,7 @@ tracedHas = has
 
 has :: Category -> Category -> Errorable Bool
 has big_category small_category
-    | big_category == small_category = Valid True
+    | big_category == small_category = return True
     | otherwise = has_inner big_category small_category
         where
             has_inner :: Category -> Category -> Errorable Bool
@@ -512,7 +512,7 @@ has big_category small_category
             has_inner big_category (Composite _ [category]) = tracedHas big_category category
             has_inner mem@Membership{big_category=bc, small_category=sc} other = tracedHas sc other
             has_inner (Placeholder _ Element category) small_category
-                | category == small_category = Valid False
+                | category == small_category = return False
                 | otherwise = tracedHas category small_category
             has_inner big_category (Placeholder _ Element category) = tracedHas big_category category
             has_inner (Placeholder _ Label category) small_category
@@ -530,54 +530,38 @@ has big_category small_category
                     ErrorList errors -> ErrorList errors
                     Valid cat -> tracedHas cat other_category
             {- Composite Categories -}
-            has_inner (Composite big_type []) (Composite small_type []) = Valid $ big_type == small_type
-            has_inner (Composite big_type []) _ = Valid False
+            has_inner (Composite big_type []) (Composite small_type []) = return $ big_type == small_type
+            has_inner (Composite big_type []) _ = return False
             {- Composite Tuple -}
             has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Tuple small_inner)
-                | length big_inner /= length small_inner = Valid False
-                | otherwise =
-                    case partitionErrorable $ zipWith tracedHas big_inner small_inner of
-                        (intermediate_results, []) -> Valid $ and intermediate_results
-                        (_, some_errors) -> ErrorList some_errors
-            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Union small_inner)
-                | length big_inner /= length small_inner = Valid False
-                | otherwise =
-                    {- TODO: Verify this logic... -}
-                    case partitionErrorable $ map (tracedHas c_big) small_inner of
-                        ([], some_errors) -> Valid False
-                        (intermediate_results, some_errors) -> Valid $ or intermediate_results
-            has_inner c_big@(Composite Tuple _) other = Valid False
+                | length big_inner /= length small_inner = return False
+                | otherwise = return $ all (== return True) (zipWith tracedHas big_inner small_inner)
+            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Union small_inner) =
+                 return $ elem (return True) (map (tracedHas c_big) small_inner)
+            has_inner c_big@(Composite Tuple _) other = return False
             {- Composite Union -}
-            has_inner other_category (Composite Union sum_inner) = do
-                let result = map (tracedHas other_category) sum_inner
-                case partitionErrorable result of
-                    ([], some_stuff) -> Valid False
-                    (results, some_stuff) -> Valid $ and results
-            has_inner (Composite Union sum_inner) other_category = do
-                let result = map tracedHas sum_inner <*> [other_category]
-                case partitionErrorable result of
-                    ([], some_stuff) -> Valid False
-                    (results, some_stuff) -> Valid $ or results
+            has_inner other_category (Composite Union sum_inner) =
+                return $ all ((== return True) . tracedHas other_category) sum_inner
+            has_inner (Composite Union sum_inner) other_category =
+                return $ elem (return True) (map tracedHas sum_inner <*> [other_category])
             {- Composite Case -}
             has_inner big@(Composite Case case_inner) other_category = has_inner big{composite_type=Union} other_category
             {- Composite Function -}
             has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} c2@Composite{composite_type=c2_type}
-                | isDataCompositeType c2_type = Valid False
+                | isDataCompositeType c2_type = return False
                 | otherwise = tracedHas c1{composite_type=Tuple} c2{composite_type=Tuple}
-            has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} other = Valid False
+            has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} other = return False
             {- Refined -}
             {- TODO: Handle refinements via SMT solver and approximate methods -}
             has_inner Refined{base=base, predicate=p} Refined{base=base_other, predicate=p_other} =
-                case partitionErrorable [tracedHas base base_other, tracedHas p p_other] of
-                    (results, []) -> Valid (and results)
-                    (_, any_errors) -> ErrorList any_errors
+                return $ all (== return True) [tracedHas base p, tracedHas p p_other]
             has_inner Refined{base=base, predicate=p} other
-                | base == other = Valid True
-                | otherwise = Valid False
+                | base == other = return True
+                | otherwise = return False
             {- Special -}
-            has_inner Special{} _ = Valid True
-            has_inner _ Special{special_type=Flexible} = Valid True
-            has_inner _ Special{special_type=Universal} = Valid False
+            has_inner Special{} _ = return True
+            has_inner _ Special{special_type=Flexible} = return True
+            has_inner _ Special{special_type=Universal} = return False
             {- Reference -}
             has_inner r@Reference{} other = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r]}]
             has_inner other r@Reference{} = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r]}]
@@ -601,26 +585,7 @@ has big_category small_category
             has_inner d@Definition{} other = ErrorList [Error{error_type=CannotTypecheckRawDefinition, error_stack=[d]}]
             {- Things -}
             -- equal things and other cases are handled above
-            has_inner (Thing t) _ = Valid False
-
-isValidArgument :: Category -> Category -> Bool
-isValidArgument base_category argument =
-    case base_category of
-        Placeholder{placeholder_type=Element, placeholder_category=category} ->
-            case category `has` argument of
-                Valid result -> result
-                ErrorList errors -> False
-        c@Composite{composite_type=Case, inner_categories=inner_categories} -> isValidArgument c{composite_type=Union} argument
-        c@Composite{composite_type=Union, inner_categories=inner_categories} ->
-            case partitionErrorable (map tracedHas inner_categories <*> [argument]) of
-                (results,_) -> or results
-        _ -> base_category == argument
-
-isValidArgumentTo :: Category -> Category -> Bool
-isValidArgumentTo argument c@Composite{composite_type=c_type, inner_categories=inner}
-    | not (isFunctionCompositeType c_type) = error "Bad check"
-    | otherwise = head inner `isValidArgument` argument
-isValidArgumentTo _ _ = False
+            has_inner (Thing t) _ = return False
 
 validateCategoryInner :: Category -> Errorable Category
 validateCategoryInner t@(Thing Unnamed) = ErrorList [Error{error_type=UnnamedCategory, error_stack=[t]}]
@@ -628,32 +593,32 @@ validateCategoryInner t@(Thing (Index _)) = ErrorList [Error{error_type=IndexedN
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=[]}
     | isFunctionCompositeType composition_type =
         ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
-    | otherwise = Valid c
+    | otherwise = return c
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=inner_cats}
     | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
         ErrorList [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
-    | otherwise = Valid c
+    | otherwise = return c
 validateCategoryInner ph@Placeholder{name=Unnamed} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
 validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=IndexedNamed, error_stack=[ph]}]
 validateCategoryInner r@Refined{base=cat,predicate=p}
     | not (isFunctionComposite p) = ErrorList [Error{error_type=PredicateHasNonFunctionArgument, error_stack=[r]}]
-    | Composite{inner_categories=head:rest} <- cat, not (isValidArgument head cat) = ErrorList [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
-    | otherwise = Valid r
+    | Composite{inner_categories=head:rest} <- cat, return True /= (head `has` cat) = ErrorList [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
+    | otherwise = return r
 {- TODO: missed case here of nested function calls -}
 validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inner_categories=head:rest}, argument=a}
     | not (isFunctionCompositeType c_type) = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
-    | otherwise = Valid f
+    | otherwise = return f
 validateCategoryInner f@FunctionCall{base=Thing{}} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
 validateCategoryInner a@Access{base=b@Composite{inner_categories=inner}, access_id=Index num}
     | num < 0 = ErrorList [Error{error_type=AccessIndexBelowZero, error_stack=[a]}]
     | length inner <= num = ErrorList [Error{error_type=AccessIndexOutsideRange, error_stack=[a]}]
-    | otherwise = Valid a
+    | otherwise = return a
 validateCategoryInner a@Access{base=bc, access_id=Unnamed} = ErrorList [Error{error_type=EmptyAccessID, error_stack=[a]}]
 validateCategoryInner a@Access{base=bc, access_id=a_id} =
     case evaluateAccess a of
-        Valid cat -> Valid a
+        Valid cat -> return a
         ErrorList errors -> ErrorList errors
-validateCategoryInner other = Valid other
+validateCategoryInner other = return other
 
 validateCategory :: Category -> Errorable Category
 validateCategory = applyOnAST (const Nothing) validateCategoryInner
@@ -722,11 +687,10 @@ stepEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT I
 stepEvaluate importer f@FunctionCall{base=bc, argument=a} = ErrorableT (return $ call a bc)
 stepEvaluate importer a@Access{} = ErrorableT (return $ evaluateAccess a)
 stepEvaluate importer i@Import{} = evaluateImport importer i
-stepEvaluate importer mem@Membership{big_category=bc, small_category=sc} = ErrorableT $ return $
-    tracedHas bc sc >>=
-        (\result -> if result
-            then Valid sc
-            else ErrorList [Error{error_type=BadMembership, error_stack=[mem]}])
+stepEvaluate importer mem@Membership{big_category=bc, small_category=sc} =
+    if return True == tracedHas bc sc
+        then return sc
+        else ErrorableT $ return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
 stepEvaluate importer c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     eval <- stepEvaluate importer i
     return c{inner_categories=Definition eval:rest}
