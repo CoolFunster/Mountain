@@ -298,18 +298,25 @@ spec = do
             simplify unfolded_on_a `shouldBe` Valid unfolded_on_a
             validateCategory unfolded_on_a `shouldBe` Valid unfolded_on_a
             validateCategory unfolded_on_b `shouldBe` Valid unfolded_on_b
-            result <- runErrorableT $ execute loadAST (FunctionCall unfolded_simple_ab a)
+            result <- runErrorableT $ stepEvaluate loadAST unfolded_on_a
             result `shouldBe` Valid b
-            result <- runErrorableT $ execute loadAST (FunctionCall unfolded_simple_ab b)
-            result `shouldBe` Valid b
+            result <- runErrorableT $ stepEvaluate loadAST unfolded_on_b
+            result `shouldBe` Valid (FunctionCall {base = Placeholder {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}, argument = Thing {name = Name "a"}})
+            result2 <- runErrorableT $ stepEvaluate loadAST $ fromValid result
+            result2 `shouldBe` Valid b
+        it "(Import) should evaluate imports correctly" $ do
+            let c = Import (Placeholder (Name "x") Label (Reference (Name "test")))
+            result <- runErrorableT $ evaluateImport loadAST c
+            result `shouldBe` Valid (Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
         it "(Definition) should properly handle definitions" $ do
             let c = Composite Function [Definition (Placeholder (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
             result <- runErrorableT $ execute loadAST c
             result `shouldBe` Valid (Thing (Name "5"))
         it "(Import) should properly handle imports" $ do
             let c = Composite Function [Import (Placeholder (Name "x") Label (Reference (Name "test"))), Reference (Name "x")]
-            result <- runErrorableT $ execute loadAST c
-            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]})
+            result1 <- runErrorableT $ stepEvaluate loadAST c
+            result2 <- runErrorableT $ stepEvaluate loadAST $ fromValid result1
+            result2 `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]})
     describe "access" $ do
         it "should handle indices on composites well" $ do
             let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Placeholder{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]

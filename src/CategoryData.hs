@@ -8,10 +8,11 @@ import Data.Typeable
 
 import Debug.Trace (trace)
 import Control.Monad
-import GHC.Base (Monad)
+import GHC.Base (Monad, returnIO)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
 import System.FilePath.Posix (takeBaseName)
 import Data.List (sort)
+import Data.Functor.Identity (Identity (runIdentity))
 
 {- add specific name for symbolic execution cases-}
 data Id =
@@ -124,6 +125,7 @@ data ErrorType =
     BadImport |
     BadExportFileExists |
     CannotTypecheckRawImport |
+    CannotTypecheckRawDefinition |
     BadMembership
     deriving (Eq, Show, Read)
 
@@ -305,57 +307,28 @@ checkAST aggregator checker i@Import{} = checker i
 checkAST aggregator checker def@Definition{def_category=d} = aggregator [checker def, checkAST aggregator checker d]
 checkAST aggregator checker mem@Membership{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
 
-manipulateAST :: (Category -> Maybe (Errorable Category)) -> (Category -> Errorable Category) -> Category -> Errorable Category
-manipulateAST premanipulator postmanipulator category =
-    let
-        manipulateRecursively = manipulateAST premanipulator postmanipulator
+{- preapplicator goes first and applies if necessary, post applicator applies from bottom up -}
+applyOnAST :: (Monad m) => (Category -> Maybe (m Category)) -> (Category -> m Category) -> Category -> m Category
+applyOnAST preapplicator postapplicator category =
+    case preapplicator category of
+        Just something -> something
+        Nothing -> applyOnASTInner category
 
-        manipulateASTInner :: (Category -> Errorable Category) -> Category -> Errorable Category
-        manipulateASTInner manipulator t@Thing{} = manipulator t
-        manipulateASTInner manipulator c@Composite{inner_categories=inner} =
-            case partitionErrorable (map manipulateRecursively inner) of
-                (all_good_cats, []) -> manipulator c{inner_categories=all_good_cats}
-                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack c) some_errors)
-        manipulateASTInner manipulator p@Placeholder{placeholder_category=ph_c} =
-            case manipulateRecursively ph_c of
-                Valid cat -> manipulator p{placeholder_category=cat}
-                ErrorList errors -> ErrorList (map (addCategoryToErrorStack p) errors)
-        manipulateASTInner manipulator r@Refined{base=b, predicate=p} =
-            case partitionErrorable (map manipulateRecursively [b, p]) of
-                ([good_b, good_p], []) -> manipulator r{base=good_b, predicate=good_p}
-                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack r) some_errors)
-        manipulateASTInner manipulator s@Special{} = manipulator s
-        manipulateASTInner manipulator r@Reference{} = manipulator r
-        manipulateASTInner manipulator fc@FunctionCall{base=b, argument=a} =
-            case partitionErrorable (map manipulateRecursively [b, a]) of
-                ([good_b, good_a], []) -> manipulator fc{base=good_b, argument=good_a}
-                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack fc) some_errors)
-        manipulateASTInner manipulator a@Access{base=b, access_id=id} =
-            case manipulateRecursively b of
-                Valid cat -> manipulator a{base=cat}
-                ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
-        manipulateASTInner manipulator i@Import{} = Valid i
-        manipulateASTInner manipulator def@Definition{def_category=d} =
-            case manipulateRecursively d of
-                Valid cat -> manipulator def{def_category=cat}
-                ErrorList errors -> ErrorList (map (addCategoryToErrorStack def) errors)
-        manipulateASTInner manipulator mem@Membership{big_category=bc, small_category=sc} =
-            case partitionErrorable (map manipulateRecursively [bc, sc]) of
-                ([good_bc, good_sc], []) -> manipulator mem{big_category=good_bc, small_category=good_sc}
-                (_, some_errors) -> ErrorList (map (addCategoryToErrorStack mem) some_errors)
-    in
-        case premanipulator category of
-            Nothing -> manipulateASTInner postmanipulator category
-            Just error_or_category -> error_or_category
+    where
+        recurse = applyOnAST preapplicator postapplicator
 
-preManipulateAST :: (Category -> Maybe (Errorable Category)) -> Category -> Errorable Category
-preManipulateAST premanipulator = manipulateAST premanipulator Valid
+        applyOnASTInner t@Thing{} = postapplicator t
+        applyOnASTInner c@(Composite c_type inner) = mapM recurse inner >>= postapplicator . Composite c_type
+        applyOnASTInner p@(Placeholder n p_type ph_c) = recurse ph_c >>= postapplicator . Placeholder n p_type
+        applyOnASTInner r@(Refined b p) = Refined <$> recurse b <*> recurse p >>= postapplicator
+        applyOnASTInner r@(Reference n) = postapplicator r
+        applyOnASTInner s@(Special t) = postapplicator s
+        applyOnASTInner fc@(FunctionCall b a) = FunctionCall <$> recurse b <*> recurse a >>= postapplicator
+        applyOnASTInner a@(Access b a_id) = Access <$> recurse b <*> return a_id >>= postapplicator
+        applyOnASTInner i@(Import i_c) = Import <$> postapplicator i_c
+        applyOnASTInner d@(Definition d_c) = recurse d_c >>= postapplicator . Definition
+        applyOnASTInner m@(Membership b s) = Membership <$> recurse b <*> recurse s >>= postapplicator
 
-postManipulateAST :: (Category -> Errorable Category) -> Category -> Errorable Category
-postManipulateAST = manipulateAST (const Nothing)
-
-postManipulateASTIO :: (Category -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-postManipulateASTIO foo input = do foo input
 
 -- {- Category Functions -}
 
@@ -363,75 +336,46 @@ isRecursiveCategory :: Category -> Bool
 isRecursiveCategory Placeholder{name=ph_name, placeholder_type=Label, placeholder_category=ph_c} = checkAST or (isReferenceOfName ph_name) ph_c
 isRecursiveCategory _ = False
 
-replaceReferences :: Category -> Category -> Category -> Category
-replaceReferences base_expr r@Reference{name=n} new_cat =
+replaceReferences ::  Id -> Category -> Category -> Category
+replaceReferences ref_name new_cat base_cat =
     let
-        replacePremanipulator :: (Category -> Maybe (Errorable Category))
-        replacePremanipulator p@Placeholder{name=n} = Just (Valid p)
-        replacePremanipulator c@Composite{composite_type=Function, inner_categories=Placeholder{name=n}:rest} = Just (Valid c)
-        replacePremanipulator other = Nothing
+        preReplace :: (Category -> Maybe (Identity Category))
+        preReplace p@Placeholder{name=ph_n, placeholder_type=Label} = if ph_n == ref_name then Just $ return p else Nothing
+        preReplace c = Nothing
 
-        replacePostmanipulator :: (Category -> Errorable Category)
-        replacePostmanipulator Reference{name=n} = Valid new_cat
-        replacePostmanipulator other = Valid other
+        postReplace :: (Category -> Identity Category)
+        postReplace r@Reference{name=n} = if n == ref_name then return new_cat else return r
+        postReplace c = return c
     in
-        fromValid $ manipulateAST replacePremanipulator replacePostmanipulator base_expr
-replaceReferences be ref new = error $ "ReplaceReferences error. Cannot replace using non label/ph: \n" ++ show ref
+        runIdentity $ trace (show new_cat) $ applyOnAST preReplace postReplace base_cat
 
 data UnrollType = Flat | Recursive
 unroll :: UnrollType -> Category -> Category
 unroll Flat l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
-    replaceReferences rec_cat Reference{name=rec_name} Special{special_type=Flexible}
+    replaceReferences rec_name Special{special_type=Flexible} rec_cat
 unroll Recursive l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
-    replaceReferences rec_cat Reference{name=rec_name} l
+    replaceReferences rec_name l rec_cat
 unroll _ something_else = something_else
 
-unrollRecursive :: UnrollType -> Category -> Category
-unrollRecursive unroll_type cat =
-    case preManipulateAST (Just . Valid . unroll unroll_type) cat of
-        Valid cat -> cat
-        ErrorList errors -> error "bad flatten"
-
--- substituteArg :: Category -> Category -> Errorable Category
--- substituteArg new_arg c@Composite{inner_categories=[]} =
---     ErrorList [Error{error_type=SubstituteArgOnEmptyCategory, error_stack=[new_arg, c]}]
--- substituteArg new_arg c@Composite{composite_type=c_type, inner_categories=[something]} = substituteArg new_arg something
--- substituteArg new_arg c@Composite{composite_type=Function, inner_categories=p@Placeholder{name=id}:tail} =
---     Valid $ c{inner_categories=p:(map replaceReferences tail <*> [Reference{name=id}] <*> [new_arg])}
--- substituteArg new_arg c@Composite{composite_type=Function, inner_categories=head:tail}
---     | head `isValidArgument` new_arg = Valid c{inner_categories=new_arg:tail}
---     | otherwise = ErrorList [Error{error_type=NotSubstitutableArgs, error_stack=[new_arg, c]}]
--- substituteArg new_arg c@Composite{composite_type=Case, inner_categories=inner} = do
---     let substituteResults = map (substituteArg new_arg) inner
---     case partitionErrorable substituteResults of
---         ([], some_errors) -> ErrorList $ map (addCategoryToErrorStack c) some_errors
---         (good_list, _) -> Valid c{inner_categories=good_list}
--- substituteArg new_arg c@Composite{composite_type=Composition, inner_categories=head:tail} =
---     case substituteArg new_arg head of
---         Valid cat -> Valid c{inner_categories=cat:tail}
---         ErrorList some_errors -> ErrorList $ map (addCategoryToErrorStack c) some_errors
--- substituteArg new_arg something_weird = ErrorList [Error{error_type=BadSubstituteArgs, error_stack=[new_arg, something_weird]}]
 
 call :: Category -> Category -> Errorable Category
 call arg p@Placeholder{placeholder_type=Label} = call arg (unroll Recursive p)
 call arg c@Composite{composite_type=c_type,inner_categories=[]}
     | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
     | otherwise = ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
-call arg c@Composite{composite_type=c_type, inner_categories=[something]}
-    | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
-    | otherwise = Valid c
+call arg c@Composite{inner_categories=[something]} = call arg something
 call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
     case head `tracedHas` arg of
         ErrorList errors -> ErrorList errors
         Valid False -> ErrorList [Error{error_type=InvalidArgument, error_stack=[arg, c]}]
         Valid True -> do
             let new_tail = case head of
-                    p@Placeholder{name=id} -> map replaceReferences tail <*> [Reference{name=id}] <*> [p]
+                    p@Placeholder{name=id} -> map (replaceReferences id arg) tail
                     _ -> tail
             case new_tail of
                 [something] -> Valid something
                 [] -> ErrorList [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
-                other -> Valid c{inner_categories=tail}
+                other -> Valid c{inner_categories=new_tail}
 call arg c@Composite{composite_type=Case, inner_categories=inner} =
     case find isValid (map (call arg) inner) of
         Just value -> value
@@ -566,8 +510,6 @@ has big_category small_category
             {- substitutive rules -}
             has_inner (Composite _ [category]) small_category = tracedHas category small_category
             has_inner big_category (Composite _ [category]) = tracedHas big_category category
-            has_inner def@Definition{def_category=d} other = tracedHas d other
-            has_inner other def@Definition{def_category=d} = tracedHas other d
             has_inner mem@Membership{big_category=bc, small_category=sc} other = tracedHas sc other
             has_inner (Placeholder _ Element category) small_category
                 | category == small_category = Valid False
@@ -653,7 +595,10 @@ has big_category small_category
                 case evaluateAccess a of
                     ErrorList some_errors -> ErrorList some_errors
                     Valid cat -> tracedHas cat other
+            {- Import -}
             has_inner i@Import{} other = ErrorList [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
+            {- Definition -}
+            has_inner d@Definition{} other = ErrorList [Error{error_type=CannotTypecheckRawDefinition, error_stack=[d]}]
             {- Things -}
             -- equal things and other cases are handled above
             has_inner (Thing t) _ = Valid False
@@ -711,7 +656,7 @@ validateCategoryInner a@Access{base=bc, access_id=a_id} =
 validateCategoryInner other = Valid other
 
 validateCategory :: Category -> Errorable Category
-validateCategory = postManipulateAST validateCategoryInner
+validateCategory = applyOnAST (const Nothing) validateCategoryInner
 
 simplifyInner :: Category -> Errorable Category
 simplifyInner (Composite _ [any]) = Valid any
@@ -721,7 +666,7 @@ simplifyInner ph@Placeholder{placeholder_type=Element, placeholder_category=cate
 simplifyInner input_category = Valid input_category
 
 simplify :: Category -> Errorable Category
-simplify = postManipulateAST simplifyInner
+simplify = applyOnAST (const Nothing) simplifyInner
 
 -- Basic Interpreter makers
 
@@ -773,37 +718,33 @@ evaluateImport importer (Import p@Placeholder{name=n, placeholder_type=CategoryD
         _ -> return $ p{placeholder_category=result}
 evaluateImport importer something = error $ "what is this import case? " ++ show something
 
-evaluateInner :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-evaluateInner importer FunctionCall{base=bc, argument=a} = ErrorableT (return $ call a bc) >>= evaluateInner importer
-evaluateInner importer a@Access{} = ErrorableT (return $ evaluateAccess a) >>= evaluateInner importer
-evaluateInner importer i@Import{} = evaluateImport importer i >>= evaluateInner importer
-evaluateInner importer mem@Membership{big_category=bc, small_category=sc} = ErrorableT (
-    case tracedHas bc sc of
-        Valid b -> if b
-            then return $ Valid sc
-            else return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
-        ErrorList ers -> return $ ErrorList ers) >>= evaluateInner importer
-evaluateInner importer c@Composite{inner_categories=(i@(Import something):rest)} = do
-    result <- evaluateInner importer i
-    evaluateInner importer c{inner_categories=Definition result:rest}
-evaluateInner importer c@Composite{inner_categories=def@(Definition (Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
-    let result =map replaceReferences rest <*> [Reference ph_name] <*> [ph_c]
-    case result of
+stepEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+stepEvaluate importer f@FunctionCall{base=bc, argument=a} = ErrorableT (return $ call a bc)
+stepEvaluate importer a@Access{} = ErrorableT (return $ evaluateAccess a)
+stepEvaluate importer i@Import{} = evaluateImport importer i
+stepEvaluate importer mem@Membership{big_category=bc, small_category=sc} = ErrorableT $ return $
+    tracedHas bc sc >>=
+        (\result -> if result
+            then Valid sc
+            else ErrorList [Error{error_type=BadMembership, error_stack=[mem]}])
+stepEvaluate importer c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
+    eval <- stepEvaluate importer i
+    return c{inner_categories=Definition eval:rest}
+stepEvaluate importer c@Composite{inner_categories=def@(Definition (Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
+    case map (replaceReferences ph_name ph_c) rest of
         [] -> return $ ErrorList [Error InsufficientFunctionTerms [c]]
         [something] -> return $ Valid something
         something_else -> return $ Valid c{inner_categories=something_else}
-evaluateInner importer cat = ErrorableT $ return $ Valid cat
+stepEvaluate importer other = ErrorableT $ return $ Valid other
 
-evaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-evaluate importer c = do
-    cat <- postManipulateASTIO (evaluateInner importer) c
-    if cat == c then return c else evaluate importer cat
 
 execute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
 execute importer input_cat = do
     let step1 = validateCategory input_cat >>= simplify
     case step1 of
         ErrorList ers -> ErrorableT $ return $ ErrorList ers
-        Valid cat -> evaluate importer cat
+        Valid cat -> do
+            cat <- stepEvaluate importer cat
+            if input_cat == cat then return cat else execute importer cat
 
 
