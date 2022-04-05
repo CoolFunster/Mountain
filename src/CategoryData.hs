@@ -701,8 +701,9 @@ stepEvaluateFunctionCall importer f@FunctionCall{base=bc, argument=a} = do
         then ErrorableT $ return tried_call
         else do
             bc_eval <- stepEvaluate importer bc
-            if bc_eval == bc
-                then FunctionCall bc <$> stepEvaluate importer a
+            a_eval <- stepEvaluate importer a
+            if bc_eval == bc && a_eval == a
+                then ErrorableT $ return tried_call
                 else return $ FunctionCall bc_eval a
 stepEvaluateFunctionCall importer something = error $ "not a valid input for evaluate Function call" ++ show something
 
