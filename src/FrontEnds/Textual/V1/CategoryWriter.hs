@@ -46,7 +46,7 @@ categoryToString Definition{def_category=cat} = "define " ++ categoryToString ca
 
 
 errorToString :: Error -> String
-errorToString (Error EmptyAccess (Access{base=b, access_id=a_id}:rest)) = "There is nothing to access in the base category: " ++ categoryToString b ++ ". Attempting to access field " ++  idToString a_id ++ "."
+errorToString (Error EmptyAccessBase (Access{base=b, access_id=a_id}:rest)) = "There is nothing to access in the base category: " ++ categoryToString b ++ ". Attempting to access field " ++  idToString a_id ++ "."
 errorToString (Error EmptyAccessID (Access{base=b, access_id=a_id}:rest)) = "There is no Id provided in the access of: " ++ categoryToString b
 errorToString (Error BadAccess (Access{base=b, access_id=a_id}:rest)) = "The lookup Id " ++ idToString a_id ++ " doesn't seem to exist in " ++ categoryToString b
 errorToString (Error UnresolvedReference (Reference{name=n}:rest)) = "I don't know what the reference " ++ idToString n ++ " is here. Did you mean to define this reference earlier?"
