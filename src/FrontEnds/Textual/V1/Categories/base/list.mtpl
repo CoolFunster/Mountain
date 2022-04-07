@@ -1,8 +1,19 @@
 list_type@Any
--> define list: |
+-> define list_def: |
         `empty,
-        nonempty:($list_type, $list)
+        nonempty:($list_type, $list_def)
     |
+-> define join_def: (
+        new_head@$list_type 
+        -> original_list@$list_def 
+        -> $list_def::($new_head, $original_list)
+    )
+-> define head_def: (
+        input@$list_def.nonempty
+        -> $list_type::$input.#0
+    )
 -> (
-    $list
+    list:$list_def,
+    join:$join_def,
+    head:$head_def
 )

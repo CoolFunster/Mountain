@@ -12,7 +12,7 @@ import Data.List (intercalate, intersperse)
 idToString :: Id -> String
 idToString Unnamed = ""
 idToString (Name name) = name
-idToString (Index i) = "[" ++ show i ++ "]"
+idToString (Index i) = "#" ++ show i
 
 categoryToText :: Category -> Text
 categoryToText = pack . categoryToString
@@ -58,8 +58,9 @@ errorToString (Error IndexedNamed (Placeholder{}:rest)) = "Placeholders require 
 errorToString (Error EmptyFunctionalComposite _) = "This is empty. Function composites should have functions inside them. Perhaps you meant for this to be a tuple or sumple?"
 errorToString (Error InsufficientFunctionTerms _) = "I think this function needs more arguments for it to be properly called."
 errorToString (Error DataInFunctionComposite _) = "Function Composites should be composed of functions, not data"
-errorToString (Error BadFunctionCall _) = "This function call does not produce a result or is invalid. Check the arguments?"
-errorToString (Error InvalidArgument _) = "This function call argument is not valid for the function."
+errorToString (Error BadFunctionCallInCase stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n" ++ show (map categoryToString stack)
+errorToString (Error BadFunctionCall stack) = "This function call does not produce a result or is invalid. Check the arguments?\n" ++ show (map categoryToString stack)
+errorToString (Error InvalidArgument stack) = "This function call argument is not valid for the function.\n" ++ show (map categoryToString stack)
 errorToString (Error PredicateHasNonFunctionArgument _) = "Refined types must have a function which refines the data. The predicate is not a function here."
 errorToString (Error NonFunctioninFunctionCallBase _) = "Function call base is not a function! Can't call a data type."
 errorToString (Error BadRefinementPredicateInput _) = "Refinements must accept a "
@@ -70,5 +71,11 @@ errorToString (Error BadExportFileExists (head:rest)) = "Was not able to export 
 errorToString (Error CannotTypecheckRawImport (head:rest)) = "At the moment I'm unable to type check a raw import statement..."
 errorToString (Error BadMembership _) = "This membership is invalid..."
 errorToString _ = error "unhandled"
+
+errorableToString :: Errorable Category -> String
+errorableToString (Valid category) = categoryToString category
+errorableToString (ErrorList errors) = foldl (\cur new -> if cur == ""
+                                                                then errorToString new
+                                                                else cur ++ ";\n" ++ errorToString new) "" errors
 
 

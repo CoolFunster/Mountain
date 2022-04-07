@@ -90,7 +90,7 @@ withValidation parser = do
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
 pWrapBetween open_char close_char = between (pStringBetweenWS open_char) (pStringBetweenWS close_char)
--- {- megaparsec helpers end -}
+-- {- megaparsec helpers end -}The func
 
 pCategoryName :: Parser Id
 pCategoryName = do

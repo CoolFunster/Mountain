@@ -169,7 +169,7 @@ spec = do
             let ph_hc = Placeholder (Name "ph-all") Element higher_category
 
             has higher_category ph_hc `shouldBe` Valid True
-            has ph_hc higher_category  `shouldBe` Valid False
+            has ph_hc higher_category  `shouldBe` Valid True
         it "(RecursiveCategory) should have each of the component elements" $ do
             nat `has` Thing (Name "0") `shouldBe` Valid True
             nat `has` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Valid True
@@ -324,7 +324,7 @@ spec = do
             evaluateAccess Access{base=composite_category, access_id=Index 1} `shouldBe` Valid (Thing (Name "b"))
             evaluateAccess Access{base=composite_category, access_id=Name "a"} `shouldBe` Valid (Thing (Name "a"))
             evaluateAccess Access{base=composite_category, access_id=Name "b"} `shouldBe` Valid (Thing (Name "b"))
-            evaluateAccess Access{base=composite_category, access_id=Name "c"} `shouldBe` Valid Placeholder{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}
+            evaluateAccess Access{base=composite_category, access_id=Name "c"} `shouldBe` Valid (Thing (Name "z"))
             evaluateAccess Access{base=composite_category, access_id=Name "d"} `shouldBe` Valid Reference{name=Name "d"}
     describe "unroll" $ do
         it "should unroll recursive labels" $ do
