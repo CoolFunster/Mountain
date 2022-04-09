@@ -1,19 +1,24 @@
-list_type@Any
+given list_type@Any
 -> define list_def: |
         `empty,
         nonempty:($list_type, $list_def)
     |
 -> define join_def: (
-        new_head@$list_type 
-        -> original_list@$list_def 
-        -> $list_def::($new_head, $original_list)
+           given new_head@$list_type 
+        -> given original_list@$list_def 
+        -> return $list_def::($new_head, $original_list)
     )
 -> define head_def: (
-        input@$list_def.nonempty
-        -> $list_type::$input.#0
+        given input@($list_def.nonempty)
+        -> return $list_type::$input.#0
     )
--> (
+-> define tail_def: (
+        given input@($list_def.nonempty)
+        -> return $list_def::$input.#1
+    )
+-> return (
     list:$list_def,
     join:$join_def,
-    head:$head_def
+    head:$head_def,
+    tail:$tail_def
 )

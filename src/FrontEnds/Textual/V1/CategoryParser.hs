@@ -117,7 +117,7 @@ pFunction =
             [binaryR (pStringBetweenWS "->") combineFunctions]]
 
 pFunctionTerm :: Parser Category
-pFunctionTerm = pImport <|> pDefinition <|> pMembership
+pFunctionTerm = pImport <|> pDefinition <|> pGivenOrReturn
 
 pImport :: Parser Category
 pImport = withValidation $ do
@@ -128,11 +128,16 @@ pImport = withValidation $ do
 
 pDefinition :: Parser Category
 pDefinition = withValidation $ do
-    o <- getOffset
     define_str <- symbol $ pack "define"
     _ <- spaceConsumer
     category <- pPlaceholder
     return Definition{def_category=category}
+
+pGivenOrReturn :: Parser Category
+pGivenOrReturn = do
+    given_or_return <- optional (symbol (pack "given") <|> symbol (pack "return"))
+    _ <- spaceConsumer
+    pMembership
 
 pMembership :: Parser Category
 pMembership = withValidation $ makeExprParser pPlaceholder [

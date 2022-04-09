@@ -70,12 +70,36 @@ spec = do
                 let list_on_1_head = parseCategoryString "(import $base.list)[`1].head"
                 execute_result <- runErrorableT $ executeTextual list_on_1_head
                 isValid execute_result `shouldBe` True
-                categoryToString (fromValid execute_result) `shouldBe` "input@(list_def:|`empty,nonempty:(`1,$list_def)|).nonempty->(`1)::(($input).#0)"
-            it "should be returning the head elem" $ do
+                categoryToString (fromValid execute_result) `shouldBe` "input@((list_def:|`empty,nonempty:(`1,$list_def)|).nonempty)->(`1)::(($input).#0)"
+            it "should be returning the head elem 1" $ do
                 let test_case = parseCategoryString "(import $base.list)[`1].head[(`1, `empty)]"
-                print test_case
+                -- somethings not getting evaluated correctly
+                execute_result <- runErrorableT $ executeTextual test_case
+                isValid execute_result `shouldBe` True
+                categoryToString (fromValid execute_result) `shouldBe` "`1"
+            it "should be returning the head elem 2" $ do
+                let test_case = parseCategoryString "(import $base.list)[|`1, `2|].head[(`2, (`1, `empty))]"
+                -- somethings not getting evaluated correctly
+                execute_result <- runErrorableT $ executeTextual test_case
+                isValid execute_result `shouldBe` True
+                categoryToString (fromValid execute_result) `shouldBe` "`2"
+        describe "tail" $ do
+            it "should be accessed properly" $ do
+                let test_case = parseCategoryString "(import $base.list)[`1].tail"
+                execute_result <- runErrorableT $ executeTextual test_case
+                isValid execute_result `shouldBe` True
+                categoryToString (fromValid execute_result) `shouldBe` "input@((list_def:|`empty,nonempty:(`1,$list_def)|).nonempty)->(list_def:|`empty,nonempty:(`1,$list_def)|)::(($input).#1)"
+            it "should be returning the head elem 1" $ do
+                let test_case = parseCategoryString "(import $base.list)[`1].tail[(`1, `empty)]"
+                -- somethings not getting evaluated correctly
                 execute_result <- runErrorableT $ executeTextual test_case
                 putStrLn $ errorableToString execute_result
                 isValid execute_result `shouldBe` True
-                categoryToString (fromValid execute_result) `shouldBe` "input@(list_def:|`empty,nonempty:(`1,$list_def)|).nonempty->(`1)::(($input).#0)"
-            -- categoryToString (fromValid execute_result) `shouldBe` "(`1,(`1,`empty))"
+                categoryToString (fromValid execute_result) `shouldBe` "`empty"
+            it "should be returning the head elem 2" $ do
+                let test_case = parseCategoryString "(import $base.list)[|`1, `2|].tail[(`2, (`1, `empty))]"
+                -- somethings not getting evaluated correctly
+                execute_result <- runErrorableT $ executeTextual test_case
+                putStrLn $ errorableToString execute_result
+                isValid execute_result `shouldBe` True
+                categoryToString (fromValid execute_result) `shouldBe` "(`1,`empty)"

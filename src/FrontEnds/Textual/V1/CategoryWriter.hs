@@ -46,31 +46,46 @@ categoryToString Definition{def_category=cat} = "define " ++ categoryToString ca
 
 
 errorToString :: Error -> String
-errorToString (Error EmptyAccessBase (Access{base=b, access_id=a_id}:rest)) = "There is nothing to access in the base category: " ++ categoryToString b ++ ". Attempting to access field " ++  idToString a_id ++ "."
-errorToString (Error EmptyAccessID (Access{base=b, access_id=a_id}:rest)) = "There is no Id provided in the access of: " ++ categoryToString b
-errorToString (Error BadAccess (Access{base=b, access_id=a_id}:rest)) = "The lookup Id " ++ idToString a_id ++ " doesn't seem to exist in " ++ categoryToString b
-errorToString (Error UnresolvedReference (Reference{name=n}:rest)) = "I don't know what the reference " ++ idToString n ++ " is here. Did you mean to define this reference earlier?"
-errorToString (Error CallingADataCompositeCategory _) = "You cannot call a Data Category. Did you mean to make this a function?"
-errorToString (Error UnnamedCategory (Thing{}:rest)) = "Things require textual names in order to be used. They cannot be left unnamed."
-errorToString (Error UnnamedCategory (Placeholder{}:rest)) = "Placeholders require textual names in order to be used. They cannot be left unnamed."
-errorToString (Error IndexedNamed (Thing{}:rest)) = "Things require textual names in order to be used. They cannot be named with an index."
-errorToString (Error IndexedNamed (Placeholder{}:rest)) = "Placeholders require textual names in order to be used. They cannot be named with an index."
-errorToString (Error EmptyFunctionalComposite _) = "This is empty. Function composites should have functions inside them. Perhaps you meant for this to be a tuple or sumple?"
-errorToString (Error InsufficientFunctionTerms _) = "I think this function needs more arguments for it to be properly called."
-errorToString (Error DataInFunctionComposite _) = "Function Composites should be composed of functions, not data"
-errorToString (Error BadFunctionCallInCase stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n" ++ show (map categoryToString stack)
-errorToString (Error BadFunctionCall stack) = "This function call does not produce a result or is invalid. Check the arguments?\n" ++ show (map categoryToString stack)
-errorToString (Error InvalidArgument stack) = "This function call argument is not valid for the function.\n" ++ show (map categoryToString stack)
-errorToString (Error PredicateHasNonFunctionArgument _) = "Refined types must have a function which refines the data. The predicate is not a function here."
-errorToString (Error NonFunctioninFunctionCallBase _) = "Function call base is not a function! Can't call a data type."
-errorToString (Error BadRefinementPredicateInput _) = "Refinements must accept a "
-errorToString (Error AccessIndexBelowZero _) = "Cannot access a negative index"
-errorToString (Error AccessIndexOutsideRange _) = "This index does not exist in the host category"
-errorToString (Error BadImport (head:rest)) = "Was not able to import " ++ categoryToString head
-errorToString (Error BadExportFileExists (head:rest)) = "Was not able to export since file already exists. trying to export" ++ categoryToString head
-errorToString (Error CannotTypecheckRawImport (head:rest)) = "At the moment I'm unable to type check a raw import statement..."
-errorToString (Error BadMembership _) = "This membership is invalid..."
-errorToString _ = error "unhandled"
+errorToString e@(Error e_type stack) = show e_type ++ ": " ++ errorToStringInner e ++ foldl (\state new -> state ++ "\n\t" ++ new) "" (map categoryToString stack)
+
+errorToStringInner :: Error -> String
+errorToStringInner (Error EmptyAccessBase (Access{base=b, access_id=a_id}:rest)) = "There is nothing to access in the base category: " ++ categoryToString b ++ ". Attempting to access field " ++  idToString a_id ++ "."
+errorToStringInner (Error EmptyAccessBase _) = error "unhandled"
+errorToStringInner (Error EmptyAccessID (Access{base=b, access_id=a_id}:rest)) = "There is no Id provided in the access of: " ++ categoryToString b
+errorToStringInner (Error EmptyAccessID _) = error "unhandled"
+errorToStringInner (Error BadAccess (Access{base=b, access_id=a_id}:rest)) = "The lookup Id " ++ idToString a_id ++ " doesn't seem to exist in " ++ categoryToString b
+errorToStringInner (Error BadAccess _) = error "unhandled"
+errorToStringInner (Error UnresolvedReference (Reference{name=n}:rest)) = "I don't know what the reference " ++ idToString n ++ " is here. Did you mean to define this reference earlier?"
+errorToStringInner (Error UnresolvedReference _) = error "unhandled"
+errorToStringInner (Error CallingADataCompositeCategory _) = "You cannot call a Data Category. Did you mean to make this a function?"
+errorToStringInner (Error UnnamedCategory (Thing{}:rest)) = "Things require textual names in order to be used. They cannot be left unnamed."
+errorToStringInner (Error UnnamedCategory (Placeholder{}:rest)) = "Placeholders require textual names in order to be used. They cannot be left unnamed."
+errorToStringInner (Error UnnamedCategory _) = error "unhandled"
+errorToStringInner (Error IndexedNamed (Thing{}:rest)) = "Things require textual names in order to be used. They cannot be named with an index."
+errorToStringInner (Error IndexedNamed (Placeholder{}:rest)) = "Placeholders require textual names in order to be used. They cannot be named with an index."
+errorToStringInner (Error IndexedNamed _) = error "unhandled"
+errorToStringInner (Error EmptyFunctionalComposite _) = "This is empty. Function composites should have functions inside them. Perhaps you meant for this to be a tuple or sumple?"
+errorToStringInner (Error InsufficientFunctionTerms _) = "I think this function needs more arguments for it to be properly called."
+errorToStringInner (Error DataInFunctionComposite _) = "Function Composites should be composed of functions, not data"
+errorToStringInner (Error BadFunctionCallInCase stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n"
+errorToStringInner (Error BadFunctionCall stack) = "This function call does not produce a result or is invalid. Check the arguments?\n"
+errorToStringInner (Error InvalidArgument stack) = "This function call argument is not valid for the function.\n"
+errorToStringInner (Error PredicateHasNonFunctionArgument _) = "Refined types must have a function which refines the data. The predicate is not a function here."
+errorToStringInner (Error NonFunctioninFunctionCallBase _) = "Function call base is not a function! Can't call a data type."
+errorToStringInner (Error BadRefinementPredicateInput _) = "Refinements must accept a "
+errorToStringInner (Error AccessIndexBelowZero _) = "Cannot access a negative index"
+errorToStringInner (Error AccessIndexOutsideRange _) = "This index does not exist in the host category"
+errorToStringInner (Error BadImport (head:rest)) = "Was not able to import "
+errorToStringInner (Error BadImport _) = error "unhandled"
+errorToStringInner (Error BadExportFileExists (head:rest)) = "Was not able to export since file already exists. trying to export " ++ categoryToString head
+errorToStringInner (Error BadExportFileExists _) = error "unhandled"
+errorToStringInner (Error CannotTypecheckRawImport (head:rest)) = "At the moment I'm unable to type check a raw import statement..."
+errorToStringInner (Error CannotTypecheckRawImport _) = error "unhandled"
+errorToStringInner (Error BadMembership _) = "This membership is invalid..."
+errorToStringInner (Error UndefinedAccess _) = "This Access has not been implemented yet"
+errorToStringInner (Error RefinementNotHandledInAccess _) = "Accesses to Refinements are not implemented yet"
+errorToStringInner (Error CannotTypecheckRawDefinition _) = "This definition needs to be evaluated before it can be typechecked"
+-- errorToStringInner _ = error "unhandled"
 
 errorableToString :: Errorable Category -> String
 errorableToString (Valid category) = categoryToString category

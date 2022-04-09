@@ -1,7 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 module CategoryData where
 
-import Data.List ( intercalate, find )
+import Data.List ( intercalate, find, sort )
 import Data.Either
 import Data.Dynamic
 import Data.Typeable
@@ -11,7 +11,6 @@ import Control.Monad
 import GHC.Base (Monad, returnIO)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
 import System.FilePath.Posix (takeBaseName)
-import Data.List (sort)
 import Data.Functor.Identity (Identity (runIdentity))
 
 {- add specific name for symbolic execution cases-}
@@ -105,6 +104,7 @@ data ErrorType =
     EmptyAccessBase |
     EmptyAccessID |
     BadAccess |
+    UndefinedAccess |
     RefinementNotHandledInAccess |
     UnresolvedReference |
     -- SubstituteArgOnEmptyCategory |
@@ -425,24 +425,25 @@ evaluateAccess a@Access{base=c@Composite{inner_categories=inner}, access_id=id} 
                             then return $ placeholder_category result
                             else return result
         Unnamed -> ErrorList [Error{error_type=EmptyAccessID,error_stack=[a]}]
-evaluateAccess a@Access{base=p@Placeholder{placeholder_category=ph_c}, access_id=id} =
-    case evaluateAccess a{base=ph_c} of
+evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Valid Special{special_type=Flexible}
+evaluateAccess a@Access{base=p@Placeholder{placeholder_category=ph_c}, access_id=id} = do
+    let new_base = if isRecursiveCategory p then unroll Recursive p else ph_c
+    case evaluateAccess a{base=new_base} of
         ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
         Valid cat -> Valid cat
-evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
-        {- TODO: handle predicates -}
-        ErrorList [Error RefinementNotHandledInAccess [a]]
-evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Valid Special{special_type=Flexible}
-evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=output} =
-    case call arg b of
-        ErrorList errors -> ErrorList errors
-        Valid cat -> evaluateAccess a{base=cat}
-evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
-    case evaluateAccess a_inner of
-        ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
-        Valid cat -> evaluateAccess a{base=cat}
-evaluateAccess a@Access{base=Reference{}, access_id=id} = Valid (Special{special_type=Flexible})
-evaluateAccess a@Access{} = ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
+-- evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
+--         {- TODO: handle predicates -}
+--         ErrorList [Error RefinementNotHandledInAccess [a]]
+-- evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=output} =
+--     case call arg b of
+--         ErrorList errors -> ErrorList errors
+--         Valid cat -> evaluateAccess a{base=cat}
+-- evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
+--     case evaluateAccess a_inner of
+--         ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
+--         Valid cat -> evaluateAccess a{base=cat}
+-- evaluateAccess a@Access{base=Reference{}, access_id=id} = Valid (Special{special_type=Flexible})
+evaluateAccess a@Access{} = ErrorList [Error{error_type=UndefinedAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
 
 level :: Category -> Either CategoryLevel [Error]
@@ -734,7 +735,7 @@ stepEvaluate importer mem@Membership{big_category=bc, small_category=sc} =
             sc_eval <- runErrorableT $ stepEvaluate importer sc
             if bc_eval == return bc && sc_eval == return sc
                 then return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
-                else return $ Valid mem{big_category=bc, small_category=sc}
+                else return $ Valid mem{big_category=fromValid bc_eval, small_category=fromValid sc_eval}
 stepEvaluate importer c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     eval <- stepEvaluate importer i
     return c{inner_categories=Definition eval:rest}
@@ -762,7 +763,9 @@ stepEvaluate importer other = ErrorableT $ return $ Valid other
 fullEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
 fullEvaluate importer cat = do
     new_cat <- stepEvaluate importer cat
-    if new_cat == cat then return new_cat else fullEvaluate importer new_cat
+    if new_cat == cat 
+        then return new_cat 
+        else fullEvaluate importer new_cat
 
 execute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
 execute importer input_cat = do
