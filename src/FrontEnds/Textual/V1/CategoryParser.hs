@@ -82,6 +82,7 @@ pStringBetweenWS input_str = try $ between (optional spaceConsumer) (optional sp
 withValidation :: Parser Category -> Parser Category
 withValidation parser = do
     offset <- getOffset
+    -- result <- dbg "validation" parser
     result <- parser
     case validateCategoryInner result of
         Valid cat -> return cat
@@ -117,7 +118,9 @@ pFunction =
             [binaryR (pStringBetweenWS "->") combineFunctions]]
 
 pFunctionTerm :: Parser Category
-pFunctionTerm = pImport <|> pDefinition <|> pGivenOrReturn
+pFunctionTerm = do
+    _ <- optional spaceConsumer
+    try pImport <|> try pDefinition <|> pGivenOrReturn
 
 pImport :: Parser Category
 pImport = withValidation $ do
@@ -136,7 +139,7 @@ pDefinition = withValidation $ do
 pGivenOrReturn :: Parser Category
 pGivenOrReturn = do
     given_or_return <- optional (symbol (pack "given") <|> symbol (pack "return"))
-    _ <- spaceConsumer
+    _ <- optional spaceConsumer
     pMembership
 
 pMembership :: Parser Category
@@ -177,17 +180,17 @@ pCategoryTerm = withValidation $ do
 
 pCategoryExtension :: Parser Category
 pCategoryExtension = choice [
-        try pMorphismCallExtension,
-        try pDereferenceExtension
+        try pFunctionCallExtension,
+        try pAccessExtension
     ]
 
-pMorphismCallExtension :: Parser Category
-pMorphismCallExtension = do
+pFunctionCallExtension :: Parser Category
+pFunctionCallExtension = do
     argument <- pWrapBetween "[" "]" pCategory
     return FunctionCall{base=valid,argument=argument}
 
-pDereferenceExtension :: Parser Category
-pDereferenceExtension = do
+pAccessExtension :: Parser Category
+pAccessExtension = do
     _ <- symbol (pack ".")
     category_id <- choice [
         try pCategoryIdx,

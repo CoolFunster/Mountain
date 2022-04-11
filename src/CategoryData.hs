@@ -12,6 +12,7 @@ import GHC.Base (Monad, returnIO)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
 import System.FilePath.Posix (takeBaseName)
 import Data.Functor.Identity (Identity (runIdentity))
+import qualified Data.Bifunctor
 
 {- add specific name for symbolic execution cases-}
 data Id =
@@ -35,7 +36,8 @@ data CompositeType =
 
 data PlaceholderType =
     Label |
-    Element
+    Element |
+    Resolved
     deriving (Eq, Show, Read)
 
 data CategoryLevel =
@@ -97,6 +99,28 @@ data Category =
         big_category::Category,
         small_category::Category
     }
+    deriving (Eq, Show, Read)
+
+data LogSeverity = 
+    INFO |
+    WARNING |
+    ERROR
+    deriving (Eq, Show, Read)
+
+data CategoryMsg = Message {
+    severity :: LogSeverity,
+    log_type :: LogMsgType,
+    log_stack :: [Category]
+} deriving (Eq, Show, Read)
+
+data Trace a = Trace {
+    result :: Errorable a,
+    logs::[CategoryMsg]
+}
+
+data LogMsgType =
+    Generic |
+    Calling
     deriving (Eq, Show, Read)
 
 -- Error types
@@ -350,10 +374,19 @@ replaceReferences ref_name new_cat base_cat =
         preReplace c = Nothing
 
         postReplace :: (Category -> Identity Category)
-        postReplace r@Reference{name=n} = if n == ref_name then return new_cat else return r
+        postReplace r@Reference{name=n} = if n == ref_name then return (Placeholder n Resolved new_cat) else return r
         postReplace c = return c
     in
         runIdentity $ applyOnAST preReplace postReplace base_cat
+
+replaceResolved :: Category -> Category
+replaceResolved cat =
+    let
+        postReplace :: (Category -> Identity Category)
+        postReplace rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} = return ph_c
+        postReplace cat = return cat
+    in
+        runIdentity $ applyOnAST (const Nothing) postReplace cat
 
 data UnrollType = Flat | Recursive
 unroll :: UnrollType -> Category -> Category
@@ -426,11 +459,16 @@ evaluateAccess a@Access{base=c@Composite{inner_categories=inner}, access_id=id} 
                             else return result
         Unnamed -> ErrorList [Error{error_type=EmptyAccessID,error_stack=[a]}]
 evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Valid Special{special_type=Flexible}
-evaluateAccess a@Access{base=p@Placeholder{placeholder_category=ph_c}, access_id=id} = do
+evaluateAccess a@Access{base=p@Placeholder{placeholder_type=Label, placeholder_category=ph_c}, access_id=id} = do
     let new_base = if isRecursiveCategory p then unroll Recursive p else ph_c
     case evaluateAccess a{base=new_base} of
         ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
         Valid cat -> Valid cat
+evaluateAccess a@Access{base=p@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c}, access_id=id} = do
+    case evaluateAccess a{base=ph_c} of
+        ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
+        Valid cat -> Valid cat
+
 -- evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
 --         {- TODO: handle predicates -}
 --         ErrorList [Error RefinementNotHandledInAccess [a]]
@@ -487,6 +525,7 @@ level input_category =
                         case level category_of_interest of
                             Left level -> Left level
                             Right errors -> Right $ map (addCategoryToErrorStack l) errors
+                rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} -> level ph_c
                 Refined {base=_base_category, predicate=_predicate} -> level _base_category
                 Special{special_type=Flexible} -> Left AnyLevel
                 Special{special_type=Universal} -> Left Infinite
@@ -535,6 +574,8 @@ has big_category small_category
             has_inner big_category (Placeholder _ Label category)
                 | isRecursiveCategory small_category = tracedHas big_category (unroll Recursive big_category)
                 | otherwise = tracedHas category small_category
+            has_inner big_category (Placeholder _ Resolved category) = big_category `tracedHas` category
+            has_inner (Placeholder _ Resolved category) small_category = category `tracedHas` small_category
             has_inner c_big@Composite{composite_type=Composition} other_category =
                 case compositeToFlatFunction c_big of
                     ErrorList errors -> ErrorList errors
@@ -707,7 +748,6 @@ evaluateImport importer something = error $ "what is this import case? " ++ show
 stepEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
 stepEvaluate importer c@Composite{inner_categories=[something]} = return something
 stepEvaluate importer Definition{def_category=d} = return d
-
 stepEvaluate importer f@FunctionCall{base=bc, argument=a} = do
     let tried_call = call a bc
     if isValid tried_call
@@ -758,13 +798,23 @@ stepEvaluate importer a@Access{base=b} = do
             if b_eval == b
                 then ErrorableT $ return result
                 else return $ a{base=b_eval}
+stepEvaluate importer rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} = return ph_c
 stepEvaluate importer other = ErrorableT $ return $ Valid other
+
+dbgEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO (Category, [Category])
+dbgEvaluate importer cat = do
+    new_cat <- stepEvaluate importer cat
+    if new_cat == cat
+        then return (new_cat, [new_cat])
+        else do
+            result <- dbgEvaluate importer new_cat
+            return (Data.Bifunctor.second (new_cat :) result)
 
 fullEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
 fullEvaluate importer cat = do
     new_cat <- stepEvaluate importer cat
-    if new_cat == cat 
-        then return new_cat 
+    if new_cat == cat
+        then return new_cat
         else fullEvaluate importer new_cat
 
 execute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
@@ -774,4 +824,10 @@ execute importer input_cat = do
         ErrorList ers -> ErrorableT $ return $ ErrorList ers
         Valid cat -> fullEvaluate importer cat
 
+dbgExecute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO (Category, [Category])
+dbgExecute importer input_cat = do
+    let step1 = simplify input_cat >>= validateCategory
+    case step1 of
+        ErrorList ers -> ErrorableT $ return $ ErrorList ers
+        Valid cat -> dbgEvaluate importer cat
 

@@ -1,0 +1,3 @@
+- nested rebinding
+- unbound references
+- clean up debugger code via pulling out definitions...?

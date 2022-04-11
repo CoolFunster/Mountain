@@ -1,4 +1,4 @@
 natural:
-    import nat:$base.nat
+    import list:$base.linkedlist
     -> import sign: $base.sign
     -> ($sign, $nat),

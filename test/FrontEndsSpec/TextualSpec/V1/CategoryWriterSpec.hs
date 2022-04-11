@@ -20,9 +20,9 @@ spec = do
         it "(Unions) should write sumples" $ do
             categoryToString Composite {composite_type = Union, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "|`a,`b|"
         it "(Composition) should write composite categories" $ do
-            categoryToString Composite {composite_type = Composition, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*(`a,`b)"
+            categoryToString Composite {composite_type = Composition, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*(`a,`b)*"
         it "(Case) should write sumposite categories" $ do
-            categoryToString Composite {composite_type = Case, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*|`a,`b|"
+            categoryToString Composite {composite_type = Case, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*|`a,`b|*"
         it "(Function) should write chains" $ do    
             categoryToString (Composite Function [Thing (Name "a"), Composite Function [Thing (Name "b"), Thing (Name "c")]]) `shouldBe`  "`a->`b->`c"
         it "(Function) should write named morphisms" $ do

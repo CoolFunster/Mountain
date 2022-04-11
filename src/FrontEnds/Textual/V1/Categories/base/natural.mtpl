@@ -1,4 +1,26 @@
-natural:|
-    `zero,
-    (`successor, $natural)
-|
+    define natural_def:|
+        `zero,
+        nonzero:(`successor, $natural_def)
+    |
+->  define increment_def:(
+        given initial_num@$natural_def
+        -> return (`successor, $initial_num)
+    )
+->  define decrement_def:(
+        given initial_num@($natural_def.nonzero)
+        -> return $initial_num.#1
+    )
+->  define add_def:(
+        given a@($natural_def)
+        -> given b@($natural_def)
+        -> return *|
+            x@($natural_def.zero, $natural_def) -> $x.#1,
+            x@($natural_def.nonzero, $natural_def) -> (`successor, $add_def[$decrement_def[$x.#0]][$x.#1])
+        |*[($a, $b)]
+    )
+->  return (
+        natural:$natural_def,
+        increment:$increment_def,
+        decrement:$decrement_def,
+        add:$add_def
+    )
