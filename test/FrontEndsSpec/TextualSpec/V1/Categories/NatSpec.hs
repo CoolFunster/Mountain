@@ -68,9 +68,15 @@ spec = do
                 -- putStrLn (intercalate "\n\n" $ map categoryToString $ snd $ fromValid parsedCategory)
                 categoryToString (fromValid parsedCategory) `shouldBe` "`zero"
             it "should add one and zero" $ do
-                parsedCategory <- runErrorableT (dbgExecuteTextual (parseCategoryString "(import $base.natural).add[(`successor, `zero)][`zero].#1"))
-                -- putStrLn (errorableToString parsedCategory)
-                isValid parsedCategory `shouldBe` True
-                putStrLn (intercalate "\n\n" $ map categoryToString $ snd $ fromValid parsedCategory)
+                parsedCategory <- dbgExecuteTextual (parseCategoryString "((import $base.natural).add[(`successor, `zero)][`zero]).#1")
+                let result = output $ last parsedCategory
+                putStrLn (errorableToString result)
+                isValid result `shouldBe` True
+                print (map logs parsedCategory)
+                -- let dbg = reverse parsedCategory !! 1
+                -- putStrLn $ tracedToString dbg
+                -- print $ map (\x -> case x of
+                --     Simple cat -> errorableToString cat
+                --     _ -> error "something") dbg
 
                 -- categoryToString (fromValid parsedCategory) `shouldBe` "(`successor, `zero)"

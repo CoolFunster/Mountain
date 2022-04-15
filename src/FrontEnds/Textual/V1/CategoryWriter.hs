@@ -95,3 +95,9 @@ errorableToString (ErrorList errors) = foldl (\cur new -> if cur == ""
                                                                 else cur ++ ";\n" ++ errorToString new) "" errors
 
 
+tracedToString :: TracedCategory -> String
+tracedToString (Simple cat) = errorableToString cat 
+tracedToString (Traced log_msg input output) = 
+    show log_msg ++ 
+        ":\ninputs:\n ---- \n" ++ intercalate "\n" (map tracedToString input) ++ "\n ---- \n" ++ "outputs: \n ---- \n" ++ errorableToString output ++ "\n ---- \n"
+

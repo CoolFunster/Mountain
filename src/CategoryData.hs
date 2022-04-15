@@ -101,26 +101,25 @@ data Category =
     }
     deriving (Eq, Show, Read)
 
-data LogSeverity = 
-    INFO |
-    WARNING |
-    ERROR
+data LogMsgType =
+    DeeperEval |
+    Simplifying |
+    Returning |
+    Calling |
+    SingleCompositeUnwrap |
+    SingleDefUnwrap |
+    Importing |
+    MembershipCheck |
+    Accessing
     deriving (Eq, Show, Read)
 
-data CategoryMsg = Message {
-    severity :: LogSeverity,
-    log_type :: LogMsgType,
-    log_stack :: [Category]
-} deriving (Eq, Show, Read)
-
-data Trace a = Trace {
-    result :: Errorable a,
-    logs::[CategoryMsg]
-}
-
-data LogMsgType =
-    Generic |
-    Calling
+data TracedCategory =
+    Traced {
+        logs :: LogMsgType,
+        input :: [TracedCategory],
+        output :: Errorable Category
+    } |
+    Simple (Errorable Category)
     deriving (Eq, Show, Read)
 
 -- Error types
@@ -304,6 +303,14 @@ isRefined :: Category -> Bool
 isRefined Refined{} = True
 isRefined _ = False
 
+isImport :: Category -> Bool
+isImport Import{} = True
+isImport _ = False
+
+isDefinition :: Category -> Bool
+isDefinition Definition{} = True
+isDefinition _ = False
+
 isNamedCategory :: Category -> Bool
 isNamedCategory Thing{} = True
 isNamedCategory Placeholder{} = True
@@ -414,7 +421,7 @@ call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
                 [something] -> Valid something
                 [] -> ErrorList [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
                 other -> Valid c{inner_categories=new_tail}
-call arg c@Composite{composite_type=Case, inner_categories=inner} =
+call arg c@Composite{composite_type=Case, inner_categories=inner} = do
     case find isValid (map (call arg) inner) of
         Just value -> value
         Nothing -> ErrorList [Error{error_type=BadFunctionCallInCase, error_stack=[arg, c]}]
@@ -657,6 +664,8 @@ validateCategoryInner c@Composite{composite_type=composition_type, inner_categor
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=inner_cats}
     | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
         ErrorList [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
+    | (composition_type == Function) && all (\x -> isImport x || isDefinition x) inner_cats =
+        ErrorList [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
     | otherwise = return c
 validateCategoryInner ph@Placeholder{name=Unnamed} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
 validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=IndexedNamed, error_stack=[ph]}]
@@ -674,10 +683,6 @@ validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inn
     | not (isFunctionCompositeType c_type) = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
     | otherwise = return f
 validateCategoryInner f@FunctionCall{base=Thing{}} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
-validateCategoryInner a@Access{base=b@Composite{inner_categories=inner}, access_id=Index num}
-    | num < 0 = ErrorList [Error{error_type=AccessIndexBelowZero, error_stack=[a]}]
-    | length inner <= num = ErrorList [Error{error_type=AccessIndexOutsideRange, error_stack=[a]}]
-    | otherwise = return a
 validateCategoryInner a@Access{base=bc, access_id=Unnamed} = ErrorList [Error{error_type=EmptyAccessID, error_stack=[a]}]
 validateCategoryInner other = return other
 
@@ -745,77 +750,85 @@ evaluateImport importer (Import p@Placeholder{name=n, placeholder_type=CategoryD
         _ -> return $ p{placeholder_category=result}
 evaluateImport importer something = error $ "what is this import case? " ++ show something
 
-stepEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-stepEvaluate importer c@Composite{inner_categories=[something]} = return something
-stepEvaluate importer Definition{def_category=d} = return d
+stepEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> IO TracedCategory
+stepEvaluate importer c@Composite{inner_categories=[something]} = return $ Traced SingleCompositeUnwrap [Simple $ return c] (return something)
+stepEvaluate importer def@Definition{def_category=d} = return $ Traced SingleDefUnwrap [Simple $ return def] (return d)
 stepEvaluate importer f@FunctionCall{base=bc, argument=a} = do
     let tried_call = call a bc
     if isValid tried_call
-        then ErrorableT $ return tried_call
+        then return $ Traced Calling [Simple $ return f] tried_call
         else do
-            bc_eval <- stepEvaluate importer bc
-            a_eval <- stepEvaluate importer a
-            if bc_eval == bc && a_eval == a
-                then ErrorableT $ return tried_call
-                else return $ FunctionCall bc_eval a
-stepEvaluate importer i@Import{import_category=ic} = ErrorableT $ do
-    tried_import <- runErrorableT $ evaluateImport importer i
-    if isValid tried_import
-        then return tried_import
-        else do
-            ic_eval <- runErrorableT $ stepEvaluate importer ic
-            if ic_eval == return ic
-                then return tried_import
-                else return $ Valid $ Import (fromValid ic_eval)
-stepEvaluate importer mem@Membership{big_category=bc, small_category=sc} =
-    if return True == tracedHas bc sc
-        then return sc
-        else ErrorableT $ do
-            bc_eval <- runErrorableT $ stepEvaluate importer bc
-            sc_eval <- runErrorableT $ stepEvaluate importer sc
-            if bc_eval == return bc && sc_eval == return sc
-                then return $ ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]
-                else return $ Valid mem{big_category=fromValid bc_eval, small_category=fromValid sc_eval}
-stepEvaluate importer c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
-    eval <- stepEvaluate importer i
-    return c{inner_categories=Definition eval:rest}
-stepEvaluate importer c@Composite{composite_type=Function, inner_categories=def@(Definition p@(Placeholder ph_name Label ph_c)):rest} = ErrorableT $ do
-    let replacement = if isRecursiveCategory p then p else ph_c
-    case map (replaceReferences ph_name replacement) rest of
-        [] -> return $ ErrorList [Error InsufficientFunctionTerms [c]]
-        [something] -> return $ Valid something
-        something_else -> return $ Valid c{inner_categories=something_else}
-stepEvaluate importer c@Composite{composite_type=Function, inner_categories=Definition d:rest} =
-    if null rest
-        then ErrorableT $ return $ ErrorList [Error InsufficientFunctionTerms [c]]
-        else return c{inner_categories=rest}
-stepEvaluate importer a@Access{base=b} = do
-    let result = evaluateAccess a
+            result_bc <- stepEvaluate importer bc
+            result_a <- stepEvaluate importer a
+            if output result_bc == return bc && output result_a == return a
+                then return $ Traced Calling [Simple $ return f] tried_call
+                else return $ Traced DeeperEval [result_bc, result_a] $ FunctionCall <$> output result_bc <*> output result_a
+stepEvaluate importer i@Import{import_category=ic} = do
+    result <- runErrorableT $ evaluateImport importer i
+    let default_result = Traced Importing [Simple $ return i] result
     if isValid result
-        then ErrorableT $ return result
+        then return default_result
         else do
-            b_eval <- stepEvaluate importer b
-            if b_eval == b
-                then ErrorableT $ return result
-                else return $ a{base=b_eval}
-stepEvaluate importer rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} = return ph_c
-stepEvaluate importer other = ErrorableT $ return $ Valid other
+            result_ic <- stepEvaluate importer ic
+            if output result_ic == return ic
+                then return default_result
+                else return $ Traced DeeperEval [result_ic] $ Import <$> output result_ic
+stepEvaluate importer mem@Membership{big_category=bc, small_category=sc} =
+    let
+        default_val = Traced MembershipCheck [Simple $ return mem] $ return sc
+    in
+        if return True == tracedHas bc sc
+            then return default_val
+            else do
+                result_bc <- stepEvaluate importer bc
+                result_sc <- stepEvaluate importer sc
+                if output result_bc == return bc && output result_sc == return sc
+                    then return default_val{output=ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]}
+                    else return $ Traced DeeperEval [result_bc, result_sc] $ Membership <$> output result_bc <*> output result_sc
+stepEvaluate importer c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
+    result <- stepEvaluate importer i
+    return $ Traced DeeperEval [Simple $ return c] $ do
+        eval <- output result
+        return c{inner_categories=Definition eval:rest}
+stepEvaluate importer c@Composite{composite_type=Function, inner_categories=def@(Definition p@(Placeholder ph_name Label ph_c)):rest} = do
+    let replacement = if isRecursiveCategory p then p else ph_c
+    let default_val = Traced DeeperEval [Simple $ return c]
+    case map (replaceReferences ph_name replacement) rest of
+        [] -> return $ default_val $ ErrorList [Error InsufficientFunctionTerms [c]]
+        something_else -> return $ default_val $ Valid c{inner_categories=something_else}
+stepEvaluate importer c@Composite{composite_type=Function, inner_categories=Definition d:rest} =
+    return $ Traced Simplifying [Simple $ return c] $ return c{inner_categories=rest}
+stepEvaluate importer a@Access{base=b, access_id=a_id} = do
+    let result = evaluateAccess a
+    let default_val = Traced Accessing [Simple $ return a]
+    if isValid result
+        then return $ default_val result
+        else do
+            result_b <- stepEvaluate importer b
+            if output result_b == return b
+                then return $ Traced DeeperEval [result_b] result
+                else return $ default_val $ Access <$> output result_b <*> return a_id
+stepEvaluate importer rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} =
+    return $ Traced Simplifying [Simple $ return rr] $ return ph_c
+stepEvaluate importer other = return $ Traced Returning [] $ Valid other
 
-dbgEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO (Category, [Category])
+dbgEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> IO [TracedCategory]
 dbgEvaluate importer cat = do
-    new_cat <- stepEvaluate importer cat
-    if new_cat == cat
-        then return (new_cat, [new_cat])
+    traced_new_cat <- stepEvaluate importer cat
+    let new_cat = output traced_new_cat
+    if isError new_cat || fromValid new_cat == cat
+        then return [traced_new_cat] 
         else do
-            result <- dbgEvaluate importer new_cat
-            return (Data.Bifunctor.second (new_cat :) result)
+            result <- dbgEvaluate importer (fromValid $ output traced_new_cat)
+            return $ traced_new_cat:result
 
 fullEvaluate :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-fullEvaluate importer cat = do
-    new_cat <- stepEvaluate importer cat
-    if new_cat == cat
+fullEvaluate importer cat = ErrorableT $ do
+    traced_new_cat <- stepEvaluate importer cat
+    let new_cat = output traced_new_cat
+    if isError new_cat || fromValid new_cat == cat
         then return new_cat
-        else fullEvaluate importer new_cat
+        else runErrorableT $ fullEvaluate importer (fromValid new_cat)
 
 execute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
 execute importer input_cat = do
@@ -824,10 +837,10 @@ execute importer input_cat = do
         ErrorList ers -> ErrorableT $ return $ ErrorList ers
         Valid cat -> fullEvaluate importer cat
 
-dbgExecute :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO (Category, [Category])
+dbgExecute :: (FilePath -> ErrorableT IO Category) -> Category -> IO [TracedCategory]
 dbgExecute importer input_cat = do
     let step1 = simplify input_cat >>= validateCategory
     case step1 of
-        ErrorList ers -> ErrorableT $ return $ ErrorList ers
+        ErrorList ers -> return [Simple $ ErrorList ers]
         Valid cat -> dbgEvaluate importer cat
 
