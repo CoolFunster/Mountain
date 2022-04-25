@@ -34,7 +34,8 @@ categoryToString (Composite Function inner) =
         innerFooToString inner
 categoryToString (Placeholder name Element ph_category) = idToString name ++ "@" ++ categoryToString ph_category
 categoryToString (Placeholder name Label ph_category) = idToString name ++ ":" ++ categoryToString ph_category
-categoryToString (Placeholder name Resolved ph_category) = "<" ++ idToString name ++ ">"
+-- categoryToString (Placeholder name Resolved ph_category) = "<" ++ idToString name ++ ">"
+categoryToString (Placeholder name Resolved ph_category) = "<" ++ categoryToString ph_category ++ ">"
 categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ categoryToString _base_category ++ " | " ++ categoryToString _predicate ++ "}"
 categoryToString Special{special_type=Flexible} = "(%)"
 categoryToString Special{special_type=Universal} = "Any"
@@ -86,6 +87,7 @@ errorToStringInner (Error BadMembership _) = "This membership is invalid..."
 errorToStringInner (Error UndefinedAccess _) = "This Access has not been implemented yet"
 errorToStringInner (Error RefinementNotHandledInAccess _) = "Accesses to Refinements are not implemented yet"
 errorToStringInner (Error CannotTypecheckRawDefinition _) = "This definition needs to be evaluated before it can be typechecked"
+errorToStringInner (Error IndexAccessOnFunction _) = "Cannot index access a function call"
 -- errorToStringInner _ = error "unhandled"
 
 errorableToString :: Errorable Category -> String

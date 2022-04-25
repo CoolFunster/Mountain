@@ -16,11 +16,12 @@ import Test.QuickCheck.Arbitrary (Arbitrary(arbitrary))
 import System.Posix.Internals (puts)
 import qualified Data.Text.IO as TextIO
 import Debug.Trace
+import Data.List (intercalate)
 
 spec :: Spec
 spec = do
     describe "Category List" $ do
-        let executeTextual = execute loadTextual
+        let executeTextual = execute False loadTextual
         let parsedCategory = runErrorableT (executeTextual (parseCategoryString "import $base.linkedlist"))
         describe "list" $ do
             it "(list) should substitute type correctly on evaluate" $ do
@@ -45,6 +46,8 @@ spec = do
         describe "join" $ do
             it "(join) should properly access join" $ do
                 let list_on_1_join = parseCategoryString "(import $base.linkedlist)[`1].join"
+                dbg_result <- dbgExecute False loadTextual list_on_1_join
+                -- putStrLn (intercalate "\n====\n" $ map tracedToString dbg_result)
                 execute_result <- runErrorableT $ executeTextual list_on_1_join
                 categoryToString (replaceResolved $ fromValid execute_result) `shouldBe` "new_head@`1->original_list@list_def:|`empty,nonempty:(`1,$list_def)|->(list_def:|`empty,nonempty:(`1,$list_def)|)::(($new_head,$original_list))"
             it "(join) should properly join on empty" $ do
@@ -93,13 +96,13 @@ spec = do
                 let test_case = parseCategoryString "(import $base.linkedlist)[`1].tail[(`1, `empty)]"
                 -- somethings not getting evaluated correctly
                 execute_result <- runErrorableT $ executeTextual test_case
-                putStrLn $ errorableToString execute_result
+                -- putStrLn $ errorableToString execute_result
                 isValid execute_result `shouldBe` True
                 categoryToString (fromValid execute_result) `shouldBe` "`empty"
             it "should be returning the head elem 2" $ do
                 let test_case = parseCategoryString "(import $base.linkedlist)[|`1, `2|].tail[(`2, (`1, `empty))]"
                 -- somethings not getting evaluated correctly
                 execute_result <- runErrorableT $ executeTextual test_case
-                putStrLn $ errorableToString execute_result
+                -- putStrLn $ errorableToString execute_result
                 isValid execute_result `shouldBe` True
                 categoryToString (fromValid execute_result) `shouldBe` "(`1,`empty)"

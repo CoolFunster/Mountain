@@ -18,11 +18,12 @@ import qualified Data.Text.IO as TextIO
 import Debug.Trace
 import Data.List (intercalate)
 
+
 spec :: Spec
 spec = do
     describe "Category Nat" $ do
-        let executeTextual = execute loadTextual
-        let dbgExecuteTextual = dbgExecute loadTextual
+        let executeTextual = execute False loadTextual
+        let dbgExecuteTextual = dbgExecute False loadTextual
         it "(module) should be valid" $ do
             parsedCategory <- runErrorableT (executeTextual (parseCategoryString "import $base.natural"))
             isValid parsedCategory `shouldBe` True
@@ -62,21 +63,23 @@ spec = do
                 error_type (head $ errors parsedCategory) `shouldBe` InvalidArgument
         describe "add" $ do
             it "should add zero and zero" $ do
-                parsedCategory <- runErrorableT (executeTextual (parseCategoryString "(import $base.natural).add[`zero][`zero]"))
+                parsedCategory <- runErrorableT (executeTextual (parseCategoryString "(import $base.natural).add[(`zero, `zero)]"))
                 -- putStrLn (errorableToString parsedCategory)
                 isValid parsedCategory `shouldBe` True
                 -- putStrLn (intercalate "\n\n" $ map categoryToString $ snd $ fromValid parsedCategory)
                 categoryToString (fromValid parsedCategory) `shouldBe` "`zero"
             it "should add one and zero" $ do
-                parsedCategory <- dbgExecuteTextual (parseCategoryString "((import $base.natural).add[(`successor, `zero)][`zero]).#1")
+                parsedCategory <- dbgEvaluate True loadTextual (parseCategoryString "(import $base.natural).add[((`successor, `zero),`zero)]")
                 let result = output $ last parsedCategory
-                putStrLn (errorableToString result)
                 isValid result `shouldBe` True
-                print (map logs parsedCategory)
-                -- let dbg = reverse parsedCategory !! 1
-                -- putStrLn $ tracedToString dbg
-                -- print $ map (\x -> case x of
-                --     Simple cat -> errorableToString cat
-                --     _ -> error "something") dbg
 
-                -- categoryToString (fromValid parsedCategory) `shouldBe` "(`successor, `zero)"
+                -- s1 <- dbgEvaluate True loadTextual (fromValid result)
+                categoryToString (fromValid result) `shouldBe` "(`successor,`zero)"
+            it "should add one and one" $ do
+                parsedCategory <- dbgEvaluate True loadTextual (parseCategoryString "(import $base.natural).add[((`successor, `zero),(`successor, `zero))]")
+                let result = output $ last parsedCategory
+                isValid result `shouldBe` True
+
+                -- s1 <- multipleStepEvaluate 10 True loadTextual (fromValid result)
+                categoryToString (fromValid result) `shouldBe` "(`successor,(`successor,`zero))"
+                

@@ -18,7 +18,7 @@ import Debug.Trace
 
 spec :: Spec
 spec = do
-    let executeTextual = execute loadTextual
+    let executeTextual = execute False loadTextual
     describe "Thing Parser" $ do
         it "(Things) should parse things" $ do
             parseCategoryString "`Something" `shouldBe` Thing{name=Name "Something"}

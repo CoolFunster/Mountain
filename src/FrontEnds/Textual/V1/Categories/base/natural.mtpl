@@ -11,12 +11,10 @@
         -> return $initial_num.#1
     )
 ->  define add_def:(
-        given a@($natural_def)
-        -> given b@($natural_def)
-        -> return *|
+        *|
             x@($natural_def.zero, $natural_def) -> $x.#1,
-            x@($natural_def.nonzero, $natural_def) -> (`successor, $add_def[$decrement_def[$x.#0]][$x.#1])
-        |*[($a, $b)]
+            x@($natural_def.nonzero, $natural_def) -> (`successor, $add_def[($x.#0.#1, $x.#1)])
+        |*
     )
 ->  return (
         natural:$natural_def,

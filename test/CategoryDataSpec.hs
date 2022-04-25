@@ -177,7 +177,7 @@ spec = do
     describe "call" $ do
         it "(NonMorphism) should return Nothing" $ do
             let a = Thing (Name "a")
-            print $ call a a
+            -- print $ call a a
             isError (call a a) `shouldBe` True
         it "(SimpleMorphism) should return b if inputs equal else nothing" $ do
             let a = Thing (Name "a")
@@ -245,36 +245,36 @@ spec = do
     describe "execute" $ do
         it "(Thing) should just return the thing" $ do
             let a = Thing (Name "a")
-            result <- runErrorableT $ execute loadAST a
+            result <- runErrorableT $ execute False loadAST a
             result `shouldBe` Valid a
         it "(Composite) should just return the composite" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let ab = Composite Tuple [a,b]
-            result <- runErrorableT $ execute loadAST ab
+            result <- runErrorableT $ execute False loadAST ab
             result `shouldBe` Valid ab
         it "(Morphism) should just return the morphism" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Composite Function [a, b]
-            result <- runErrorableT $ execute loadAST a2b
+            result <- runErrorableT $ execute False loadAST a2b
             result `shouldBe` Valid a2b
         it "(Placeholder) should just return the placeholder" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a_b = Composite Union [a,b]
             let x_elem_a_b = Placeholder (Name "x") Element a_b
-            result <- runErrorableT $ execute loadAST x_elem_a_b
+            result <- runErrorableT $ execute False loadAST x_elem_a_b
             result `shouldBe` Valid x_elem_a_b
         it "(FunctionCall) should just call the function" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Composite Function [a,b]
             let a2b_on_a = FunctionCall a2b a
-            result <- runErrorableT $ execute loadAST a2b_on_a
+            result <- runErrorableT $ execute False loadAST a2b_on_a
             result `shouldBe` Valid b
         it "(RecursiveCategory) should just return itself" $ do
-            result <- runErrorableT $ execute loadAST nat
+            result <- runErrorableT $ execute False loadAST nat
             result `shouldBe` Valid nat
         it "(RecursiveCategory) should be callable in a morphism call" $ do
             let a = Thing (Name "a")
@@ -298,11 +298,11 @@ spec = do
             simplify unfolded_on_a `shouldBe` Valid unfolded_on_a
             validateCategory unfolded_on_a `shouldBe` Valid unfolded_on_a
             validateCategory unfolded_on_b `shouldBe` Valid unfolded_on_b
-            result <- stepEvaluate loadAST unfolded_on_a
+            result <- stepEvaluate False loadAST unfolded_on_a
             output result `shouldBe` Valid b
-            result <- stepEvaluate loadAST unfolded_on_b
+            result <- stepEvaluate False loadAST unfolded_on_b
             output result `shouldBe`  Valid (FunctionCall {base = Placeholder {name = Name "ab", placeholder_type = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
-            result2 <- runErrorableT $ execute loadAST $ fromValid (output result)
+            result2 <- runErrorableT $ execute False loadAST $ fromValid (output result)
             result2 `shouldBe` Valid b
         it "(Import) should evaluate imports correctly" $ do
             let c = Import (Placeholder (Name "x") Label (Reference (Name "test")))
@@ -310,13 +310,13 @@ spec = do
             result `shouldBe` Valid (Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
         it "(Definition) should properly handle definitions" $ do
             let c = Composite Function [Definition (Placeholder (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
-            result <- runErrorableT $ execute loadAST c
+            result <- runErrorableT $ execute False loadAST c
             result `shouldBe` Valid (Thing (Name "5"))
         it "(Import) should properly handle imports" $ do
             let c = Composite Function [Import (Placeholder (Name "x") Label (Reference (Name "test"))), Reference (Name "x")]
-            result1 <- stepEvaluate loadAST c
-            result2 <- stepEvaluate loadAST $ fromValid (output result1)
-            result3 <- stepEvaluate loadAST $ fromValid (output result2)
+            result1 <- stepEvaluate False loadAST c
+            result2 <- stepEvaluate False loadAST $ fromValid (output result1)
+            result3 <- stepEvaluate False loadAST $ fromValid (output result2)
             output result3 `shouldBe` Valid (Placeholder {name = Name "x", placeholder_type = Resolved, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
     describe "access" $ do
         it "should handle indices on composites well" $ do
