@@ -27,6 +27,7 @@ spec = do
         it "(module) should be valid" $ do
             parsedCategory <- runErrorableT (executeTextual (parseCategoryString "import $base.natural"))
             isValid parsedCategory `shouldBe` True
+            putStrLn $ prettyCategoryToString (fromValid parsedCategory)
         describe "has" $ do
             it "should have zero" $ do
                 parsedCategory <- runErrorableT (executeTextual (parseCategoryString "(import $base.natural).natural"))
@@ -79,7 +80,6 @@ spec = do
                 parsedCategory <- dbgEvaluate True loadTextual (parseCategoryString "(import $base.natural).add[((`successor, `zero),(`successor, `zero))]")
                 let result = output $ last parsedCategory
                 isValid result `shouldBe` True
-
                 -- s1 <- multipleStepEvaluate 10 True loadTextual (fromValid result)
                 categoryToString (fromValid result) `shouldBe` "(`successor,(`successor,`zero))"
                 

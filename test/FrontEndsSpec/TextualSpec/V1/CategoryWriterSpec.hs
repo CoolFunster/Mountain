@@ -12,9 +12,9 @@ spec :: Spec
 spec = do
     describe "CategoryWriter" $ do
         it "(Things) should write things" $ do
-            categoryToString (Thing (Name "Something")) `shouldBe` "`Something" 
+            categoryToString (Thing (Name "Something")) `shouldBe` "`Something"
         it "(Tuples) should write tuples" $ do
-            categoryToString Composite{composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"},Thing {name = Name "c"}]} `shouldBe` "(`a,`b,`c)" 
+            categoryToString Composite{composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"},Thing {name = Name "c"}]} `shouldBe` "(`a,`b,`c)"
         it "(Tuples) should write recursive tuples" $ do
             categoryToString Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]} `shouldBe` "(`a,(`b,`c))"
         it "(Unions) should write sumples" $ do
@@ -23,10 +23,10 @@ spec = do
             categoryToString Composite {composite_type = Composition, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*(`a,`b)*"
         it "(Case) should write sumposite categories" $ do
             categoryToString Composite {composite_type = Case, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*|`a,`b|*"
-        it "(Function) should write chains" $ do    
+        it "(Function) should write chains" $ do
             categoryToString (Composite Function [Thing (Name "a"), Composite Function [Thing (Name "b"), Thing (Name "c")]]) `shouldBe`  "`a->`b->`c"
         it "(Function) should write named morphisms" $ do
-            categoryToString (Composite Function [Thing (Name "a"), Thing (Name "b")]) `shouldBe` "`a->`b" 
+            categoryToString (Composite Function [Thing (Name "a"), Thing (Name "b")]) `shouldBe` "`a->`b"
         it "(Function) should handle nested chains" $ do
             categoryToString (Composite Function [Composite Function [Thing (Name "a"), Thing (Name "b")], Thing (Name "b")]) `shouldBe` "(`a->`b)->`b"
         it "(Placeholder) should write placeholders" $ do
@@ -38,7 +38,7 @@ spec = do
         it "(Special) should write Universal" $ do
             categoryToString Special{special_type=Universal} `shouldBe` "Any"
         it "(Special) should write Reference" $ do
-            categoryToString Reference{name=Name "Stuff"} `shouldBe` "$Stuff" 
+            categoryToString Reference{name=Name "Stuff"} `shouldBe` "$Stuff"
         it "(Call) should write call" $ do
             categoryToString FunctionCall{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg") } `shouldBe` "$base_foo[$some_arg]"
         it "(Call) should write call consecutiveness" $ do
@@ -47,3 +47,25 @@ spec = do
             categoryToString Access{base=Reference{name=Name "base_ref"}, access_id=Name "name"}  `shouldBe` "($base_ref).name"
         it "(Membership) should write membership" $ do
             categoryToString Membership{big_category=Reference (Name "base_category"), small_category=Reference (Name "child_category") } `shouldBe` "($base_category)::($child_category)"
+    describe "prettyCategoryToString" $ do
+        it "Things" $ do
+            prettyCategoryToString (Thing (Name "hello")) `shouldBe` "`hello"
+        describe "Tuples" $ do
+          it "should handle standard tuples" $ do
+            -- putStrLn "(\n\t`hello,\n\t`hello2\n)"
+            prettyCategoryToString (Composite Tuple [Thing (Name "hello"),Thing (Name "hello2")]) `shouldBe` "(\n\t`hello,\n\t`hello2\n)"
+          it "should handle nested tuples" $ do
+            -- putStrLn "(\n\t(\n\t\t`hello,\n\t\t`hello2\n\t),\n\t`hello2\n)"
+            prettyCategoryToString (Composite Tuple [Composite Tuple [Thing (Name "hello"),Thing (Name "hello2")],Thing (Name "hello2")]) `shouldBe` "(\n\t(\n\t\t`hello,\n\t\t`hello2\n\t),\n\t`hello2\n)"
+          it "should not newline single tuples" $ do
+            prettyCategoryToString (Composite Tuple [Thing (Name "hello")]) `shouldBe` "(`hello)"
+        describe "Functions" $ do
+          it "should handle standard functions" $ do
+            prettyCategoryToString (Composite Function [Thing (Name "a"),Thing (Name "b")]) `shouldBe` "given `a\n->\treturn `b"
+            prettyCategoryToString (Composite Function [Thing (Name "a"),Thing (Name "b"), Thing (Name "c")]) `shouldBe` "given `a\n->\tgiven `b\n->\treturn `c"
+          it "should handle nested composites" $ do
+            prettyCategoryToString (Composite Function [Thing (Name "a"),Composite Tuple [Thing (Name "hello"),Thing (Name "hello2")]]) `shouldBe` "given `a\n->\treturn (\n\t\t`hello,\n\t\t`hello2\n\t)"
+          it "should handle imports" $ do
+            prettyCategoryToString (Composite Function [Import (Reference (Name "base")), Thing (Name "a")]) `shouldBe` "import $base\n->\treturn `a"
+          it "should handle definitions" $ do
+            prettyCategoryToString (Composite Function [Definition (Placeholder (Name "a") Label (Thing (Name "x"))), Reference (Name "a")]) `shouldBe` "define a:`x\n->\treturn $a"

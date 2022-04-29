@@ -8,6 +8,7 @@ import Data.Text ( Text, pack, unpack )
 
 import Debug.Trace (trace)
 import Data.List (intercalate, intersperse)
+import Data.Functor.Identity (Identity (runIdentity))
 
 idToString :: Id -> String
 idToString Unnamed = ""
@@ -23,7 +24,7 @@ categoryToString (Composite Tuple inner) = "(" ++ intercalate "," (map categoryT
 categoryToString (Composite Union inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
 categoryToString (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToString inner) ++ ")*"
 categoryToString (Composite Case inner) = "*|" ++ intercalate "," (map categoryToString inner) ++ "|*"
-categoryToString (Composite Function inner) = 
+categoryToString (Composite Function inner) =
     let
         innerFooToString :: [Category] -> [Char]
         innerFooToString [] = ""
@@ -98,8 +99,120 @@ errorableToString (ErrorList errors) = foldl (\cur new -> if cur == ""
 
 
 tracedToString :: TracedCategory -> String
-tracedToString (Simple cat) = errorableToString cat 
-tracedToString (Traced log_msg input output) = 
-    show log_msg ++ 
+tracedToString (Simple cat) = errorableToString cat
+tracedToString (Traced log_msg input output) =
+    show log_msg ++
         ":\ninputs:\n ---- \n" ++ intercalate "\n" (map tracedToString input) ++ "\n ---- \n" ++ "outputs: \n ---- \n" ++ errorableToString output ++ "\n ---- \n"
+
+
+applyOnLast :: (a -> a) -> [a] -> [a]
+applyOnLast f [] = []
+applyOnLast f [x] = [f x]
+applyOnLast f (x:xs) = x : applyOnLast f xs
+
+applyOnFirst :: (a -> a) -> [a] -> [a]
+applyOnFirst f [] = []
+applyOnFirst f (x : xs) = f x : xs
+
+mapButFirst :: (a -> a) -> [a] -> [a]
+mapButFirst f [] = []
+mapButFirst f [x] = [x]
+mapButFirst f (x:xs) = x : map f xs
+
+mapButLast :: (a -> a) -> [a] -> [a]
+mapButLast f [] = []
+mapButLast f [x] = [x]
+mapButLast f (x:xs) = f x : mapButLast f xs
+
+wrapAround :: (String, String) -> [String] -> [String]
+wrapAround (init_str, last_str) input_list = applyOnFirst (init_str ++) $ applyOnLast (++ last_str) input_list
+
+incrementIndent :: [String] -> [String]
+incrementIndent = map ("\t" ++)
+
+incrementIndentButFirst :: [String] -> [String]
+incrementIndentButFirst [] = []
+incrementIndentButFirst [x] = [x]
+incrementIndentButFirst (x:xs) = x : incrementIndent xs
+
+joinLastFirst :: [String] -> [String] -> [String]
+joinLastFirst [] x = x
+joinLastFirst x [] = x
+joinLastFirst s1 s2 = init s1 ++ [last s1 ++ head s2] ++ tail s2
+
+prepareForPrintingInner :: Category -> Identity Category
+prepareForPrintingInner (Composite Function ((Composite Function inner):rest)) = return $ Composite Function (Composite Tuple [Composite Function inner] : rest)
+prepareForPrintingInner other = return other
+
+prepareForPrinting :: Category -> Category
+prepareForPrinting cat = runIdentity $ applyOnAST (const Nothing) prepareForPrintingInner cat
+
+prettyCategoryToStringInner :: String -> Category -> [String]
+prettyCategoryToStringInner indenter (Thing name) = ["`" ++ idToString name]
+prettyCategoryToStringInner indenter (Composite c_type []) = do
+  case c_type of
+      Tuple -> ["()"]
+      Union -> ["||"]
+      Composition -> ["*()*"]
+      Case -> ["*||*"]
+      Function -> ["<EMPTY FUNCTION>"]
+prettyCategoryToStringInner indenter (Composite c_type [something]) = do
+  case c_type of
+      Tuple -> wrapAround ("(", ")") $ prettyCategoryToStringInner indenter something
+      Union -> wrapAround ("|", "|") $ prettyCategoryToStringInner indenter something
+      Composition -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
+      Case -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
+      Function -> prettyCategoryToStringInner indenter something
+prettyCategoryToStringInner indenter (Composite Function inner) =
+  let
+    renderTerm :: Bool -> String -> Category -> [String]
+    renderTerm add_arrow keyword x = incrementIndentButFirst $ applyOnFirst (((if add_arrow then "->" ++ indenter else "") ++ keyword) ++) (prettyCategoryToStringInner indenter x)
+
+    toTerm :: Bool -> [Category] -> [String]
+    toTerm add_arrow [] = []
+    toTerm add_arrow [x] = renderTerm True "return " x
+    toTerm add_arrow (i@Import{}:xs) = renderTerm add_arrow "" i ++ toTerm True xs
+    toTerm add_arrow (def@Definition{}:xs) = renderTerm add_arrow "" def ++ toTerm True xs
+    toTerm add_arrow (x:xs) = renderTerm add_arrow "given " x ++ toTerm True xs
+  in
+    toTerm False inner
+prettyCategoryToStringInner indenter (Composite c_type inner) = do
+    let raw_result = map (prettyCategoryToStringInner indenter) inner
+    let tabbed = map incrementIndent raw_result
+    let comma = mapButLast (applyOnLast (++ ",")) tabbed
+    case c_type of
+      Tuple -> ["("] ++ concat comma ++ [")"]
+      Union -> ["|"] ++ concat comma ++ ["|"]
+      Composition -> ["*("] ++ concat comma ++ [")*"]
+      Case -> ["*|"] ++ concat comma ++ ["|*"]
+      Function -> error "Functions should not be handled here"
+prettyCategoryToStringInner indenter Import{import_category=cat} = incrementIndentButFirst $ applyOnFirst ("import " ++) $ prettyCategoryToStringInner indenter cat
+prettyCategoryToStringInner indenter Definition{def_category=cat} = incrementIndentButFirst $ applyOnFirst ("define " ++) $ prettyCategoryToStringInner indenter cat
+prettyCategoryToStringInner indenter Reference{name=name} = ["$" ++ idToString name]
+prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
+  let inner_result = prettyCategoryToStringInner indenter ph_category
+  case inner_result of
+    [] -> []
+    something -> applyOnFirst ((idToString name ++ ":") ++) something
+    -- longer_list -> (idToString name ++ ":") : incrementIndent longer_list
+prettyCategoryToStringInner indenter (Placeholder name Element ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
+prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") $ prettyCategoryToStringInner indenter ph_category
+prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
+prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["(%)"]
+prettyCategoryToStringInner indenter Special{special_type=Universal} = ["Any"]
+prettyCategoryToStringInner indenter FunctionCall{base=bm, argument=a} = do
+  let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)
+  let pretty_a = wrapAround ("[", "]") (prettyCategoryToStringInner indenter a)
+  joinLastFirst pretty_bm pretty_a
+prettyCategoryToStringInner indenter Access{base=bc, access_id=_id} =
+  applyOnLast (++ "." ++ idToString _id) (prettyCategoryToStringInner indenter bc)
+prettyCategoryToStringInner indenter Membership{big_category=bc, small_category=sc} = do
+  let pretty_bc = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bc)
+  let pretty_sm = wrapAround ("::(", ")") (prettyCategoryToStringInner indenter sc)
+  joinLastFirst pretty_bc pretty_sm
+
+-- prettyCategoryToStringInner _ cat = error $ "undefined pretty category to string: " ++ categoryToString cat
+
+prettyCategoryToString :: Category -> String
+prettyCategoryToString category = intercalate "\n" (prettyCategoryToStringInner "\t" (prepareForPrinting category))
 
