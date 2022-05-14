@@ -60,7 +60,7 @@ spaceConsumer :: Parser ()
 spaceConsumer = L.space
                 space1                         -- (2)
                 (L.skipLineComment $ pack "//")       -- (3)
-                (L.skipBlockComment (pack "/%") (pack "%/")) -- (4)
+                (L.skipBlockComment (pack "/*") (pack "*/")) -- (4)
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme spaceConsumer

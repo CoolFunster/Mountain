@@ -1,0 +1,10 @@
+Imperative:
+  ->  import list_module:$base.linkedlist 
+  ->  define list:$list_module.list   
+  ->  define program_state:Any
+  ->  define instruction:(
+        given input@$program_state
+        -> return output@$program_state
+      )
+  ->  define program:
+  ->  return ()
