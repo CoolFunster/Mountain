@@ -35,6 +35,7 @@ dependencies:
 - parser-combinators
 - filepath
 - array
+- mtl
 
 library:
   source-dirs: src

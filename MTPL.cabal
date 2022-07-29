@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 65ae089343523aef80fca2772c3620bc513570236cd916af524aa029b227ef16
+-- hash: 59488aa8a698b31ac2cf65fde69525905b1b6e9c4e560c4f541c3e99143ee288
 
 name:           MTPL
 version:        0.1.0.0
@@ -49,6 +49,7 @@ library
     , hspec-megaparsec
     , language-python
     , megaparsec
+    , mtl
     , parser-combinators
     , random
     , text
@@ -73,6 +74,7 @@ executable MTPL-exe
     , hspec-megaparsec
     , language-python
     , megaparsec
+    , mtl
     , parser-combinators
     , random
     , text
@@ -105,6 +107,7 @@ test-suite spec
     , hspec-megaparsec
     , language-python
     , megaparsec
+    , mtl
     , parser-combinators
     , random
     , text

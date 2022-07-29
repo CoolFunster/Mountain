@@ -16,9 +16,25 @@ given list_type@Any
         given input@($list_def.nonempty)
         -> return $list_def::$input.#1
     )
+-> define for_def: (
+        given State_Type@Any
+        -> given initial_state@$State_Type
+        -> given input_list@$list_def
+        -> given foo@(
+            given input_elem@$list_type
+            -> given previous_state@$State_Type
+            -> return new_state@$State_Type
+        ) 
+        -> return ($State_Type)::(*|
+            $list_def.empty -> $initial_state,
+            x@Any -> $for_def[$State_Type][$foo[$head_def[$input_list]][$initial_state]][$tail_def[$input_list]][$foo]
+          |*[$input_list]
+        )
+    )
 -> return (
-    list:$list_def,
-    join:$join_def,
-    head:$head_def,
-    tail:$tail_def
+  list:$list_def,
+  join:$join_def,
+  head:$head_def,
+  tail:$tail_def,
+  for:$for_def
 )

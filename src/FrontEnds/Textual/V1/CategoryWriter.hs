@@ -91,19 +91,15 @@ errorToStringInner (Error CannotTypecheckRawDefinition _) = "This definition nee
 errorToStringInner (Error IndexAccessOnFunction _) = "Cannot index access a function call"
 -- errorToStringInner _ = error "unhandled"
 
-errorableToString :: Errorable Category -> String
-errorableToString (Valid category) = categoryToString category
-errorableToString (ErrorList errors) = foldl (\cur new -> if cur == ""
+errorableToString :: Either [Error] Category -> String
+errorableToString (Right category) = categoryToString category
+errorableToString (Left errors) = foldl (\cur new -> if cur == ""
                                                                 then errorToString new
                                                                 else cur ++ ";\n" ++ errorToString new) "" errors
 
-
-tracedToString :: TracedCategory -> String
-tracedToString (Simple cat) = errorableToString cat
-tracedToString (Traced log_msg input output) =
-    show log_msg ++
-        ":\ninputs:\n ---- \n" ++ intercalate "\n" (map tracedToString input) ++ "\n ---- \n" ++ "outputs: \n ---- \n" ++ errorableToString output ++ "\n ---- \n"
-
+categoryLogToString :: CategoryLog -> String
+categoryLogToString Info{msg=msg, input=input} = 
+  show msg ++ "\n" ++ intercalate "\n" (map prettyCategoryToString input) ++ "\n ==== \n"
 
 applyOnLast :: (a -> a) -> [a] -> [a]
 applyOnLast f [] = []
@@ -196,7 +192,7 @@ prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
     something -> applyOnFirst ((idToString name ++ ":") ++) something
     -- longer_list -> (idToString name ++ ":") : incrementIndent longer_list
 prettyCategoryToStringInner indenter (Placeholder name Element ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
-prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") $ prettyCategoryToStringInner indenter ph_category
+prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") [idToString name] -- prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
 prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["(%)"]
 prettyCategoryToStringInner indenter Special{special_type=Universal} = ["Any"]
@@ -210,8 +206,6 @@ prettyCategoryToStringInner indenter Membership{big_category=bc, small_category=
   let pretty_bc = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bc)
   let pretty_sm = wrapAround ("::(", ")") (prettyCategoryToStringInner indenter sc)
   joinLastFirst pretty_bc pretty_sm
-
--- prettyCategoryToStringInner _ cat = error $ "undefined pretty category to string: " ++ categoryToString cat
 
 prettyCategoryToString :: Category -> String
 prettyCategoryToString category = intercalate "\n" (prettyCategoryToStringInner "\t" (prepareForPrinting category))

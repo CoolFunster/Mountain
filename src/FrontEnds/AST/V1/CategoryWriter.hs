@@ -4,6 +4,8 @@ module FrontEnds.AST.V1.CategoryWriter where
 import FrontEnds.AST.V1.CategoryParser (basePath)
 import CategoryData
 import System.Directory (doesFileExist)
+import Control.Monad.Trans
+import Control.Monad.Except
 
 categoryToString :: Category -> String
 categoryToString = show
@@ -16,10 +18,10 @@ categoryURIToFilePath input_str =
     in
         map repl input_str
 
-categoryToFile :: FilePath -> Category -> ErrorableT IO () 
-categoryToFile import_category cat = ErrorableT $ do
+categoryToFile :: FilePath -> Category -> CategoryContextT IO ()
+categoryToFile import_category cat = do
     let full_path = basePath ++ categoryURIToFilePath import_category ++ ".ast.mtpl"
-    fileExist <- doesFileExist full_path
+    fileExist <- lift $ doesFileExist full_path
     if fileExist
-        then return (ErrorList [Error{error_type=BadExportFileExists, error_stack=[Reference (Name import_category)]}])
-        else fmap Valid (writeFile full_path (show cat))
+        then throwError [Error{error_type=BadExportFileExists, error_stack=[Reference (Name import_category)]}]
+        else lift $ writeFile full_path (show cat)

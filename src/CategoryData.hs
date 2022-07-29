@@ -1,4 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 module CategoryData where
 
 import Data.List ( intercalate, find, sort )
@@ -6,13 +8,14 @@ import Data.Either
 import Data.Dynamic
 import Data.Typeable
 
-import Debug.Trace (trace)
-import Control.Monad
-import GHC.Base (Monad, returnIO)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
 import System.FilePath.Posix (takeBaseName)
-import Data.Functor.Identity (Identity (runIdentity))
-import qualified Data.Bifunctor
+import Control.Monad
+import Control.Monad.Except
+import Control.Monad.Writer
+import Control.Monad.Identity
+
+import Debug.Trace (trace)
 
 {- add specific name for symbolic execution cases-}
 data Id =
@@ -39,24 +42,6 @@ data PlaceholderType =
     Element |
     Resolved
     deriving (Eq, Show, Read)
-
-data CategoryLevel =
-    Infinite |
-    AnyLevel |
-    LessThan Integer |
-    Specific Integer
-    deriving (Eq, Show, Read)
-
-instance Ord CategoryLevel where
-    (compare) (Specific a) (Specific b)  = compare a b
-    (compare) Infinite Infinite = EQ
-    (compare) Infinite _ = GT
-    (compare) _ Infinite = LT
-    (compare) (LessThan a) (LessThan b) = compare (Specific a) (Specific b)
-    (compare) (LessThan a) (Specific b) = compare (Specific a) (Specific b)
-    (compare) (Specific a) (LessThan b) = compare (Specific a) (Specific b)
-    (compare) AnyLevel _ = EQ
-    (compare) _ AnyLevel = EQ
 
 data Category =
     -- categories
@@ -116,14 +101,12 @@ data LogMsgType =
     Accessing
     deriving (Eq, Show, Read)
 
-data TracedCategory =
-    Traced {
-        logs :: LogMsgType,
-        input :: [TracedCategory],
-        output :: Errorable Category
-    } |
-    Simple (Errorable Category)
-    deriving (Eq, Show, Read)
+-- basic functions
+data CategoryLog =
+  Info {
+    msg::LogMsgType,
+    input :: [Category]
+  } deriving (Show)
 
 -- Error types
 data ErrorType =
@@ -163,63 +146,29 @@ data Error = Error {
     error_stack::[Category]
 } deriving (Eq, Show, Read)
 
-data Errorable a =
-    Valid a |
-    ErrorList {
-        errors::[Error]
-    }
-    deriving (Eq, Show, Read)
-
-instance Functor Errorable where
-    fmap foo (Valid x) = Valid $ foo x
-    fmap foo (ErrorList list) = ErrorList list
-
-instance Applicative Errorable where
-    pure x = Valid x
-    Valid foo <*> any = fmap foo any
-    ErrorList el <*> any = ErrorList el
-
-instance Monad Errorable where
-    Valid a >>= foo = foo a
-    ErrorList error_list >>= foo = ErrorList error_list
-
-newtype ErrorableT m a = ErrorableT { runErrorableT :: m (Errorable a)}
-instance Monad m => Monad (ErrorableT m) where
-    return = ErrorableT . return . Valid
-    x >>= f = ErrorableT $ do
-        errorable_value <- runErrorableT x
-        case errorable_value of
-            ErrorList ers  -> return (ErrorList ers)
-            Valid value -> runErrorableT $ f value
-
-instance Monad m => Applicative (ErrorableT m) where
-    pure = return
-    (<*>) = ap
-
-instance Monad m => Functor (ErrorableT m) where
-    fmap = liftM
-
-isValid :: Errorable a -> Bool
-isValid (Valid _) = True
-isValid _ = False
-
-isError :: Errorable a -> Bool
-isError (ErrorList _) = True
-isError _ = False
-
-partitionErrorable :: [Errorable a] -> ([a], [Error])
-partitionErrorable = foldr (
-    \new_errorable (l,r) ->
-        case new_errorable of
-            Valid something -> (something:l, r)
-            ErrorList errors -> (l, errors ++ r)) ([],[])
-
 addCategoryToErrorStack :: Category -> Error -> Error
 addCategoryToErrorStack input_a e@Error{error_stack=stack} = e{error_stack=stack++[input_a]}
 
-fromValid :: Errorable a -> a
-fromValid (Valid x) = x
-fromValid (ErrorList e) = error $ "bad fromValid " ++ show e
+newtype CategoryContextT m a = CategoryContextT { getCategoryContext :: ExceptT [Error] (WriterT [CategoryLog] m) a}
+  deriving (Functor, Applicative, Monad, MonadIO, MonadError [Error], MonadWriter [CategoryLog])
+
+instance MonadTrans CategoryContextT where
+    lift = CategoryContextT . lift . lift
+
+type CategoryContext = CategoryContextT Identity
+
+runCategoryContextT :: CategoryContextT m a -> m (Either [Error] a, [CategoryLog])
+runCategoryContextT s = runWriterT (runExceptT (getCategoryContext s))
+
+runCategoryContext :: CategoryContext a -> (Either [Error] a, [CategoryLog])
+runCategoryContext s = runIdentity $ runCategoryContextT s
+
+type CategoryImporter = FilePath -> CategoryContextT IO Category
+
+data CategoryEvalOptions = Options {
+  reduce_composite :: Bool,
+  importer :: CategoryImporter
+}
 
 -- useful categories
 
@@ -407,64 +356,64 @@ unroll Recursive l@Placeholder{name=rec_name, placeholder_type=Label, placeholde
     replaceReferences rec_name l rec_cat
 unroll _ something_else = something_else
 
-call :: Category -> Category -> Errorable Category
+call :: Category -> Category -> Either [Error] Category
 call arg p@Placeholder{placeholder_type=Label} = call arg (unroll Recursive p)
 call arg c@Composite{composite_type=c_type,inner_categories=[]}
-    | isDataCompositeType c_type = ErrorList [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
-    | otherwise = ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
+    | isDataCompositeType c_type = Left [Error{error_type=CallingADataCompositeCategory, error_stack=[c]}]
+    | otherwise = Left [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
 call arg c@Composite{inner_categories=[something]} = call arg something
 call arg c@Composite{composite_type=Function, inner_categories=head:tail} =
     case head `tracedHas` arg of
-        ErrorList errors -> ErrorList errors
-        Valid False -> ErrorList [Error{error_type=InvalidArgument, error_stack=[arg, c]}]
-        Valid True -> do
+        Left errors -> Left errors
+        Right False -> Left [Error{error_type=InvalidArgument, error_stack=[arg, c]}]
+        Right True -> do
             let new_tail = case head of
                     p@Placeholder{name=id} -> map (replaceReferences id arg) tail
                     _ -> tail
             case new_tail of
-                [something] -> Valid something
-                [] -> ErrorList [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
-                other -> Valid c{inner_categories=new_tail}
+                [something] -> Right something
+                [] -> Left [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
+                other -> Right c{inner_categories=new_tail}
 call arg c@Composite{composite_type=Case, inner_categories=inner} = do
-    case find isValid (map (call arg) inner) of
+    case find isRight (map (call arg) inner) of
         Just value -> value
-        Nothing -> ErrorList [Error{error_type=BadFunctionCallInCase, error_stack=[arg, c]}]
+        Nothing -> Left [Error{error_type=BadFunctionCallInCase, error_stack=[arg, c]}]
 call arg c@Composite{composite_type=Composition, inner_categories=inner} =
     foldl (\next_arg cat ->
         case next_arg of
-            Valid narg -> call narg cat
+            Right narg -> call narg cat
             other -> other
-    ) (Valid arg) inner
-call arg c = ErrorList [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
+    ) (Right arg) inner
+call arg c = Left [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
 
-compositeToFlatFunction :: Category -> Errorable Category
+compositeToFlatFunction :: Category -> Either [Error] Category
 compositeToFlatFunction c@Composite{composite_type=Composition, inner_categories=head@Composite{composite_type=Function, inner_categories=inner_head:inner_rest}:rest} =
     case call inner_head c of
-        ErrorList errors -> ErrorList errors
-        Valid cat -> Valid c{composite_type=Function,inner_categories=[inner_head, cat]}
-compositeToFlatFunction c@Composite{composite_type=Function, inner_categories=inner} = Valid c
+        Left errors -> Left errors
+        Right cat -> Right c{composite_type=Function,inner_categories=[inner_head, cat]}
+compositeToFlatFunction c@Composite{composite_type=Function, inner_categories=inner} = Right c
 compositeToFlatFunction c@Composite{composite_type=Case, inner_categories=inner} =
-    case partitionErrorable $ map compositeToFlatFunction inner of
-        (valid_categories, []) -> Valid $ Composite{composite_type=Function, inner_categories=[
+    case partitionEithers $ map compositeToFlatFunction inner of
+        ([], valid_categories) -> Right $ Composite{composite_type=Function, inner_categories=[
             Composite{composite_type=Union, inner_categories=map (head . inner_categories) valid_categories},
             Composite{composite_type=Union, inner_categories=concatMap (tail . inner_categories) valid_categories}
         ]}
-        (_, some_errors) -> ErrorList (map (addCategoryToErrorStack c) some_errors)
+        (some_errors, _) -> Left (map (addCategoryToErrorStack c) (concat some_errors))
 compositeToFlatFunction other = error $ "bad argument to uncheckedCompositeToFunction: " ++ show other
 
-evaluateAccess :: Category -> Errorable Category
+evaluateAccess :: Category -> Either [Error] Category
 evaluateAccess a@Access{base=Composite{inner_categories=[]}, access_id=id} =
-    ErrorList [Error{error_type=EmptyAccessBase,error_stack=[a]}]
+    Left [Error{error_type=EmptyAccessBase,error_stack=[a]}]
 evaluateAccess a@Access{base=Composite{inner_categories=[something]}} = evaluateAccess a{base=something}
 evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_id=id} =
     case id of
         Index idx ->
             if isFunctionCompositeType c_type
-                then ErrorList [Error{error_type=IndexAccessOnFunction, error_stack=[a]}]
-                else Valid (inner!!idx)
+                then Left [Error{error_type=IndexAccessOnFunction, error_stack=[a]}]
+                else Right (inner!!idx)
         Name str_name -> do
             case filter (\x -> getName x == Just (Name str_name))  inner of
-                [] -> ErrorList [Error{error_type=BadAccess,error_stack=[a]}]
+                [] -> Left [Error{error_type=BadAccess,error_stack=[a]}]
                 stuff -> do
                     let result = head stuff
                     if isRecursiveCategory result
@@ -472,45 +421,62 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
                         else if isPlaceholder result
                             then return $ placeholder_category result
                             else return result
-        Unnamed -> ErrorList [Error{error_type=EmptyAccessID,error_stack=[a]}]
-evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Valid Special{special_type=Flexible}
+        Unnamed -> Left [Error{error_type=EmptyAccessID,error_stack=[a]}]
+evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = Right Special{special_type=Flexible}
 evaluateAccess a@Access{base=p@Placeholder{placeholder_type=Label, placeholder_category=ph_c}, access_id=id} = do
     let new_base = if isRecursiveCategory p then unroll Recursive p else ph_c
     case evaluateAccess a{base=new_base} of
-        ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
-        Valid cat -> Valid cat
+        Left errors -> Left (map (addCategoryToErrorStack a) errors)
+        Right cat -> Right cat
 evaluateAccess a@Access{base=p@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c}, access_id=id} = do
     case evaluateAccess a{base=ph_c} of
-        ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
-        Valid cat -> Valid cat
-
--- evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
---         {- TODO: handle predicates -}
---         ErrorList [Error RefinementNotHandledInAccess [a]]
--- evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=output} =
---     case call arg b of
---         ErrorList errors -> ErrorList errors
---         Valid cat -> evaluateAccess a{base=cat}
--- evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
---     case evaluateAccess a_inner of
---         ErrorList errors -> ErrorList (map (addCategoryToErrorStack a) errors)
---         Valid cat -> evaluateAccess a{base=cat}
--- evaluateAccess a@Access{base=Reference{}, access_id=id} = Valid (Special{special_type=Flexible})
-evaluateAccess a@Access{} = ErrorList [Error{error_type=UndefinedAccess,error_stack=[a]}]
+        Left errors -> Left (map (addCategoryToErrorStack a) errors)
+        Right cat -> Right cat
+evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
+        {- TODO: handle predicates -}
+        Left [Error RefinementNotHandledInAccess [a]]
+evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=output} =
+    case call arg b of
+        Left errors -> Left errors
+        Right cat -> evaluateAccess a{base=cat}
+evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} =
+    case evaluateAccess a_inner of
+        Left errors -> Left (map (addCategoryToErrorStack a) errors)
+        Right cat -> evaluateAccess a{base=cat}
+evaluateAccess a@Access{base=Reference{}, access_id=id} = Right (Special{special_type=Flexible})
+evaluateAccess a@Access{} = Left [Error{error_type=UndefinedAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
 
-level :: Category -> Either CategoryLevel [Error]
+data CategoryLevel =
+    Infinite |
+    AnyLevel |
+    LessThan Integer |
+    Specific Integer
+    deriving (Eq, Show, Read)
+
+instance Ord CategoryLevel where
+    (compare) (Specific a) (Specific b)  = compare a b
+    (compare) Infinite Infinite = EQ
+    (compare) Infinite _ = GT
+    (compare) _ Infinite = LT
+    (compare) (LessThan a) (LessThan b) = compare (Specific a) (Specific b)
+    (compare) (LessThan a) (Specific b) = compare (Specific a) (Specific b)
+    (compare) (Specific a) (LessThan b) = compare (Specific a) (Specific b)
+    (compare) AnyLevel _ = EQ
+    (compare) _ AnyLevel = EQ
+
+level :: Category -> Either [Error] CategoryLevel
 level input_category =
     let
-        levelOfCategoryList :: [Category] -> Either CategoryLevel [Error]
-        levelOfCategoryList [] = Left $ Specific 0
+        levelOfCategoryList :: [Category] -> Either [Error] CategoryLevel
+        levelOfCategoryList [] = Right $ Specific 0
         levelOfCategoryList inner_categories =
             case partitionEithers (map level inner_categories) of
-                (just_valid_levels, []) ->
+                ([], just_valid_levels) ->
                     case filter (AnyLevel /=) just_valid_levels of
-                        [] -> Left AnyLevel
-                        other_levels -> Left $ maximum other_levels
-                (_, some_errors) -> Right $ concat some_errors
+                        [] -> Right AnyLevel
+                        other_levels -> Right $ maximum other_levels
+                (some_errors, _) -> Left $ concat some_errors
 
         incrementLevel :: CategoryLevel -> CategoryLevel
         incrementLevel some_level =
@@ -518,18 +484,18 @@ level input_category =
                 Specific l -> Specific (1 + l)
                 anything_else -> anything_else
 
-        level_inner :: Category -> Either CategoryLevel [Error]
+        level_inner :: Category -> Either [Error] CategoryLevel
         level_inner input_category =
             case input_category of
-                (Thing t) -> Left $ Specific 0
+                (Thing t) -> Right $ Specific 0
                 (Composite _ inner) -> levelOfCategoryList inner
                 p@Placeholder{placeholder_type=Element, placeholder_category=ph_c} ->
                     case level ph_c of
-                        Right errors -> Right $ map (addCategoryToErrorStack p) errors
-                        Left (Specific l) -> Left (LessThan l)
-                        Left (LessThan l) -> Left $ LessThan l
-                        Left Infinite -> Left AnyLevel
-                        Left AnyLevel -> Left AnyLevel
+                        Left errors -> Left $ map (addCategoryToErrorStack p) errors
+                        Right (Specific l) -> Right (LessThan l)
+                        Right (LessThan l) -> Right $ LessThan l
+                        Right Infinite -> Right AnyLevel
+                        Right AnyLevel -> Right AnyLevel
                 l@Placeholder{placeholder_type=Label, placeholder_category=ph_c} ->
                     let
                         category_of_interest =
@@ -538,41 +504,41 @@ level input_category =
                                 else ph_c
                     in
                         case level category_of_interest of
-                            Left level -> Left level
-                            Right errors -> Right $ map (addCategoryToErrorStack l) errors
+                            Right level -> Right level
+                            Left errors -> Left $ map (addCategoryToErrorStack l) errors
                 rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} -> level ph_c
                 Refined {base=_base_category, predicate=_predicate} -> level _base_category
-                Special{special_type=Flexible} -> Left AnyLevel
-                Special{special_type=Universal} -> Left Infinite
-                Reference{} -> Left AnyLevel
+                Special{special_type=Flexible} -> Right AnyLevel
+                Special{special_type=Universal} -> Right Infinite
+                Reference{} -> Right AnyLevel
                 FunctionCall{base=b, argument=a} ->
                     case call a b of
-                        ErrorList errors -> Right errors
-                        Valid cat -> level cat
+                        Left errors -> Left errors
+                        Right cat -> level cat
                 a@Access{base=bc,access_id=id} ->
                     case evaluateAccess a of
-                        Valid cat -> level cat
-                        ErrorList errors -> Right (map (addCategoryToErrorStack a) errors)
-                i@Import{} -> Left AnyLevel
+                        Right cat -> level cat
+                        Left errors -> Left (map (addCategoryToErrorStack a) errors)
+                i@Import{} -> Right AnyLevel
                 def@Definition{def_category=d} -> level d
                 mem@Membership{big_category=bc, small_category=sc} -> level sc
     in
         if isRecursiveCategory input_category || isCompositeOfType Union input_category
             then case level_inner input_category of
-                Left level -> Left (incrementLevel level)
-                Right errors -> Right errors
+                Right level -> Right (incrementLevel level)
+                Left errors -> Left errors
             else level_inner input_category
 
-tracedHas :: Category -> Category -> Errorable Bool
+tracedHas :: Category -> Category -> Either [Error] Bool
 -- tracedHas a b = trace ("big: " ++ show a ++ "\nsmall: " ++ show b ++ "\n") (has a b)
 tracedHas = has
 
-has :: Category -> Category -> Errorable Bool
+has :: Category -> Category -> Either [Error] Bool
 has big_category small_category
     | big_category == small_category = return True
     | otherwise = has_inner big_category small_category
         where
-            has_inner :: Category -> Category -> Errorable Bool
+            has_inner :: Category -> Category -> Either [Error] Bool
             {- substitutive rules -}
             has_inner (Composite _ [category]) small_category = tracedHas category small_category
             has_inner big_category (Composite _ [category]) = tracedHas big_category category
@@ -593,12 +559,12 @@ has big_category small_category
             has_inner (Placeholder _ Resolved category) small_category = category `tracedHas` small_category
             has_inner c_big@Composite{composite_type=Composition} other_category =
                 case compositeToFlatFunction c_big of
-                    ErrorList errors -> ErrorList errors
-                    Valid cat -> tracedHas cat other_category
+                    Left errors -> Left errors
+                    Right cat -> tracedHas cat other_category
             has_inner other_category c_small@Composite{composite_type=Composition} =
                 case compositeToFlatFunction c_small of
-                    ErrorList errors -> ErrorList errors
-                    Valid cat -> tracedHas cat other_category
+                    Left errors -> Left errors
+                    Right cat -> tracedHas cat other_category
             has_inner c1@Composite{composite_type=Function, inner_categories=Definition d:rest1} c2@Composite{composite_type=c2_type} = do
                 result <- call d c1
                 result `tracedHas` c2
@@ -639,78 +605,78 @@ has big_category small_category
             has_inner _ Special{special_type=Flexible} = return True
             has_inner _ Special{special_type=Universal} = return False
             {- Reference -}
-            has_inner r@Reference{} other = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r]}]
-            has_inner other r@Reference{} = ErrorList [Error{error_type=UnresolvedReference, error_stack=[r]}]
+            has_inner r@Reference{} other = Left [Error{error_type=UnresolvedReference, error_stack=[r]}]
+            has_inner other r@Reference{} = Left [Error{error_type=UnresolvedReference, error_stack=[r]}]
             {- Function Call -}
             has_inner mc@FunctionCall{base=bm, argument=a} other =
                 case call a bm of
-                    ErrorList some_errors -> ErrorList some_errors
-                    Valid some_cat -> tracedHas some_cat other
+                    Left some_errors -> Left some_errors
+                    Right some_cat -> tracedHas some_cat other
             has_inner other mc@FunctionCall{base=bm, argument=a} =
                 case call a bm of
-                    ErrorList some_errors -> ErrorList some_errors
-                    Valid some_cat -> tracedHas other some_cat
+                    Left some_errors -> Left some_errors
+                    Right some_cat -> tracedHas other some_cat
             {- Access -}
             has_inner a@Access{base=b, access_id=id} other =
                 case evaluateAccess a of
-                    ErrorList some_errors -> ErrorList some_errors
-                    Valid cat -> tracedHas cat other
+                    Left some_errors -> Left some_errors
+                    Right cat -> tracedHas cat other
             {- Import -}
             has_inner i@Import{} i2@Import{} = return (i == i2)
-            has_inner i@Import{} other = ErrorList [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
+            has_inner i@Import{} other = Left [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
             {- Things -}
             -- equal things and other cases are handled above
             has_inner (Thing t) _ = return False
 
-validateCategoryInner :: Category -> Errorable Category
-validateCategoryInner t@(Thing Unnamed) = ErrorList [Error{error_type=UnnamedCategory, error_stack=[t]}]
-validateCategoryInner t@(Thing (Index _)) = ErrorList [Error{error_type=IndexedNamed, error_stack=[t]}]
+validateCategoryInner :: Category -> Either [Error] Category
+validateCategoryInner t@(Thing Unnamed) = Left [Error{error_type=UnnamedCategory, error_stack=[t]}]
+validateCategoryInner t@(Thing (Index _)) = Left [Error{error_type=IndexedNamed, error_stack=[t]}]
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=[]}
     | isFunctionCompositeType composition_type =
-        ErrorList [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
+        Left [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
     | otherwise = return c
 validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=inner_cats}
     | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
-        ErrorList [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
+        Left [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
     | (composition_type == Function) && all (\x -> isImport x || isDefinition x) inner_cats =
-        ErrorList [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
+        Left [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
     | otherwise = return c
-validateCategoryInner ph@Placeholder{name=Unnamed} = ErrorList [Error{error_type=UnnamedCategory, error_stack=[ph]}]
-validateCategoryInner ph@Placeholder{name=(Index _)} = ErrorList [Error{error_type=IndexedNamed, error_stack=[ph]}]
+validateCategoryInner ph@Placeholder{name=Unnamed} = Left [Error{error_type=UnnamedCategory, error_stack=[ph]}]
+validateCategoryInner ph@Placeholder{name=(Index _)} = Left [Error{error_type=IndexedNamed, error_stack=[ph]}]
 validateCategoryInner r@Refined{base=cat,predicate=p}
-    | not (isFunctionComposite p) = ErrorList [Error{error_type=PredicateHasNonFunctionArgument, error_stack=[r]}]
-    | Composite{inner_categories=head:rest} <- cat, return True /= (head `has` cat) = ErrorList [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
+    | not (isFunctionComposite p) = Left [Error{error_type=PredicateHasNonFunctionArgument, error_stack=[r]}]
+    | Composite{inner_categories=head:rest} <- cat, return True /= (head `has` cat) = Left [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
     | otherwise = return r
 {- TODO: missed case here of nested function calls -}
 validateCategoryInner f@FunctionCall{base=c@Composite{inner_categories=[something]}, argument=a} = do
     let result = validateCategoryInner f{base=something}
-    if isValid result
+    if isRight result
         then return f
         else result
 validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inner_categories=head:rest}, argument=a}
-    | not (isFunctionCompositeType c_type) = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
+    | not (isFunctionCompositeType c_type) = Left [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
     | otherwise = return f
-validateCategoryInner f@FunctionCall{base=Thing{}} = ErrorList [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
-validateCategoryInner a@Access{base=bc, access_id=Unnamed} = ErrorList [Error{error_type=EmptyAccessID, error_stack=[a]}]
+validateCategoryInner f@FunctionCall{base=Thing{}} = Left [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
+validateCategoryInner a@Access{base=bc, access_id=Unnamed} = Left [Error{error_type=EmptyAccessID, error_stack=[a]}]
 validateCategoryInner other = return other
 
-validateCategory :: Category -> Errorable Category
+validateCategory :: Category -> Either [Error] Category
 validateCategory = applyOnAST (const Nothing) validateCategoryInner
 
 simplifyInner :: Category -> Category
 simplifyInner (Composite _ [any]) = any
 simplifyInner ph@Placeholder{placeholder_type=Element, placeholder_category=category}
-    | level category == Left (Specific 0) = category
+    | level category == Right (Specific 0) = category
     | otherwise = ph
 simplifyInner Placeholder{name=n, placeholder_type=Label, placeholder_category=p2@Placeholder{name=n2}} = p2
 simplifyInner input_category = input_category
 
-simplify :: Category -> Errorable Category
-simplify = applyOnAST (const Nothing) (Valid . simplifyInner)
+simplify :: Category -> Either [Error] Category
+simplify = applyOnAST (const Nothing) (Right . simplifyInner)
 
 -- Basic Interpreter makers
 
-loadModule :: FilePath -> String -> (FilePath -> ErrorableT IO Category) -> FilePath -> ErrorableT IO Category
+loadModule :: FilePath -> String -> CategoryImporter -> FilePath -> CategoryContextT IO Category
 loadModule module_base_path file_ext importer fp =
     let
         repl '.' = '/'
@@ -719,25 +685,23 @@ loadModule module_base_path file_ext importer fp =
 
         removeFileExt :: FilePath -> FilePath
         removeFileExt str = if str == file_ext then "" else  head str:removeFileExt (tail str)
-    in
-        ErrorableT $ do
-            file_exist <- doesFileExist (file_name ++ file_ext)
-            dir_exist <- doesDirectoryExist file_name
-            if file_exist
-                then do
-                    runErrorableT $ importer (file_name ++ file_ext)
-            else if dir_exist
-                then do
-                    dirContents <- listDirectory file_name
-                    let baseDirContents = sort $ map removeFileExt dirContents
-                    let loadedDir = map ((fp ++ ".") ++) baseDirContents
-                    let zipped_dir = zip baseDirContents loadedDir
-                    return $ Valid $ Composite{composite_type=Tuple, inner_categories=
-                        map (\(ref, path) -> Placeholder (Name ref) CategoryData.Label ((Import . Reference . Name) path)) zipped_dir
-                    }
-            else return $ ErrorList [Error BadImport [Reference (Name fp)]]
+    in do
+        file_exist <- lift $ doesFileExist (file_name ++ file_ext)
+        dir_exist <- lift $ doesDirectoryExist file_name
+        if file_exist
+            then importer (file_name ++ file_ext)
+        else if dir_exist
+            then do
+                dirContents <- lift $ listDirectory file_name
+                let baseDirContents = sort $ map removeFileExt dirContents
+                let loadedDir = map ((fp ++ ".") ++) baseDirContents
+                let zipped_dir = zip baseDirContents loadedDir
+                return Composite{composite_type=Tuple, inner_categories=
+                    map (\(ref, path) -> Placeholder (Name ref) CategoryData.Label ((Import . Reference . Name) path)) zipped_dir
+                }
+        else throwError [Error BadImport [Reference (Name fp)]]
 
-evaluateImport :: (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
+evaluateImport :: CategoryImporter -> Category -> CategoryContextT IO Category
 evaluateImport importer (Import i@(Import _)) = evaluateImport importer i
 evaluateImport importer (Import (Reference (Name n))) = importer n
 evaluateImport importer (Import a@Access{base=bc, access_id=id}) =
@@ -758,116 +722,114 @@ evaluateImport importer (Import p@Placeholder{name=n, placeholder_type=CategoryD
         _ -> return $ p{placeholder_category=result}
 evaluateImport importer something = error $ "what is this import case? " ++ show something
 
-stepEvaluate :: Bool -> (FilePath -> ErrorableT IO Category) -> Category -> IO TracedCategory
-stepEvaluate reduce_composite importer c@Composite{inner_categories=[something]} = return $ Traced SingleCompositeUnwrap [Simple $ return c] (return something)
-stepEvaluate reduce_composite importer def@Definition{def_category=d} = return $ Traced SingleDefUnwrap [Simple $ return def] (return d)
-stepEvaluate reduce_composite importer f@FunctionCall{base=bc, argument=a} = do
-    let tried_call = call a bc
-    if isValid tried_call
-        then return $ Traced Calling [Simple $ return f] tried_call
-        else do
-            result_bc <- stepEvaluate reduce_composite importer bc
-            result_a <- stepEvaluate True importer a
-            if output result_bc == return bc && output result_a == return a
-                then return $ Traced Calling [Simple $ return f] tried_call
-                else return $ Traced DeeperEval [result_bc, result_a] $ FunctionCall <$> output result_bc <*> output result_a
-stepEvaluate reduce_composite importer i@Import{import_category=ic} = do
-    result <- runErrorableT $ evaluateImport importer i
-    let default_result = Traced Importing [Simple $ return i] result
-    if isValid result
-        then return default_result
-        else do
-            result_ic <- stepEvaluate reduce_composite importer ic
-            if output result_ic == return ic
-                then return default_result
-                else return $ Traced DeeperEval [result_ic] $ Import <$> output result_ic
-stepEvaluate reduce_composite importer mem@Membership{big_category=bc, small_category=sc} =
-    let
-        default_val = Traced MembershipCheck [Simple $ return mem] $ return sc
-    in
-        if return True == tracedHas bc sc
-            then return default_val
-            else do
-                result_bc <- stepEvaluate reduce_composite importer bc
-                result_sc <- stepEvaluate reduce_composite importer sc
-                if output result_bc == return bc && output result_sc == return sc
-                    then return default_val{output=ErrorList [Error{error_type=BadMembership, error_stack=[mem]}]}
-                    else return $ Traced DeeperEval [result_bc, result_sc] $ Membership <$> output result_bc <*> output result_sc    
-stepEvaluate reduce_composite importer c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
-    result <- stepEvaluate reduce_composite importer i
-    return $ Traced DeeperEval [Simple $ return c, result] $ do
-        eval <- output result
-        return c{inner_categories=Definition eval:rest}
-stepEvaluate reduce_composite importer c@Composite{composite_type=Function, inner_categories=def@(Definition p@(Placeholder ph_name Label ph_c)):rest} = do
+step :: CategoryEvalOptions -> Category -> CategoryContextT IO Category
+step _ c@Composite{inner_categories=[something]} = do
+  tell [Info{msg=SingleCompositeUnwrap, input=[c]}]
+  return something
+step _ def@Definition{def_category=d} = do
+  tell [Info{msg=SingleDefUnwrap, input=[def]}]
+  return d
+step opts f@FunctionCall{base=bc, argument=a} =
+    do
+      tell [Info{msg=Calling, input=[f]}]
+      case call a bc of
+        Right result -> do
+            return result
+        Left errors -> do
+            tell [Info{msg=DeeperEval, input=[f]}]
+            stepped_bc <- step opts bc
+            stepped_a <- step opts{reduce_composite=True} a
+            let step_result = FunctionCall stepped_bc stepped_a
+            if stepped_bc == bc && stepped_a == a
+              then throwError errors
+              else return step_result
+step opts@Options{importer=importer} i@Import{import_category=ic} =
+  do
+    tell [Info{msg=Importing, input=[i]}]
+    evaluateImport importer i
+  `catchError` \error -> do
+    tell [Info{msg=DeeperEval, input=[i]}]
+    result_ic <- step opts ic
+    if result_ic == ic
+        then throwError error
+        else return $ Import result_ic
+step opts mem@Membership{big_category=bc, small_category=sc} = do
+  tell [Info{msg=MembershipCheck, input=[mem]}]
+  case tracedHas bc sc of
+    Right True -> do
+      return sc
+    _ -> do
+      tell [Info{msg=DeeperEval, input=[mem]}]
+      stepped_bc <- step opts bc
+      stepped_sc <- step opts sc
+      let step_result = Membership stepped_bc stepped_sc
+      if stepped_bc == bc && stepped_sc == sc
+        then throwError [Error{error_type=BadMembership, error_stack=[mem]}]
+        else return step_result
+step opts c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
+    tell [Info{msg=DeeperEval, input=[c]}]
+    resolved_import <- step opts i
+    let result = c{inner_categories=Definition resolved_import:rest}
+    return result
+step opts c@Composite{composite_type=Function, inner_categories=def@(Definition p@(Placeholder ph_name Label ph_c)):rest} = do
+    tell [Info{msg=ApplyingDefinition, input=[c]}]
     let replacement = if isRecursiveCategory p then p else ph_c
-    let default_val = Traced ApplyingDefinition [Simple $ return c]
-    case map (replaceReferences ph_name replacement) rest of
-        [] -> return $ default_val $ ErrorList [Error InsufficientFunctionTerms [c]]
-        something_else -> return $ default_val $ Valid c{inner_categories=something_else}
-stepEvaluate reduce_composite importer c@Composite{composite_type=Function, inner_categories=Definition d:rest} =
-    return $ Traced SkippingDefinition [Simple $ return c] $ return c{inner_categories=rest}
-stepEvaluate reduce_composite importer a@Access{base=b, access_id=a_id} = do
-    let result = evaluateAccess a
-    let default_val = Traced Accessing [Simple $ return a]
-    if isValid result
-        then return $ default_val result
-        else do
-            result_b <- stepEvaluate reduce_composite importer b
-            if output result_b == return b
-                then return $ default_val result
-                else return $ Traced DeeperEval [result_b] $ Access <$> output result_b <*> return a_id
-stepEvaluate reduce_composite importer rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} =
-    return $ Traced Simplifying [Simple $ return rr] $ return ph_c
-stepEvaluate reduce_composite importer c@Composite{composite_type=c_type, inner_categories=inner_c} =
+    case rest of
+      [] -> throwError [Error InsufficientFunctionTerms [c]]
+      more_terms -> do
+        let result = c{inner_categories=map (replaceReferences ph_name replacement) more_terms}
+        return result
+{- This skips a definition which has no label, which can't be referenced later -}
+step opts c@Composite{composite_type=Function, inner_categories=Definition d:rest} = do
+  tell [Info{msg=SkippingDefinition, input=[c]}]
+  case rest of
+      [] -> throwError [Error InsufficientFunctionTerms [c]]
+      more_terms -> do
+        let result = c{inner_categories=rest}
+        return result
+step opts a@Access{base=b, access_id=a_id} = do
+    tell [Info{msg=Accessing, input=[a]}]
+    case evaluateAccess a of
+      Right result -> do
+        return result
+      Left errors -> do
+        tell [Info{msg=DeeperEval, input=[a]}]
+        stepped_b <- step opts b
+        if stepped_b == b
+          then throwError errors
+          else do
+            let result = Access stepped_b a_id
+            return result
+step opts rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} = do
+  tell [Info{msg=Simplifying, input=[rr]}]
+  let result = ph_c
+  return result
+step opts@Options{reduce_composite=reduce_composite} c@Composite{composite_type=c_type, inner_categories=inner_c} =
     if not reduce_composite || isFunctionCompositeType c_type
-        then return $ Traced Returning [] $ Valid c
+        then do
+          tell [Info{msg=Returning, input=[c]}]
+          return c
         else do
-            result <- mapM (stepEvaluate reduce_composite importer) inner_c
-            return $ Traced ReducingComposite result $ Composite c_type <$> mapM output result
-stepEvaluate reduce_composite importer other = return $ Traced Returning [] $ Valid other
+          tell [Info ReducingComposite [c]]
+          stepped_inner <- mapM (step opts) inner_c
+          return $ Composite c_type stepped_inner
+step _ other = do
+  tell [Info{msg=Returning, input=[other]}]
+  return other
 
-multipleStepEvaluate :: Int -> Bool -> (FilePath -> ErrorableT IO Category) -> Category -> IO [TracedCategory]
-multipleStepEvaluate steps reduce_composite importer cat =
-    if steps == 0
-        then return [Traced Returning [] $ Valid cat]
-        else do
-            traced_new_cat <- stepEvaluate reduce_composite importer cat
-            let new_cat = output traced_new_cat
-            if isValid new_cat
-                then do
-                    result <- multipleStepEvaluate (steps-1) reduce_composite importer (fromValid new_cat)
-                    return $ traced_new_cat:result
-                else
-                    return [traced_new_cat]
+multipleStepEvaluate :: Int -> CategoryEvalOptions -> Category -> CategoryContextT IO Category
+multipleStepEvaluate 0 opts cat = do
+  tell [Info{msg=Returning, input=[cat]}]
+  return cat
+multipleStepEvaluate steps opts cat = do
+    new_cat <- step opts cat
+    if new_cat == cat
+      then return cat
+      else multipleStepEvaluate (steps-1) opts new_cat
 
-dbgEvaluate :: Bool -> (FilePath -> ErrorableT IO Category) -> Category -> IO [TracedCategory]
-dbgEvaluate reduce_composite importer cat = do
-    traced_new_cat <- stepEvaluate reduce_composite importer cat
-    let new_cat = output traced_new_cat
-    if isError new_cat || fromValid new_cat == cat
-        then return [traced_new_cat]
-        else do
-            result <- dbgEvaluate reduce_composite importer (fromValid $ output traced_new_cat)
-            return $ traced_new_cat:result
-
-fullEvaluate :: Bool -> (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-fullEvaluate reduce_composite importer cat = ErrorableT $ do
-    traced_new_cat <- stepEvaluate reduce_composite importer cat
-    let new_cat = output traced_new_cat
-    if isError new_cat || fromValid new_cat == cat
-        then return new_cat
-        else runErrorableT $ fullEvaluate reduce_composite importer (fromValid new_cat)
-
-execute :: Bool -> (FilePath -> ErrorableT IO Category) -> Category -> ErrorableT IO Category
-execute reduce_composite importer input_cat = do
-    let step1 = simplify input_cat >>= validateCategory
-    case step1 of
-        ErrorList ers -> ErrorableT $ return $ ErrorList ers
-        Valid cat -> fullEvaluate reduce_composite importer cat
-
-dbgExecute :: Bool -> (FilePath -> ErrorableT IO Category) -> Category -> IO [TracedCategory]
-dbgExecute reduce_composite importer input_cat = do
-    let step1 = simplify input_cat >>= validateCategory
-    case step1 of
-        ErrorList ers -> return [Simple $ ErrorList ers]
-        Valid cat -> dbgEvaluate reduce_composite importer cat
+execute :: CategoryEvalOptions -> Category -> CategoryContextT IO Category
+execute opts cat = do
+    new_cat <- step opts cat
+    if new_cat == cat
+      then return new_cat
+      else execute opts new_cat

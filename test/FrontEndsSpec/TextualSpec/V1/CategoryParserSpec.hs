@@ -18,7 +18,7 @@ import Debug.Trace
 
 spec :: Spec
 spec = do
-    let executeTextual = execute False loadTextual
+    let executeTextual = fmap fst . runCategoryContextT . execute (Options{reduce_composite=False, importer=loadTextual})
     describe "Thing Parser" $ do
         it "(Things) should parse things" $ do
             parseCategoryString "`Something" `shouldBe` Thing{name=Name "Something"}
@@ -87,39 +87,39 @@ spec = do
             parseCategoryString "define x:`something" `shouldBe` Definition{def_category=Placeholder{name=Name "x", placeholder_type=Label, placeholder_category=Thing (Name "something")}}
     describe "File loading" $ do
         it "should load files - test1" $ do
-            result <- runErrorableT $ executeTextual (Import (Reference (Name "test.test1")))
-            result `shouldBe` Valid (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
+            result <- executeTextual (Import (Reference (Name "test.test1")))
+            result `shouldBe` Right (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
         it "should load files - test2" $ do
-            result <- runErrorableT $ executeTextual (Import (Reference (Name "test.test2")))
-            result `shouldBe` Valid (Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
+            result <- executeTextual (Import (Reference (Name "test.test2")))
+            result `shouldBe` Right (Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
         it "should load files - test3" $ do
-            result <- runErrorableT $ executeTextual (Import (Reference (Name "test.test_define")))
-            result `shouldBe`  Valid (Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}})
+            result <- executeTextual (Import (Reference (Name "test.test_define")))
+            result `shouldBe`  Right (Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}})
         it "should load dirs" $ do
-            result <- runErrorableT $ executeTextual (Import (Reference (Name "test")))
-            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
+            result <- executeTextual (Import (Reference (Name "test")))
+            result `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
         it "should load tuples" $ do
-            result <- runErrorableT $ executeTextual $ Import (Composite Tuple [Reference (Name "test.test1"), Reference (Name "test.test2"), Reference (Name "test.test_define")])
-            result1 <- runErrorableT $ executeTextual (Import (Reference (Name "test.test1")))
-            result2 <- runErrorableT $ executeTextual (Import (Reference (Name "test.test2")))
-            result3 <- runErrorableT $ executeTextual (Import (Reference (Name "test.test_define")))
-            result `shouldBe` Valid (Composite Tuple (map fromValid [result1, result2, result3]))
+            result <- executeTextual $ Import (Composite Tuple [Reference (Name "test.test1"), Reference (Name "test.test2"), Reference (Name "test.test_define")])
+            result1 <- executeTextual (Import (Reference (Name "test.test1")))
+            result2 <- executeTextual (Import (Reference (Name "test.test2")))
+            result3 <- executeTextual (Import (Reference (Name "test.test_define")))
+            result `shouldBe` Right (Composite Tuple (map (fromRight (error "404")) [result1, result2, result3]))
         it "should load placeholders" $ do
-            result <- runErrorableT $ executeTextual $ Import (Placeholder (Name "some_name") Label (Reference (Name "test.test1")))
-            result1 <- runErrorableT $ executeTextual (Import (Reference (Name "test.test1")))
-            result `shouldBe` Valid (Placeholder (Name "some_name") Label (placeholder_category (fromValid result1)))
+            result <- executeTextual $ Import (Placeholder (Name "some_name") Label (Reference (Name "test.test1")))
+            result1 <- executeTextual (Import (Reference (Name "test.test1")))
+            result `shouldBe` Right (Placeholder (Name "some_name") Label (placeholder_category (fromRight (error "404") result1)))
     describe "executeTextual" $ do
         it "should evaluate import" $ do
             let parsed_result = parseCategoryString "import $test"
-            result <- runErrorableT $ executeTextual parsed_result
-            result `shouldBe` Valid (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
+            result <- executeTextual parsed_result
+            result `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
         it "should evaluate indexed imports" $ do
             let parsed_result = parseCategoryString "import $test.test1"
-            result <- runErrorableT $ executeTextual parsed_result
-            result1 <- runErrorableT $ executeTextual (Import (Reference (Name "test.test1")))
+            result <- executeTextual parsed_result
+            result1 <- executeTextual (Import (Reference (Name "test.test1")))
             result `shouldBe` result1
         it "should evaluate labeled imports" $ do
             let parsed_result = parseCategoryString "import x:$test.test1"
-            result <- runErrorableT $ executeTextual parsed_result
-            result1 <- runErrorableT $ executeTextual (Import (Reference (Name "test.test1")))
-            result `shouldBe` Valid (Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = (placeholder_category . fromValid) result1 })
+            result <- executeTextual parsed_result
+            result1 <- executeTextual (Import (Reference (Name "test.test1")))
+            result `shouldBe` Right (Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = (placeholder_category . fromRight (error "404")) result1 })

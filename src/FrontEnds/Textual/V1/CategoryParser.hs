@@ -23,6 +23,7 @@ import System.FilePath.Posix
 import qualified Data.Text.IO as TextIO
 import Data.List (sort)
 import qualified Data.Set as Set
+import Control.Monad.Trans
 
 
 _baseParseCategory :: Parser a -> FilePath -> Text -> a
@@ -85,8 +86,8 @@ withValidation parser = do
     -- result <- dbg "validation" parser
     result <- parser
     case validateCategoryInner result of
-        Valid cat -> return cat
-        ErrorList errors -> region (setErrorOffset offset) (fail (concatMap errorToString errors))
+        Right cat -> return cat
+        Left errors -> region (setErrorOffset offset) (fail (concatMap errorToString errors))
 
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
@@ -274,11 +275,8 @@ textualBasePath = "/home/mpriam/git/mtpl_language/src/FrontEnds/Textual/V1/Categ
 textualFileExt :: String
 textualFileExt = ".mtpl"
 
-pErrorableCategory :: Parser (Errorable Category)
-pErrorableCategory = Valid <$> pCategory
+pTextualFile :: FilePath -> CategoryContextT IO Category
+pTextualFile fp = lift $ parseCategoryFileWith pCategory fp
 
-pTextualFile :: FilePath -> ErrorableT IO Category
-pTextualFile fp = ErrorableT $ parseCategoryFileWith pErrorableCategory fp
-
-loadTextual :: FilePath -> ErrorableT IO Category
+loadTextual :: FilePath -> CategoryContextT IO Category
 loadTextual = loadModule textualBasePath textualFileExt pTextualFile
