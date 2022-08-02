@@ -26,25 +26,26 @@ spec = do
             return $ replaceResolved $ fromRight (error "404") result;
         }
         describe "list" $ do
+            let has' a b = fst $ runCategoryContext $ has a b
             it "(list) should substitute type correctly on evaluate" $ do
                 execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
                 categoryToString execute_result `shouldBe` "list_def:|`empty,nonempty:(`1,$list_def)|"
             it "(list) should have the empty" $ do
                 let empty_test = parseCategoryString "`empty"
                 execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
-                execute_result `tracedHas` empty_test `shouldBe` Right True
+                execute_result `has'` empty_test `shouldBe` Right True
             it "(list) should have the single elem list" $ do
                 let test1 = parseCategoryString "(`1,`empty)"
                 execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
-                execute_result `tracedHas` test1 `shouldBe` Right True
+                execute_result `has'` test1 `shouldBe` Right True
             it "(list) should have the two elem list" $ do
                 let test2 = parseCategoryString "(`1,(`1,`empty))"
                 execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
-                execute_result `tracedHas` test2 `shouldBe` Right True
+                execute_result `has'` test2 `shouldBe` Right True
             it "(list) should have the three elem list" $ do
                 let test3 = parseCategoryString "(`1,(`1,(`1,`empty)))"
                 execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
-                execute_result `tracedHas` test3 `shouldBe` Right True
+                execute_result `has'` test3 `shouldBe` Right True
         describe "join" $ do
             it "(join) should properly access join" $ do
                 let list_on_1_join = parseCategoryString "(import $base.linkedlist)[`1].join"

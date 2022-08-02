@@ -23,18 +23,19 @@ spec = do
             isRight parsedCategory `shouldBe` True
             -- putStrLn $ prettyCategoryToString (fromValid parsedCategory)
         describe "has" $ do
+            let has' a b = fst $ runCategoryContext $ has a b
             it "should have zero" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).natural")
                 zero <- executeTextual (parseCategoryString "`zero")
                 isRight parsedCategory `shouldBe` True
                 isRight zero `shouldBe` True
-                fromRight (error "404") parsedCategory `has` fromRight (error "404") zero `shouldBe` return True
+                fromRight (error "404") parsedCategory `has'` fromRight (error "404") zero `shouldBe` Right True
             it "should have one" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).natural")
                 one <- executeTextual (parseCategoryString "(`successor, `zero)")
                 isRight parsedCategory `shouldBe` True
                 isRight one `shouldBe` True
-                fromRight (error "404") parsedCategory `has` fromRight (error "404") one `shouldBe` return True
+                fromRight (error "404") parsedCategory `has'` fromRight (error "404") one `shouldBe` return True
         describe "increment" $ do
             it "should increment zero" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).increment[`zero]")

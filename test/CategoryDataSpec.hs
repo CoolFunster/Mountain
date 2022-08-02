@@ -84,6 +84,7 @@ spec = do
     --             placeholder_category=Composite{composite_type=Tuple,inner_categories=[thing, Reference{name=Name "self"}]}}
     --         level recursive_cat `shouldBe` Right (Specific 1)
     describe "has" $ do
+        let has' a b = fst $ runCategoryContext $ has a b
         let thing = Thing (Name "thing")
         let thing2 = Thing (Name "thing2")
         let thing3 = Thing (Name "thing3")
@@ -96,88 +97,88 @@ spec = do
         let a_c = Composite Function [a, c]
         let a_d = Composite Function [a, d]
         it "(things) should make equal things have each other" $ do
-            has thing thing `shouldBe` Right True
-            has thing thing2 `shouldBe` Right False
-            has thing2 thing `shouldBe` Right False
+            has' thing thing `shouldBe` Right True
+            has' thing thing2 `shouldBe` Right False
+            has' thing2 thing `shouldBe` Right False
         it "(things) should make things have equal singular algebraic types" $ do
             let product_things = Composite Tuple [thing]
-            has thing product_things `shouldBe` Right True
-            has thing2 product_things `shouldBe` Right False
+            has' thing product_things `shouldBe` Right True
+            has' thing2 product_things `shouldBe` Right False
             let product_things = Composite Tuple [thing]
-            has thing product_things `shouldBe` Right True
-            has thing2 product_things `shouldBe` Right False
+            has' thing product_things `shouldBe` Right True
+            has' thing2 product_things `shouldBe` Right False
         it "(morphisms) properly checks simple morphisms" $ do
             let a_b = Composite Function [a, b]
             let a_c = Composite Function [a, c]
             let b_c = Composite Function [b, c]
 
-            has a_b a_b `shouldBe` Right True
-            has a_b a_c `shouldBe` Right False
-            has a_b b_c `shouldBe` Right False
+            has' a_b a_b `shouldBe` Right True
+            has' a_b a_c `shouldBe` Right False
+            has' a_b b_c `shouldBe` Right False
         it "(morphisms) does not allow intermediate morphisms" $ do
             let a_b = Composite Function [a, b]
             let a_c = Composite Function [a, c]
             let b_c = Composite Function [b, c]
             let a_b_c = Composite Function [a, b_c]
 
-            has a_c a_b_c `shouldBe` Right False
+            has' a_c a_b_c `shouldBe` Right False
         it "(Product) should make Tuple of things have only a Tuple of those things" $ do
             let product_things = Composite Tuple [thing, thing2]
-            has product_things thing `shouldBe` Right False
-            has product_things thing2 `shouldBe` Right False
-            has product_things thing3 `shouldBe` Right False
-            has product_things product_things `shouldBe` Right True
-            has product_things (Composite Tuple [thing, thing3]) `shouldBe` Right False
+            has' product_things thing `shouldBe` Right False
+            has' product_things thing2 `shouldBe` Right False
+            has' product_things thing3 `shouldBe` Right False
+            has' product_things product_things `shouldBe` Right True
+            has' product_things (Composite Tuple [thing, thing3]) `shouldBe` Right False
         it "(Product) should ignore products of length 1" $ do
             let product_things = Composite Tuple [thing]
-            has product_things thing `shouldBe` Right True
-            has product_things thing2 `shouldBe` Right False
-            has product_things product_things `shouldBe` Right True
-            has product_things (Composite Tuple [thing, thing2]) `shouldBe` Right False
+            has' product_things thing `shouldBe` Right True
+            has' product_things thing2 `shouldBe` Right False
+            has' product_things product_things `shouldBe` Right True
+            has' product_things (Composite Tuple [thing, thing2]) `shouldBe` Right False
         it "(Union) should make a sum of things have each of those things" $ do
             let sum_things = Composite Union [thing, thing2]
-            has sum_things thing `shouldBe` Right True
-            has sum_things thing2 `shouldBe` Right True
-            has sum_things thing3 `shouldBe` Right False
-            has thing sum_things `shouldBe` Right False
-            has thing2 sum_things `shouldBe` Right False
-            has thing3 sum_things `shouldBe` Right False
-            has sum_things sum_things `shouldBe` Right True
-            has sum_things (Composite Union [thing, thing3]) `shouldBe` Right False
-            has sum_things (Composite Union [thing, thing2, thing3]) `shouldBe` Right False
-            has (Composite Union [thing, thing2, thing3]) sum_things `shouldBe` Right True
+            has' sum_things thing `shouldBe` Right True
+            has' sum_things thing2 `shouldBe` Right True
+            has' sum_things thing3 `shouldBe` Right False
+            has' thing sum_things `shouldBe` Right False
+            has' thing2 sum_things `shouldBe` Right False
+            has' thing3 sum_things `shouldBe` Right False
+            has' sum_things sum_things `shouldBe` Right True
+            has' sum_things (Composite Union [thing, thing3]) `shouldBe` Right False
+            has' sum_things (Composite Union [thing, thing2, thing3]) `shouldBe` Right False
+            has' (Composite Union [thing, thing2, thing3]) sum_things `shouldBe` Right True
         it "(Composition) should only check input output of composite morphisms" $ do
             let composite_morphism = Composite Composition [a_b, b_c]
 
-            has composite_morphism a_c `shouldBe` Right True
-            has a_c composite_morphism `shouldBe` Right True
+            has' composite_morphism a_c `shouldBe` Right True
+            has' a_c composite_morphism `shouldBe` Right True
         it "(Case) should pass it on to any of the interal foos" $ do
             let sumposite_morphism = Composite Case [a_b, b_c]
 
-            has sumposite_morphism a_b `shouldBe` Right True
-            has sumposite_morphism b_c `shouldBe` Right True
-            has sumposite_morphism a_c `shouldBe` Right False
+            has' sumposite_morphism a_b `shouldBe` Right True
+            has' sumposite_morphism b_c `shouldBe` Right True
+            has' sumposite_morphism a_c `shouldBe` Right False
         it "(Union) should have each of its inner categories" $ do
             let higher_category = Composite Union [a,b,a_b,b_c]
 
-            has higher_category a `shouldBe` Right True
-            has higher_category b `shouldBe` Right True
-            has higher_category c `shouldBe` Right False
-            has higher_category a_b `shouldBe` Right True
-            has higher_category b_c `shouldBe` Right True
-            has higher_category a_c `shouldBe` Right False
-            has higher_category d `shouldBe` Right False
-            has higher_category a_d `shouldBe` Right False
+            has' higher_category a `shouldBe` Right True
+            has' higher_category b `shouldBe` Right True
+            has' higher_category c `shouldBe` Right False
+            has' higher_category a_b `shouldBe` Right True
+            has' higher_category b_c `shouldBe` Right True
+            has' higher_category a_c `shouldBe` Right False
+            has' higher_category d `shouldBe` Right False
+            has' higher_category a_d `shouldBe` Right False
         it "(Placeholder) should be contained by its category" $ do
             let higher_category = Composite Union [a,b,a_b,b_c]
             let ph_hc = Placeholder (Name "ph-all") Element higher_category
 
-            has higher_category ph_hc `shouldBe` Right True
-            has ph_hc higher_category  `shouldBe` Right True
+            has' higher_category ph_hc `shouldBe` Right True
+            has' ph_hc higher_category  `shouldBe` Right True
         it "(RecursiveCategory) should have each of the component elements" $ do
-            nat `has` Thing (Name "0") `shouldBe` Right True
-            nat `has` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Right True
-            nat `has` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Right True
+            nat `has'` Thing (Name "0") `shouldBe` Right True
+            nat `has'` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Right True
+            nat `has'` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Right True
     describe "call" $ do
         let call' a b = fst $ runCategoryContext $ call a b
         it "(NonMorphism) should return Nothing" $ do
