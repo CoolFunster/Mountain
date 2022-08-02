@@ -98,7 +98,7 @@ errorableToString (Left errors) = foldl (\cur new -> if cur == ""
                                                                 else cur ++ ";\n" ++ errorToString new) "" errors
 
 categoryLogToString :: CategoryLog -> String
-categoryLogToString Info{msg=msg, input=input} = 
+categoryLogToString Step{msg=msg, input=input} = 
   show msg ++ "\n" ++ intercalate "\n" (map prettyCategoryToString input) ++ "\n ==== \n"
 
 applyOnLast :: (a -> a) -> [a] -> [a]

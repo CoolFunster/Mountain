@@ -76,7 +76,7 @@ spec = do
                 execute_result <- executeToCategory list_on_1_head
                 categoryToString execute_result `shouldBe` "input@((list_def:|`empty,nonempty:(`1,$list_def)|).nonempty)->(`1)::(($input).#0)"
             it "should be returning the head elem 1" $ do
-                let test_case = fromRight (error "404") $ simplify $ parseCategoryString "(import $base.linkedlist)[`1].head[(`1, `empty)]"
+                let test_case = parseCategoryString "(import $base.linkedlist)[`1].head[(`1, `empty)]"
                 execute_result <- executeToCategory test_case
                 categoryToString execute_result `shouldBe` "`1"
             it "should be returning the head elem 2" $ do

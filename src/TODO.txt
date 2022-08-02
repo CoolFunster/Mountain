@@ -1,3 +1,11 @@
-- nested rebinding
+- nested relabeling upon function call
+  (handles structural pattern matching)
+- strings
+- builtin parsing of numbers, strings, & lists
+- debugging has and call
+
+dev tooling
+- typechecking
 - unbound references
-- clean up debugger code via pulling out definitions...?
+- vscode coloring
+- autocomplete

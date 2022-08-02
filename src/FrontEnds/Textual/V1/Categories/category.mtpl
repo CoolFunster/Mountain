@@ -1,0 +1,44 @@
+import list:$base.linkedlist
+-> import string:$base.string
+-> import natural:$base.natural
+-> define Id:|
+    name:$string,
+    index:$natural,
+    `Unnamed
+  |
+-> define SpecialCategoryType:|
+    `Flexible,
+    `Universal
+  |
+-> define CompositeType:|
+    `Tuple,
+    `Union,
+    `Function,
+    `Composition,
+    `Case
+  |
+-> define PlaceholderType:|
+    `Label,
+    `Element,
+    `Resolved
+  |
+-> define Category:|
+    thing:          (`Thing, name:$Id),
+    composite:      (`Composite, composite_type:$CompositeType, inner_categories:$list[$Category]),
+    placeholder:    (`Placeholder, placeholder_type:$PlaceholderType, placeholder_category:$Category),
+    refined:        (`Refined, base:$Category, predicate:(`Composite, `Function, $list[$Category]),
+    special:        (`Special, special_type:$SpecialCategoryType),
+    reference:      (`Reference, name:$Id),
+    function_call:  (`FunctionCall, base:(`Composite, `Function, $list[$Category]), argument:$Category),
+    access:         (`Access, base:$Category, access_id:$Id),
+    import:         (`Import, import_category:$Category),
+    definition:     (`Definition, def_category:$Category),
+    membership:     (`Membership, big_category:$Category, small_category:$Category)
+  |
+-> return (
+  id_type:$Id,
+  special_category_type:$SpecialCategoryType,
+  composite_type:$CompositeType,
+  placeholder_type:$PlaceholderType,
+  category:$Category,
+)
