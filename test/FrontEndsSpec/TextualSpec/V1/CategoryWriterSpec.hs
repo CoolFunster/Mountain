@@ -21,8 +21,8 @@ spec = do
             categoryToString Composite {composite_type = Union, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "|`a,`b|"
         it "(Composition) should write composite categories" $ do
             categoryToString Composite {composite_type = Composition, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*(`a,`b)*"
-        it "(Case) should write sumposite categories" $ do
-            categoryToString Composite {composite_type = Case, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*|`a,`b|*"
+        it "(Match) should write sumposite categories" $ do
+            categoryToString Composite {composite_type = Match, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*|`a,`b|*"
         it "(Function) should write chains" $ do
             categoryToString (Composite Function [Thing (Name "a"), Composite Function [Thing (Name "b"), Thing (Name "c")]]) `shouldBe`  "`a->`b->`c"
         it "(Function) should write named morphisms" $ do
@@ -33,11 +33,11 @@ spec = do
             categoryToString Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")} `shouldBe` "x@`a"
         it "(Refinement) should write refinement" $ do
             categoryToString Refined{base=Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
-        it "(Special) should write flexible" $ do
-            categoryToString Special{special_type=Flexible} `shouldBe` "(%)"
-        it "(Special) should write Universal" $ do
-            categoryToString Special{special_type=Universal} `shouldBe` "Any"
-        it "(Special) should write Reference" $ do
+        it "(BuiltIn) should write flexible" $ do
+            categoryToString BuiltIn{special_type=Flexible} `shouldBe` "(%)"
+        it "(BuiltIn) should write Universal" $ do
+            categoryToString BuiltIn{special_type=Universal} `shouldBe` "Any"
+        it "(BuiltIn) should write Reference" $ do
             categoryToString Reference{name=Name "Stuff"} `shouldBe` "$Stuff"
         it "(Call) should write call" $ do
             categoryToString FunctionCall{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg") } `shouldBe` "$base_foo[$some_arg]"

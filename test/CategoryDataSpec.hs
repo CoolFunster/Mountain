@@ -154,8 +154,8 @@ spec = do
 
             has' composite_morphism a_c `shouldBe` Right True
             has' a_c composite_morphism `shouldBe` Right True
-        it "(Case) should pass it on to any of the interal foos" $ do
-            let sumposite_morphism = Composite Case [a_b, b_c]
+        it "(Match) should pass it on to any of the interal foos" $ do
+            let sumposite_morphism = Composite Match [a_b, b_c]
 
             has' sumposite_morphism a_b `shouldBe` Right True
             has' sumposite_morphism b_c `shouldBe` Right True
@@ -208,7 +208,7 @@ spec = do
             call' a composite_morphism `shouldBe` Right c
             isLeft (call' b composite_morphism) `shouldBe` True
             isLeft (call' c composite_morphism) `shouldBe` True
-        it "(Composite Case) should handle sums right" $ do
+        it "(Composite Match) should handle sums right" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let c = Thing (Name "c")
@@ -217,7 +217,7 @@ spec = do
             let b_c = Composite Function [b, c]
             let a_c = Composite Function [a, c]
 
-            let case_function = Composite Case [a_b, b_c]
+            let case_function = Composite Match [a_b, b_c]
 
             call' a case_function `shouldBe` Right b
             call' b case_function `shouldBe` Right c
@@ -266,13 +266,13 @@ spec = do
         let foo = Composite Composition [fooab, foobc]
         let result = getResultOf $ flatten foo
         result `shouldBe` Right (Composite Function [a, c])
-      it "(Case) should return the flattened case" $ do
-        let foo = Composite Case [fooab, foobc]
+      it "(Match) should return the flattened case" $ do
+        let foo = Composite Match [fooab, foobc]
         let result = getResultOf $ flatten foo
         result `shouldBe` Right (Composite {composite_type = Function, inner_categories = [Composite {composite_type = Union, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Union, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]})
-      it "(Case) should handle nested case" $ do
-        let foo = Composite Case [fooab, foobc]
-        let foo2 = Composite Case [fooab, foo]
+      it "(Match) should handle nested case" $ do
+        let foo = Composite Match [fooab, foobc]
+        let foo2 = Composite Match [fooab, foo]
         let result = getResultOf $ flatten foo2
         isRight result `shouldBe` True
         -- todo: nested unions cleanup?
@@ -317,7 +317,7 @@ spec = do
                 name=Name "ab",
                 placeholder_type=Label,
                 placeholder_category=Composite {
-                    composite_type=Case,
+                    composite_type=Match,
                     inner_categories=[
                         Composite Function [a,b],
                         Composite Function [b, FunctionCall (Reference (Name "ab")) a]
@@ -335,7 +335,7 @@ spec = do
             result <- stepEvaluate unfolded_on_a
             result `shouldBe` Right b
             result <- stepEvaluate unfolded_on_b
-            result `shouldBe`  Right (FunctionCall {base = Placeholder {name = Name "ab", placeholder_type = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
+            result `shouldBe`  Right (FunctionCall {base = Placeholder {name = Name "ab", placeholder_type = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
             let extracted_result = fromRight (error "should not hit") result
             result2 <- executeAST extracted_result
             result2 `shouldBe` Right b
@@ -387,4 +387,4 @@ spec = do
         it "should import categories test2" $ do
             let test_item = Import{import_category=Reference (Name "test.test2")}
             result <- getResultOfT $ evaluateImport loadAST test_item
-            result `shouldBe` Right Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
+            result `shouldBe` Right Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}

@@ -6,7 +6,7 @@ import list:$base.linkedlist
     index:$natural,
     `Unnamed
   |
--> define SpecialCategoryType:|
+-> define BuiltInCategoryType:|
     `Flexible,
     `Universal
   |
@@ -15,7 +15,7 @@ import list:$base.linkedlist
     `Union,
     `Function,
     `Composition,
-    `Case
+    `Match
   |
 -> define PlaceholderType:|
     `Label,
@@ -27,7 +27,7 @@ import list:$base.linkedlist
     composite:      (`Composite, composite_type:$CompositeType, inner_categories:$list[$Category]),
     placeholder:    (`Placeholder, placeholder_type:$PlaceholderType, placeholder_category:$Category),
     refined:        (`Refined, base:$Category, predicate:(`Composite, `Function, $list[$Category]),
-    special:        (`Special, special_type:$SpecialCategoryType),
+    special:        (`BuiltIn, special_type:$BuiltInCategoryType),
     reference:      (`Reference, name:$Id),
     function_call:  (`FunctionCall, base:(`Composite, `Function, $list[$Category]), argument:$Category),
     access:         (`Access, base:$Category, access_id:$Id),
@@ -37,7 +37,7 @@ import list:$base.linkedlist
   |
 -> return (
   id_type:$Id,
-  special_category_type:$SpecialCategoryType,
+  special_category_type:$BuiltInCategoryType,
   composite_type:$CompositeType,
   placeholder_type:$PlaceholderType,
   category:$Category,

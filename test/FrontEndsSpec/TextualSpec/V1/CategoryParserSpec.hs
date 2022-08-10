@@ -46,10 +46,10 @@ spec = do
             let a_to_b = parseCategoryString "`a -> `b"
             let b_to_c = parseCategoryString "`b -> `c"
             parseCategoryString "*(`a -> `b, `b -> `c)*" `shouldBe` Composite{composite_type=Composition,inner_categories=[a_to_b, b_to_c]}
-        it "(Case) should parse sumpositions" $ do
+        it "(Match) should parse sumpositions" $ do
             let a_to_b = parseCategoryString "`a -> `b"
             let b_to_c = parseCategoryString "`b -> `c"
-            parseCategoryString "*|`a -> `b, `b -> `c|*" `shouldBe` Composite{composite_type=Case,inner_categories=[a_to_b, b_to_c]}
+            parseCategoryString "*|`a -> `b, `b -> `c|*" `shouldBe` Composite{composite_type=Match,inner_categories=[a_to_b, b_to_c]}
         it "(Placeholder) should parse placeholders" $ do
             parseCategoryString "x@`a" `shouldBe` Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}
             parseCategoryString "x@(`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Element, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}
@@ -60,13 +60,13 @@ spec = do
             parseCategoryString "x:(x:`a)" `shouldBe` Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "a"}}]}}
         it "(Refinement) should parse refinement" $ do
             parseCategoryString "{x@(`a) | `a -> `b}" `shouldBe` Refined {base = Placeholder {name = Name "x", placeholder_type = Element, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"}]}}, predicate = Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}}
-        it "(Special) should parse flexible" $ do
-            parseCategoryString "(%)" `shouldBe` Special{special_type=Flexible}
-            parseCategoryString "test:(%)" `shouldBe` Placeholder {name = Name "test", placeholder_type=Label, placeholder_category = Special {special_type = Flexible}}
-        it "(Special) should parse Universal" $ do
-            parseCategoryString  "Any" `shouldBe` Special{special_type=Universal}
-            parseCategoryString "test:Any" `shouldBe` Placeholder {name = Name "test", placeholder_type=Label, placeholder_category = Special {special_type = Universal}}
-        it "(Special) should parse Reference" $ do
+        it "(BuiltIn) should parse flexible" $ do
+            parseCategoryString "(%)" `shouldBe` BuiltIn{special_type=Flexible}
+            parseCategoryString "test:(%)" `shouldBe` Placeholder {name = Name "test", placeholder_type=Label, placeholder_category = BuiltIn {special_type = Flexible}}
+        it "(BuiltIn) should parse Universal" $ do
+            parseCategoryString  "Any" `shouldBe` BuiltIn{special_type=Universal}
+            parseCategoryString "test:Any" `shouldBe` Placeholder {name = Name "test", placeholder_type=Label, placeholder_category = BuiltIn {special_type = Universal}}
+        it "(BuiltIn) should parse Reference" $ do
             parseCategoryString "$Stuff" `shouldBe` Reference (Name "Stuff")
         it "(Call) should parse call" $ do
             parseCategoryString "$base_foo[$some_arg]" `shouldBe` FunctionCall{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg")}
@@ -91,7 +91,7 @@ spec = do
             result `shouldBe` Right (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
         it "should load files - test2" $ do
             result <- executeTextual (Import (Reference (Name "test.test2")))
-            result `shouldBe` Right (Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Case, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
+            result `shouldBe` Right (Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
         it "should load files - test3" $ do
             result <- executeTextual (Import (Reference (Name "test.test_define")))
             result `shouldBe`  Right (Placeholder {name = Name "test_define", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}})

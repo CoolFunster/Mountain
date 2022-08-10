@@ -21,7 +21,7 @@ import Test.Hspec
 -- import Debug.Trace
 -- import qualified Test.QuickCheck.Arbitrary as Q
 
--- instance Q.Arbitrary SpecialCategoryType where
+-- instance Q.Arbitrary BuiltInCategoryType where
 --     arbitrary = do
 --         Q.oneof [
 --             return Flexible,
@@ -90,8 +90,8 @@ import Test.Hspec
 --             (1, Placeholder <$> arbitrary <*> arbitrary <*> arbitrary),
 --             (1, RefinedCategory <$> (Placeholder <$> arbitrary <*> arbitrary <*> arbitrary) <*> arbitrary),
 --             (3, Q.oneof [
---                     return Special{special_type=Flexible},
---                     return Special{special_type=Universal},
+--                     return BuiltIn{special_type=Flexible},
+--                     return BuiltIn{special_type=Universal},
 --                     return Reference{name=arbitrary_name}]),
 --             (4, CategoryData.Label <$> arbitrary <*> arbitrary ),
 --             (1, MorphismCall <$> Q.suchThat arbitrary isMorphic <*> arbitrary),
@@ -109,12 +109,12 @@ spec = do
 --         -- it "Parser Writer property check" $ Q.property $
 --         --     \x -> (categoryToText . parseCategoryString . categoryToText) x `shouldBe` categoryToText x
 --         it "should handle weird inputs" $ do
---             let result = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "teqtbwxzcgzbzzs"}},MorphismTerm {m_type = Given, m_category = Special {special_type = Flexible}},MorphismTerm {m_type = Return, m_category = Dereference {base_category = Thing {name = Name "qaxdhkrfcwrdazf"}, category_id = Name "pbyuagseuymmttb"}}]}
+--             let result = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "teqtbwxzcgzbzzs"}},MorphismTerm {m_type = Given, m_category = BuiltIn {special_type = Flexible}},MorphismTerm {m_type = Return, m_category = Dereference {base_category = Thing {name = Name "qaxdhkrfcwrdazf"}, category_id = Name "pbyuagseuymmttb"}}]}
 --             let new_result = categoryToText result
 --             let parsed_result = parseCategoryText new_result
 --             parsed_result `shouldBe` result
 --         it "should handle weird inputs 2" $ do
---             let result = MorphismCall {base_morphism = Special {special_type = Universal}, argument = MorphismCall {base_morphism = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Dereference {base_category = Special {special_type = Universal}, category_id = Name "zhzftofcpkstfpf"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "ydwodbwscbdpzzx"}}]}, argument = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "mymsyuvyykursxj"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "lpssbqsnstpqadc"}}]}}}
+--             let result = MorphismCall {base_morphism = BuiltIn {special_type = Universal}, argument = MorphismCall {base_morphism = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Dereference {base_category = BuiltIn {special_type = Universal}, category_id = Name "zhzftofcpkstfpf"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "ydwodbwscbdpzzx"}}]}, argument = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Thing {name = Name "mymsyuvyykursxj"}},MorphismTerm {m_type = Return, m_category = Thing {name = Name "lpssbqsnstpqadc"}}]}}}
 --             let new_result = categoryToText result
 --             -- TextIO.putStrLn new_result
 --             let parsed_result = parseCategoryText new_result

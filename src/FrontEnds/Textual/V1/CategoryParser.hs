@@ -207,7 +207,7 @@ pStandardCategory = choice [
     try pFlexible,
     try pComposition,
     try pTuple,
-    try pCase,
+    try pMatch,
     try pUnion,
     try pRefinement]
 
@@ -226,12 +226,12 @@ pReference = withValidation $ do
 pUniversal :: Parser Category
 pUniversal = withValidation $ do
     _ <- symbol (pack "Any")
-    return (Special Universal)
+    return (BuiltIn Universal)
 
 pFlexible :: Parser Category
 pFlexible = withValidation $ do
     _ <- symbol (pack "(%)")
-    return (Special Flexible)
+    return (BuiltIn Flexible)
 
 
 {- Parses composite types that have a beg & end character wrapping them -}
@@ -253,8 +253,8 @@ pUnion = pCompositeTemplate Union ("|", "|")
 pComposition :: Parser Category
 pComposition = pCompositeTemplate Composition ("*(", ")*")
 
-pCase :: Parser Category
-pCase = pCompositeTemplate Case ("*|", "|*")
+pMatch :: Parser Category
+pMatch = pCompositeTemplate Match ("*|", "|*")
 
 pRefinementInner :: Parser Category
 pRefinementInner = withValidation $ do

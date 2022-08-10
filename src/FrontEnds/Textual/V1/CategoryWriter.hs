@@ -23,7 +23,7 @@ categoryToString (Thing name) = "`" ++ idToString name
 categoryToString (Composite Tuple inner) = "(" ++ intercalate "," (map categoryToString inner) ++ ")"
 categoryToString (Composite Union inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
 categoryToString (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToString inner) ++ ")*"
-categoryToString (Composite Case inner) = "*|" ++ intercalate "," (map categoryToString inner) ++ "|*"
+categoryToString (Composite Match inner) = "*|" ++ intercalate "," (map categoryToString inner) ++ "|*"
 categoryToString (Composite Function inner) =
     let
         innerFooToString :: [Category] -> [Char]
@@ -38,8 +38,8 @@ categoryToString (Placeholder name Label ph_category) = idToString name ++ ":" +
 -- categoryToString (Placeholder name Resolved ph_category) = "<" ++ idToString name ++ ">"
 categoryToString (Placeholder name Resolved ph_category) = "<" ++ categoryToString ph_category ++ ">"
 categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ categoryToString _base_category ++ " | " ++ categoryToString _predicate ++ "}"
-categoryToString Special{special_type=Flexible} = "(%)"
-categoryToString Special{special_type=Universal} = "Any"
+categoryToString BuiltIn{special_type=Flexible} = "(%)"
+categoryToString BuiltIn{special_type=Universal} = "Any"
 categoryToString Reference{name=name} = "$" ++ idToString name
 categoryToString FunctionCall{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_id=_id} = "(" ++ categoryToString bc ++ ")." ++ idToString _id
@@ -70,7 +70,7 @@ errorToStringInner (Error IndexedNamed _) = error "unhandled"
 errorToStringInner (Error EmptyFunctionalComposite _) = "This is empty. Function composites should have functions inside them. Perhaps you meant for this to be a tuple or sumple?"
 errorToStringInner (Error InsufficientFunctionTerms _) = "I think this function needs more arguments for it to be properly called."
 errorToStringInner (Error DataInFunctionComposite _) = "Function Composites should be composed of functions, not data"
-errorToStringInner (Error BadFunctionCallInCase stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n"
+errorToStringInner (Error BadFunctionCallInMatch stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n"
 errorToStringInner (Error BadFunctionCall stack) = "This function call does not produce a result or is invalid. Check the arguments?\n"
 errorToStringInner (Error InvalidArgument stack) = "This function call argument is not valid for the function.\n"
 errorToStringInner (Error PredicateHasNonFunctionArgument _) = "Refined types must have a function which refines the data. The predicate is not a function here."
@@ -150,14 +150,14 @@ prettyCategoryToStringInner indenter (Composite c_type []) = do
       Tuple -> ["()"]
       Union -> ["||"]
       Composition -> ["*()*"]
-      Case -> ["*||*"]
+      Match -> ["*||*"]
       Function -> ["<EMPTY FUNCTION>"]
 prettyCategoryToStringInner indenter (Composite c_type [something]) = do
   case c_type of
       Tuple -> wrapAround ("(", ")") $ prettyCategoryToStringInner indenter something
       Union -> wrapAround ("|", "|") $ prettyCategoryToStringInner indenter something
       Composition -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
-      Case -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
+      Match -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
       Function -> prettyCategoryToStringInner indenter something
 prettyCategoryToStringInner indenter (Composite Function inner) =
   let
@@ -180,7 +180,7 @@ prettyCategoryToStringInner indenter (Composite c_type inner) = do
       Tuple -> ["("] ++ concat comma ++ [")"]
       Union -> ["|"] ++ concat comma ++ ["|"]
       Composition -> ["*("] ++ concat comma ++ [")*"]
-      Case -> ["*|"] ++ concat comma ++ ["|*"]
+      Match -> ["*|"] ++ concat comma ++ ["|*"]
       Function -> error "Functions should not be handled here"
 prettyCategoryToStringInner indenter Import{import_category=cat} = incrementIndentButFirst $ applyOnFirst ("import " ++) $ prettyCategoryToStringInner indenter cat
 prettyCategoryToStringInner indenter Definition{def_category=cat} = incrementIndentButFirst $ applyOnFirst ("define " ++) $ prettyCategoryToStringInner indenter cat
@@ -194,8 +194,8 @@ prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
 prettyCategoryToStringInner indenter (Placeholder name Element ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") [idToString name] -- prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
-prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["(%)"]
-prettyCategoryToStringInner indenter Special{special_type=Universal} = ["Any"]
+prettyCategoryToStringInner indenter BuiltIn{special_type=Flexible} = ["(%)"]
+prettyCategoryToStringInner indenter BuiltIn{special_type=Universal} = ["Any"]
 prettyCategoryToStringInner indenter FunctionCall{base=bm, argument=a} = do
   let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)
   let pretty_a = wrapAround ("[", "]") (prettyCategoryToStringInner indenter a)

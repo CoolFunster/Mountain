@@ -24,17 +24,20 @@ data Id =
     Unnamed
     deriving (Eq, Show, Read)
 
-data SpecialCategoryType =
+data BuiltInType =
     Flexible |
     Universal
     deriving (Eq, Show, Read)
 
 data CompositeType =
-    Tuple | -- tuple, A category that has each of its inner categories separably via its index
-    Union | -- union, A category that has at least one of its inner categories
+    Tuple | -- tuple, Ancategory that has each of its inner categories separably via its index
+    Union | -- union, A category that has at least one of its inner categories. Inner Labeled categories are indexable
     Function | -- a function, a category that has a dependency on another category
     Composition | -- a chain of functions (a->b, b->c = a->c)
-    Case -- a case statement of functions     (a->b, b->c = a->c)
+    Match -- a case statement of functions     (a->b, b->c = a->c)
+    -- TO ADD LATER
+    -- | Superposition
+    -- | Subtractive
     deriving (Eq, Show, Read)
 
 data PlaceholderType =
@@ -45,42 +48,42 @@ data PlaceholderType =
 
 data Category =
     -- categories
-    Thing { name::Id } | -- a concrete object
-    Composite {  -- a group of things
+      Thing { name::Id } -- a concrete object
+    | Composite {  -- a group of things
         composite_type::CompositeType,
         inner_categories::[Category]
-    } |
-    Placeholder {
+    }
+    | Placeholder {
         name::Id,
         placeholder_type::PlaceholderType,
         placeholder_category::Category
-    } |
-    Refined {
+    }
+    | Refined {
         base::Category,
         predicate::Category -- specifically predicates are morphisms of Category -> Bool
-    } |
-    Special {
-        special_type::SpecialCategoryType
-    } |
-    Reference {
+    }
+    | BuiltIn {
+        special_type::BuiltInType
+    }
+    | Reference {
         name::Id
-    } |
+    }
     -- language constructs
-    FunctionCall {
+    | FunctionCall {
         base::Category,
         argument::Category
-    } |
-    Access {
+    }
+    | Access {
         base::Category,
         access_id::Id
-    } |
-    Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
+    } 
+    | Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
         import_category::Category
-    } |
-    Definition {
+    } 
+    | Definition {
         def_category::Category
-    } |
-    TypeAnnotation {
+    } 
+    | TypeAnnotation {
         big_category::Category,
         small_category::Category
     }
@@ -150,7 +153,7 @@ data ErrorType =
     EmptyFunctionalComposite |
     InsufficientFunctionTerms |
     DataInFunctionComposite |
-    BadFunctionCallInCase |
+    BadFunctionCallInMatch |
     BadFunctionCall |
     InvalidArgument |
     PredicateHasNonFunctionArgument |
@@ -225,10 +228,10 @@ empty :: Category
 empty = Composite Union []
 
 universal :: Category
-universal = Special{special_type=Universal}
+universal = BuiltIn{special_type=Universal}
 
 flex :: Category
-flex = Special{special_type=Flexible}
+flex = BuiltIn{special_type=Flexible}
 
 -- checks for data constructor type
 isName :: Id -> Bool
@@ -291,13 +294,13 @@ isReferenceOfName :: Id -> Category -> Bool
 isReferenceOfName id r@Reference{name=n} = id == n
 isReferenceOfName _ _ = False
 
-isSpecial :: Category -> Bool
-isSpecial Special{} = True
-isSpecial _ = False
+isBuiltIn :: Category -> Bool
+isBuiltIn BuiltIn{} = True
+isBuiltIn _ = False
 
-isSpecialType :: SpecialCategoryType -> Category -> Bool
-isSpecialType sctype Special{special_type=c_type} = sctype == c_type
-isSpecialType sctype other = False
+isBuiltInType :: BuiltInType -> Category -> Bool
+isBuiltInType sctype BuiltIn{special_type=c_type} = sctype == c_type
+isBuiltInType sctype other = False
 
 isAccess :: Category -> Bool
 isAccess Access{} = True
@@ -338,7 +341,7 @@ checkAST aggregator checker t@Thing{} = checker t
 checkAST aggregator checker c@Composite{inner_categories=inner} = aggregator $ checker c : map (checkAST aggregator checker) inner
 checkAST aggregator checker p@Placeholder{placeholder_category=ph_c} = aggregator [checker p, checkAST aggregator checker ph_c]
 checkAST aggregator checker r@Refined{base=b, predicate=p} = aggregator (checker r : map (checkAST aggregator checker) [b,p])
-checkAST aggregator checker s@Special{} = checker s
+checkAST aggregator checker s@BuiltIn{} = checker s
 checkAST aggregator checker r@Reference{} = checker r
 checkAST aggregator checker fc@FunctionCall{base=b, argument=a} = aggregator (checker fc: map (checkAST aggregator checker) [b,a])
 checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker a, checkAST aggregator checker b]
@@ -361,7 +364,7 @@ transformAST transformer input_category = do
       let recurse = transformAST transformer
       case category of
         t@Thing{} -> return t
-        s@(Special t) -> return s
+        s@(BuiltIn t) -> return s
         r@(Reference n) -> return r
         c@(Composite c_type inner) -> Composite c_type <$> mapM recurse inner
         p@(Placeholder n p_type ph_c) -> Placeholder n p_type <$> recurse ph_c
@@ -405,7 +408,7 @@ resolveReferences cat =
 data UnrollType = Flat | Recursive
 unroll :: UnrollType -> Category -> Category
 unroll Flat l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
-    replaceReferences rec_name Special{special_type=Flexible} rec_cat
+    replaceReferences rec_name BuiltIn{special_type=Flexible} rec_cat
 unroll Recursive l@Placeholder{name=rec_name, placeholder_type=Label, placeholder_category=rec_cat} =
     replaceReferences rec_name l rec_cat
 unroll _ something_else = something_else
@@ -428,11 +431,11 @@ call arg c@Composite{composite_type=Function, inner_categories=head:tail} = do
             [something] -> return something
             [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
             other -> return c{inner_categories=new_tail}
-call arg c@Composite{composite_type=Case, inner_categories=inner} = do
+call arg c@Composite{composite_type=Match, inner_categories=inner} = do
     let result = rights $ map (fst . runCategoryContext . call arg) inner
     case result of
         x:xs -> return x
-        [] -> throwError [Error{error_type=BadFunctionCallInCase, error_stack=[arg, c]}]
+        [] -> throwError [Error{error_type=BadFunctionCallInMatch, error_stack=[arg, c]}]
 call arg c@Composite{composite_type=Composition, inner_categories=head:rest} = do
     result <- call arg head
     case rest of
@@ -450,7 +453,7 @@ flatten c@Composite{composite_type=Composition, inner_categories=inner} = do
     case (head_type, last_type) of
       (Composite{composite_type=Function, inner_categories=inner_head:_}, Composite{composite_type=Function, inner_categories=tmp}) -> return Composite{composite_type=Function, inner_categories=[inner_head, last tmp]}
       _ -> throwError [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
-flatten c@Composite{composite_type=Case, inner_categories=inner} = do
+flatten c@Composite{composite_type=Match, inner_categories=inner} = do
     result <- mapM flatten inner
     let inputs = Composite{composite_type=Union, inner_categories=map (head . inner_categories) result}
     let outputs = Composite{composite_type=Union, inner_categories=map (last . inner_categories) result}
@@ -485,7 +488,7 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
                             then return $ placeholder_category result
                             else return result
         Unnamed -> throwError [Error{error_type=EmptyAccessID,error_stack=[a]}]
-evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = return Special{special_type=Flexible}
+evaluateAccess a@Access{base=BuiltIn{special_type=Flexible}, access_id=output} = return BuiltIn{special_type=Flexible}
 evaluateAccess a@Access{base=p@Placeholder{placeholder_type=Label, placeholder_category=ph_c}, access_id=id} = do
     let new_base = if isRecursiveCategory p then unroll Recursive p else ph_c
     evaluateAccess a{base=new_base}
@@ -500,7 +503,7 @@ evaluateAccess a@Access{base=f@FunctionCall{base=b, argument=arg}, access_id=out
 evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} = do
     result <- evaluateAccess a_inner
     evaluateAccess a{base=result}
-evaluateAccess a@Access{base=Reference{}, access_id=id} = return (Special{special_type=Flexible})
+evaluateAccess a@Access{base=Reference{}, access_id=id} = return (BuiltIn{special_type=Flexible})
 evaluateAccess a@Access{} = throwError [Error{error_type=UndefinedAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
 
@@ -560,8 +563,8 @@ instance Ord CategoryLevel where
 --                     in level category_of_interest
 --                 rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} -> level ph_c
 --                 Refined {base=_base_category, predicate=_predicate} -> level _base_category
---                 Special{special_type=Flexible} -> return AnyLevel
---                 Special{special_type=Universal} -> return Infinite
+--                 BuiltIn{special_type=Flexible} -> return AnyLevel
+--                 BuiltIn{special_type=Universal} -> return Infinite
 --                 Reference{} -> return AnyLevel
 --                 FunctionCall{base=b, argument=a} -> call a b >>= level
 --                 a@Access{base=bc,access_id=id} -> evaluateAccess a >>= level
@@ -673,8 +676,8 @@ has big_category small_category
           has_inner (Composite Union sum_inner) other_category = do
             debugTell [Has{has_msg=MapEvaluateInner,on_which=Big,big=big_category,small=small_category}]
             or <$> mapM (`has` other_category) sum_inner
-          {- Composite Case -}
-          has_inner big@(Composite Case case_inner) other_category = do
+          {- Composite Match -}
+          has_inner big@(Composite Match case_inner) other_category = do
             debugTell [Has{has_msg=Transform,on_which=Big,big=big_category,small=small_category}]
             has_inner big{composite_type=Union} other_category
           {- Composite Function -}
@@ -698,14 +701,14 @@ has big_category small_category
               if base == other
                 then return True
                 else return False
-          {- Special -}
-          has_inner Special{} _ = do
+          {- BuiltIn -}
+          has_inner BuiltIn{} _ = do
             debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return True
-          has_inner _ Special{special_type=Flexible} = do
+          has_inner _ BuiltIn{special_type=Flexible} = do
             debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return True
-          has_inner _ Special{special_type=Universal} = do
+          has_inner _ BuiltIn{special_type=Universal} = do
             debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return False
           {- Reference -}
@@ -758,7 +761,7 @@ validateCategory c@Composite{composite_type=composition_type, inner_categories=[
         throwError [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
     | otherwise = return c
 validateCategory c@Composite{composite_type=composition_type, inner_categories=inner_cats}
-    | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
+    | (composition_type == Composition || composition_type == Match ) && not (all isFunctionComposite inner_cats) =
         throwError [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
     | (composition_type == Function) && all (\x -> isImport x || isDefinition x) inner_cats =
         throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]

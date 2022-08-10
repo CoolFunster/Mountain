@@ -12,7 +12,7 @@ Tuple -> (\<category>, \<category>, ...) <br>
 Union -> |\<category>, \<category>, ...| <br>
 Function -> \<category> -> \<category> <br>
 Composition -> \*(\<category>)* <br>
-Case -> \*|\<category>, \<category>, ...| <br>
+Match -> \*|\<category>, \<category>, ...| <br>
 Refined -> {\<category> | \<category> -> Bool } <br>
 Flexible -> (%) <br>
 Reference -> $Name <br>
