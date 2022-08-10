@@ -77,8 +77,8 @@ spec = do
         it "(Dereference) should parse dereferences" $ do
             parseCategoryString "$base_ref.name" `shouldBe` Access{base=Reference{name=Name "base_ref"}, access_id=Name "name"}
             parseCategoryString "$base_ref.name.name" `shouldBe` Access{base=Access{base=Reference{name=Name "base_ref"}, access_id=Name "name"}, access_id=Name "name"}
-        it "(Membership) should parse membership" $ do
-            parseCategoryString "$base_category::$child_category" `shouldBe` Membership{big_category=Reference (Name "base_category") , small_category=Reference (Name "child_category") }
+        it "(TypeAnnotation) should parse membership" $ do
+            parseCategoryString "$base_category::$child_category" `shouldBe` TypeAnnotation{big_category=Reference (Name "base_category") , small_category=Reference (Name "child_category") }
         it "(Recursive) should parse recursion" $ do
             parseCategoryString "self:(`a -> $self[`b])" `shouldBe`  Placeholder {name = Name "self", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},FunctionCall {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
         it "(Import) should parse import" $ do

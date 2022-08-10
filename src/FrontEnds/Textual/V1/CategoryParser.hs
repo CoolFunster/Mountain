@@ -85,7 +85,8 @@ withValidation parser = do
     offset <- getOffset
     -- result <- dbg "validation" parser
     result <- parser
-    case validateCategoryInner result of
+    let validated_result = getResultOf $ validateCategory result
+    case validated_result of
         Right cat -> return cat
         Left errors -> region (setErrorOffset offset) (fail (concatMap errorToString errors))
 
@@ -141,12 +142,12 @@ pGivenOrReturn :: Parser Category
 pGivenOrReturn = do
     given_or_return <- optional (symbol (pack "given") <|> symbol (pack "return"))
     _ <- optional spaceConsumer
-    pMembership
+    pTypeAnnotation
 
-pMembership :: Parser Category
-pMembership = withValidation $ makeExprParser pPlaceholder [
+pTypeAnnotation :: Parser Category
+pTypeAnnotation = withValidation $ makeExprParser pPlaceholder [
             [
-                binaryN (pStringBetweenWS "::") (\x y -> Membership{big_category=x,small_category=y})
+                binaryN (pStringBetweenWS "::") (\x y -> TypeAnnotation{big_category=x,small_category=y})
             ]]
 
 {- If not a placeholder, falls through to other categories -}

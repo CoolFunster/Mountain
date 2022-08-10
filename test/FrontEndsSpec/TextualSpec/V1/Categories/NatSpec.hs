@@ -16,14 +16,14 @@ import Data.List (intercalate)
 spec :: Spec
 spec = do
     describe "Category Nat" $ do
-        let executeTextual = \c -> fmap fst $ runCategoryContextT $ execute (Options{reduce_composite=True, importer=loadTextual}) c
-        let executeLog = \c -> fmap snd $ runCategoryContextT $ execute (Options{reduce_composite=True, importer=loadTextual}) c
+        let executeTextual = getResultOfT . execute (Options{reduce_composite=True, importer=loadTextual})
+        let executeLog = getLogOfT . execute Options{reduce_composite=True, importer=loadTextual}
         it "(module) should be valid" $ do
             parsedCategory <- executeTextual (parseCategoryString "import $base.natural")
             isRight parsedCategory `shouldBe` True
             -- putStrLn $ prettyCategoryToString (fromValid parsedCategory)
         describe "has" $ do
-            let has' a b = fst $ runCategoryContext $ has a b
+            let has' a b = getResultOf $ has a b
             it "should have zero" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).natural")
                 zero <- executeTextual (parseCategoryString "`zero")
@@ -40,12 +40,12 @@ spec = do
             it "should increment zero" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).increment[`zero]")
                 isRight parsedCategory `shouldBe` True
-                categoryToString (replaceResolved $ fromRight (error "404") parsedCategory) `shouldBe` "(`successor,`zero)"
+                categoryToString (resolveReferences $ fromRight (error "404") parsedCategory) `shouldBe` "(`successor,`zero)"
             it "should increment one" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).increment[(`successor, `zero)]")
                 -- putStrLn (errorableToString parsedCategory)
                 isRight parsedCategory `shouldBe` True
-                categoryToString (replaceResolved $ fromRight (error "404") parsedCategory) `shouldBe` "(`successor,(`successor,`zero))"
+                categoryToString (resolveReferences $ fromRight (error "404") parsedCategory) `shouldBe` "(`successor,(`successor,`zero))"
         describe "decrement" $ do
             it "should decrement one" $ do
                 parsedCategory <- executeTextual (parseCategoryString "(import $base.natural).decrement[(`successor, `zero)]")
@@ -70,12 +70,12 @@ spec = do
                 isRight result `shouldBe` True
 
                 -- s1 <- dbgEvaluate True loadTextual (fromRight (error "404") result)
-                categoryToString (replaceResolved $ fromRight (error "404") result) `shouldBe` "(`successor,`zero)"
+                categoryToString (resolveReferences $ fromRight (error "404") result) `shouldBe` "(`successor,`zero)"
             it "should add one and one" $ do
                 result <- executeTextual (parseCategoryString "(import $base.natural).add[((`successor, `zero),(`successor, `zero))]")
                 -- putStrLn $ intercalate "\n" $ map (categoryLogToString) result
                 -- let result = output $ last parsedCategory
                 isRight result `shouldBe` True
                 -- s1 <- multipleStepEvaluate 10 True loadTextual (fromRight (error "404") result)
-                categoryToString (replaceResolved $ fromRight (error "404") result) `shouldBe` "(`successor,(`successor,`zero))"
+                categoryToString (resolveReferences $ fromRight (error "404") result) `shouldBe` "(`successor,(`successor,`zero))"
                 

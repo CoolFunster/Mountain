@@ -23,10 +23,10 @@ spec = do
         let executeTextual = fmap fst . runCategoryContextT . execute (Options{reduce_composite=False, importer=loadTextual})
         let executeToCategory = \c -> do {
             result <- executeTextual c;
-            return $ replaceResolved $ fromRight (error "404") result;
+            return $ resolveReferences $ fromRight (error "404") result;
         }
         describe "list" $ do
-            let has' a b = fst $ runCategoryContext $ has a b
+            let has' a b = getResultOf $ has a b
             it "(list) should substitute type correctly on evaluate" $ do
                 execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
                 categoryToString execute_result `shouldBe` "list_def:|`empty,nonempty:(`1,$list_def)|"
@@ -52,7 +52,7 @@ spec = do
                 -- dbg_result <- executeTextual list_on_1_join
                 -- putStrLn (intercalate "\n====\n" $ map tracedToString dbg_result)
                 execute_result <- executeToCategory list_on_1_join
-                categoryToString execute_result `shouldBe` "new_head@`1->original_list@list_def:|`empty,nonempty:(`1,$list_def)|->(list_def:|`empty,nonempty:(`1,$list_def)|)::(($new_head,$original_list))"
+                categoryToString execute_result `shouldBe` "new_head@`1->original_list@list_def:|`empty,nonempty:(<`1>,$list_def)|->(list_def:|`empty,nonempty:(<`1>,$list_def)|)::(($new_head,$original_list))"
             it "(join) should properly join on empty" $ do
                 let list_on_1_join_empty = parseCategoryString "((import $base.linkedlist)[`1].join)[`1][`empty]"
                 execute_result <- executeToCategory list_on_1_join_empty
@@ -75,7 +75,7 @@ spec = do
             it "should be accessed properly" $ do
                 let list_on_1_head = parseCategoryString "(import $base.linkedlist)[`1].head"
                 execute_result <- executeToCategory list_on_1_head
-                categoryToString execute_result `shouldBe` "input@((list_def:|`empty,nonempty:(`1,$list_def)|).nonempty)->(`1)::(($input).#0)"
+                categoryToString execute_result `shouldBe` "input@((list_def:|`empty,nonempty:(<`1>,$list_def)|).nonempty)->(`1)::(($input).#0)"
             it "should be returning the head elem 1" $ do
                 let test_case = parseCategoryString "(import $base.linkedlist)[`1].head[(`1, `empty)]"
                 execute_result <- executeToCategory test_case
@@ -89,7 +89,7 @@ spec = do
             it "should be accessed properly" $ do
                 let test_case = parseCategoryString "(import $base.linkedlist)[`1].tail"
                 execute_result <- executeToCategory test_case
-                categoryToString execute_result `shouldBe` "input@((list_def:|`empty,nonempty:(`1,$list_def)|).nonempty)->(list_def:|`empty,nonempty:(`1,$list_def)|)::(($input).#1)"
+                categoryToString execute_result `shouldBe` "input@((list_def:|`empty,nonempty:(<`1>,$list_def)|).nonempty)->(list_def:|`empty,nonempty:(<`1>,$list_def)|)::(($input).#1)"
             it "should be returning the tail elem 1" $ do
                 let test_case = parseCategoryString "(import $base.linkedlist)[`1].tail[(`1, `empty)]"
                 -- somethings not getting evaluated correctly

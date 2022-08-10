@@ -9,3 +9,6 @@ dev tooling
 - unbound references
 - vscode coloring
 - autocomplete
+
+Current Job
+  Annotate Has with debug messages

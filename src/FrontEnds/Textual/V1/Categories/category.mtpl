@@ -33,7 +33,7 @@ import list:$base.linkedlist
     access:         (`Access, base:$Category, access_id:$Id),
     import:         (`Import, import_category:$Category),
     definition:     (`Definition, def_category:$Category),
-    membership:     (`Membership, big_category:$Category, small_category:$Category)
+    membership:     (`TypeAnnotation, big_category:$Category, small_category:$Category)
   |
 -> return (
   id_type:$Id,

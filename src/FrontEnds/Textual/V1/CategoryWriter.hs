@@ -43,7 +43,7 @@ categoryToString Special{special_type=Universal} = "Any"
 categoryToString Reference{name=name} = "$" ++ idToString name
 categoryToString FunctionCall{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_id=_id} = "(" ++ categoryToString bc ++ ")." ++ idToString _id
-categoryToString Membership{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
+categoryToString TypeAnnotation{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
 categoryToString Import{import_category=import_str} = "import " ++ categoryToString import_str
 categoryToString Definition{def_category=cat} = "define " ++ categoryToString cat
 
@@ -84,7 +84,7 @@ errorToStringInner (Error BadExportFileExists (head:rest)) = "Was not able to ex
 errorToStringInner (Error BadExportFileExists _) = error "unhandled"
 errorToStringInner (Error CannotTypecheckRawImport (head:rest)) = "At the moment I'm unable to type check a raw import statement..."
 errorToStringInner (Error CannotTypecheckRawImport _) = error "unhandled"
-errorToStringInner (Error BadMembership _) = "This membership is invalid..."
+errorToStringInner (Error BadTypeAnnotation _) = "This membership is invalid..."
 errorToStringInner (Error UndefinedAccess _) = "This Access has not been implemented yet"
 errorToStringInner (Error RefinementNotHandledInAccess _) = "Accesses to Refinements are not implemented yet"
 errorToStringInner (Error CannotTypecheckRawDefinition _) = "This definition needs to be evaluated before it can be typechecked"
@@ -136,12 +136,12 @@ joinLastFirst [] x = x
 joinLastFirst x [] = x
 joinLastFirst s1 s2 = init s1 ++ [last s1 ++ head s2] ++ tail s2
 
-prepareForPrintingInner :: Category -> Identity Category
-prepareForPrintingInner (Composite Function ((Composite Function inner):rest)) = return $ Composite Function (Composite Tuple [Composite Function inner] : rest)
-prepareForPrintingInner other = return other
+prepareForPrintingInner :: Category -> TransformResult (Identity Category)
+prepareForPrintingInner (Composite Function ((Composite Function inner):rest)) = Recurse $ return $ Composite Function (Composite Tuple [Composite Function inner] : rest)
+prepareForPrintingInner other = Recurse $ return other
 
 prepareForPrinting :: Category -> Category
-prepareForPrinting cat = runIdentity $ applyOnAST (const Nothing) prepareForPrintingInner cat
+prepareForPrinting cat = runIdentity $ transformAST prepareForPrintingInner cat
 
 prettyCategoryToStringInner :: String -> Category -> [String]
 prettyCategoryToStringInner indenter (Thing name) = ["`" ++ idToString name]
@@ -202,7 +202,7 @@ prettyCategoryToStringInner indenter FunctionCall{base=bm, argument=a} = do
   joinLastFirst pretty_bm pretty_a
 prettyCategoryToStringInner indenter Access{base=bc, access_id=_id} =
   applyOnLast (++ "." ++ idToString _id) (prettyCategoryToStringInner indenter bc)
-prettyCategoryToStringInner indenter Membership{big_category=bc, small_category=sc} = do
+prettyCategoryToStringInner indenter TypeAnnotation{big_category=bc, small_category=sc} = do
   let pretty_bc = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bc)
   let pretty_sm = wrapAround ("::(", ")") (prettyCategoryToStringInner indenter sc)
   joinLastFirst pretty_bc pretty_sm

@@ -45,8 +45,8 @@ spec = do
             categoryToString FunctionCall{base=FunctionCall{base=Reference (Name "base_foo") ,argument=Reference (Name "some_arg") },argument=Reference (Name "some_other") } `shouldBe` "$base_foo[$some_arg][$some_other]"
         it "(Dereference) should write dereferences" $ do
             categoryToString Access{base=Reference{name=Name "base_ref"}, access_id=Name "name"}  `shouldBe` "($base_ref).name"
-        it "(Membership) should write membership" $ do
-            categoryToString Membership{big_category=Reference (Name "base_category"), small_category=Reference (Name "child_category") } `shouldBe` "($base_category)::($child_category)"
+        it "(TypeAnnotation) should write membership" $ do
+            categoryToString TypeAnnotation{big_category=Reference (Name "base_category"), small_category=Reference (Name "child_category") } `shouldBe` "($base_category)::($child_category)"
     describe "prettyCategoryToString" $ do
         it "Things" $ do
             prettyCategoryToString (Thing (Name "hello")) `shouldBe` "`hello"

@@ -96,7 +96,7 @@ import Test.Hspec
 --             (4, CategoryData.Label <$> arbitrary <*> arbitrary ),
 --             (1, MorphismCall <$> Q.suchThat arbitrary isMorphic <*> arbitrary),
 --             (1, Dereference <$> arbitrary <*> arbitrary),
---             -- (2, Membership <$> arbitrary <*> arbitrary),
+--             -- (2, TypeAnnotation <$> arbitrary <*> arbitrary),
 --             (1, IntermediateMorphism <$> flexList)]
 
 
@@ -121,7 +121,7 @@ spec = do
 --             -- print parsed_result
 --             categoryToText parsed_result `shouldBe` new_result
 --         -- it "should handle weird inputs 3" $ do
---         --     let result = Dereference {base_category = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "emapvbsbcgyprfn", ph_level = Just 7, ph_category = Membership {big_category = Thing {name = Name "kfjqlhsboyqqfga"}, small_category = Membership {big_category = Membership {big_category = Thing {name = Name "kjajygbbhmoznfc"}, small_category = Thing {name = Name "ktpxnrhkzucgfgv"}}, small_category = MorphismCall {base_morphism = MorphismCall {base_morphism = Dereference {base_category = Thing {name = Name "tenpjizqigwqqxv"}, category_id = Name "wmcywsfccrzztwf"}, argument = Thing {name = Name "pxcztzoicxwtdve"}}, argument = Thing {name = Name "bingfiocdijcfud"}}}}}},MorphismTerm {m_type = Return, m_category = Membership {big_category = Membership {big_category = Thing {name = Name "iseitazrsveymkr"}, small_category = Thing {name = Name "hnfehxrhbddimiz"}}, small_category = Thing {name = Name "vbcetpqimysmbgh"}}}]}, category_id = Name "lcautzzqbtavgkc"}
+--         --     let result = Dereference {base_category = IntermediateMorphism {chain = [MorphismTerm {m_type = Given, m_category = Placeholder {name = Name "emapvbsbcgyprfn", ph_level = Just 7, ph_category = TypeAnnotation {big_category = Thing {name = Name "kfjqlhsboyqqfga"}, small_category = TypeAnnotation {big_category = TypeAnnotation {big_category = Thing {name = Name "kjajygbbhmoznfc"}, small_category = Thing {name = Name "ktpxnrhkzucgfgv"}}, small_category = MorphismCall {base_morphism = MorphismCall {base_morphism = Dereference {base_category = Thing {name = Name "tenpjizqigwqqxv"}, category_id = Name "wmcywsfccrzztwf"}, argument = Thing {name = Name "pxcztzoicxwtdve"}}, argument = Thing {name = Name "bingfiocdijcfud"}}}}}},MorphismTerm {m_type = Return, m_category = TypeAnnotation {big_category = TypeAnnotation {big_category = Thing {name = Name "iseitazrsveymkr"}, small_category = Thing {name = Name "hnfehxrhbddimiz"}}, small_category = Thing {name = Name "vbcetpqimysmbgh"}}}]}, category_id = Name "lcautzzqbtavgkc"}
 --         --     let new_result = categoryToText result
 --         --     -- TextIO.putStrLn new_result
 --         --     let parsed_result = parseCategoryString new_result

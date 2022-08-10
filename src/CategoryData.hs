@@ -30,17 +30,17 @@ data SpecialCategoryType =
     deriving (Eq, Show, Read)
 
 data CompositeType =
-    Tuple | -- tuple
-    Union | -- union
-    Function | -- a function
+    Tuple | -- tuple, A category that has each of its inner categories separably via its index
+    Union | -- union, A category that has at least one of its inner categories
+    Function | -- a function, a category that has a dependency on another category
     Composition | -- a chain of functions (a->b, b->c = a->c)
     Case -- a case statement of functions     (a->b, b->c = a->c)
     deriving (Eq, Show, Read)
 
 data PlaceholderType =
-    Label |
-    Element |
-    Resolved
+    Label | -- a way of referring to categories by name
+    Element | -- a way of referring to categories contained by the category
+    Resolved  -- the way of marking a label as having been resolved to a category
     deriving (Eq, Show, Read)
 
 data Category =
@@ -80,7 +80,7 @@ data Category =
     Definition {
         def_category::Category
     } |
-    Membership {
+    TypeAnnotation {
         big_category::Category,
         small_category::Category
     }
@@ -97,16 +97,41 @@ data StepMsgType =
     ApplyingDefinition |
     SkippingDefinition |
     ReducingComposite |
-    MembershipCheck |
+    TypeAnnotationCheck |
     Accessing
     deriving (Eq, Show, Read)
 
+data HasMsgType =
+  HasResult |
+  UnwrapComposite |
+  GoInsideDefinition |
+  UseTypeAnnotation |
+  UsePlaceholderCategory |
+  UnrollLabel |
+  ExtractFlatMapping |
+  ReplaceInnerDefinitions |
+  MapEvaluateInner |
+  Transform |
+  Evaluate
+  deriving (Eq, Show, Read)
+
 -- basic functions
+data BigOrSmall = Big | Small | Both deriving Show
 data CategoryLog =
   Step {
     msg::StepMsgType,
     input :: [Category]
-  } deriving (Show)
+  } |
+  Has {
+    has_msg::HasMsgType,
+    on_which::BigOrSmall,
+    big::Category,
+    small::Category
+  } |
+  Output {
+    output::Either [Error] Category
+  }
+  deriving (Show)
 
 -- Error types
 data ErrorType =
@@ -138,7 +163,7 @@ data ErrorType =
     BadExportFileExists |
     CannotTypecheckRawImport |
     CannotTypecheckRawDefinition |
-    BadMembership
+    BadTypeAnnotation
     deriving (Eq, Show, Read)
 
 data Error = Error {
@@ -172,6 +197,24 @@ data CategoryEvalOptions = Options {
   reduce_composite :: Bool,
   importer :: CategoryImporter
 }
+
+getLogOfT :: (Monad m) => CategoryContextT m Category -> m [CategoryLog]
+getLogOfT c = do
+  log <- snd <$> runCategoryContextT c
+  result <- getResultOfT c
+  return $ log ++ [Output result]
+
+getLogOf :: CategoryContext Category -> [CategoryLog]
+getLogOf c = do
+  let log = snd $ runCategoryContext c
+  let result = getResultOf c
+  log ++ [Output result]
+
+getResultOfT :: (Monad m) => CategoryContextT m a -> m (Either [Error] a)
+getResultOfT c = fst <$> runCategoryContextT c
+
+getResultOf :: CategoryContext a -> Either [Error] a
+getResultOf c = fst $ runCategoryContext c
 
 -- useful categories
 
@@ -211,6 +254,11 @@ isDataCompositeType _ = False
 
 isFunctionCompositeType :: CompositeType -> Bool
 isFunctionCompositeType = not . isDataCompositeType
+
+isDependentCompositeType :: CompositeType -> Bool
+isDependentCompositeType Function = True
+isDependentCompositeType Tuple = True
+isDependentCompositeType _ = False
 
 isFunctionComposite :: Category -> Bool
 isFunctionComposite Composite{composite_type=c_type, inner_categories=inner}
@@ -296,30 +344,33 @@ checkAST aggregator checker fc@FunctionCall{base=b, argument=a} = aggregator (ch
 checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker a, checkAST aggregator checker b]
 checkAST aggregator checker i@Import{} = checker i
 checkAST aggregator checker def@Definition{def_category=d} = aggregator [checker def, checkAST aggregator checker d]
-checkAST aggregator checker mem@Membership{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
+checkAST aggregator checker mem@TypeAnnotation{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
 
-{- preapplicator goes first and applies if necessary, post applicator applies from bottom up -}
-applyOnAST :: (Monad m) => (Category -> Maybe (m Category)) -> (Category -> m Category) -> Category -> m Category
-applyOnAST preapplicator postapplicator category =
-    case preapplicator category of
-        Just something -> something
-        Nothing -> applyOnASTInner category
+{- This transforms the AST according to an input mapping -}
+data TransformResult a =
+  Result a |
+  Recurse a
+  deriving (Eq, Show)
 
-    where
-        recurse = applyOnAST preapplicator postapplicator
-
-        applyOnASTInner t@Thing{} = postapplicator t
-        applyOnASTInner c@(Composite c_type inner) = mapM recurse inner >>= postapplicator . Composite c_type
-        applyOnASTInner p@(Placeholder n p_type ph_c) = recurse ph_c >>= postapplicator . Placeholder n p_type
-        applyOnASTInner r@(Refined b p) = Refined <$> recurse b <*> recurse p >>= postapplicator
-        applyOnASTInner r@(Reference n) = postapplicator r
-        applyOnASTInner s@(Special t) = postapplicator s
-        applyOnASTInner fc@(FunctionCall b a) = FunctionCall <$> recurse b <*> recurse a >>= postapplicator
-        applyOnASTInner a@(Access b a_id) = Access <$> recurse b <*> return a_id >>= postapplicator
-        applyOnASTInner i@(Import i_c) = Import <$> postapplicator i_c
-        applyOnASTInner d@(Definition d_c) = recurse d_c >>= postapplicator . Definition
-        applyOnASTInner m@(Membership b s) = Membership <$> recurse b <*> recurse s >>= postapplicator
-
+transformAST :: (Monad m) => (Category -> TransformResult (m Category)) -> Category -> m Category
+transformAST transformer input_category = do
+  case transformer input_category of
+    Result category -> category
+    Recurse m_category -> do
+      category <- m_category
+      let recurse = transformAST transformer
+      case category of
+        t@Thing{} -> return t
+        s@(Special t) -> return s
+        r@(Reference n) -> return r
+        c@(Composite c_type inner) -> Composite c_type <$> mapM recurse inner
+        p@(Placeholder n p_type ph_c) -> Placeholder n p_type <$> recurse ph_c
+        r@(Refined b p) -> Refined <$> recurse b <*> recurse p
+        fc@(FunctionCall b a) -> FunctionCall <$> recurse b <*> recurse a
+        a@(Access b a_id) -> Access <$> recurse b <*> pure a_id
+        i@(Import i_c) -> Import <$> recurse i_c
+        d@(Definition d_c) -> Definition <$> recurse d_c
+        m@(TypeAnnotation b s) -> TypeAnnotation <$> recurse b <*> recurse s
 
 -- {- Category Functions -}
 
@@ -327,29 +378,29 @@ isRecursiveCategory :: Category -> Bool
 isRecursiveCategory Placeholder{name=ph_name, placeholder_type=Label, placeholder_category=ph_c} = checkAST or (isReferenceOfName ph_name) ph_c
 isRecursiveCategory _ = False
 
-replaceReferences ::  Id -> Category -> Category -> Category
+replaceReferences :: Id -> Category -> Category -> Category
 replaceReferences ref_name new_cat base_cat =
     let
-        preReplace :: (Category -> Maybe (Identity Category))
-        preReplace p@Placeholder{name=ph_n, placeholder_type=Label}
-            | ph_n == ref_name && isRecursiveCategory p = Just $ return p
-            | otherwise = Nothing
-        preReplace c = Nothing
-
-        postReplace :: (Category -> Identity Category)
-        postReplace r@Reference{name=n} = if n == ref_name then return (Placeholder n Resolved new_cat) else return r
-        postReplace c = return c
+        replaceRefTransformer :: Category -> TransformResult (Identity Category)
+        replaceRefTransformer p@Placeholder{name=ph_n, placeholder_type=Label}
+            | ph_n == ref_name = Result $ return p
+            | otherwise = Recurse $ return p
+        replaceRefTransformer r@Reference{name=n} =
+          if n == ref_name
+            then Result $ return (Placeholder n Resolved new_cat)
+            else Recurse $ return r
+        replaceRefTransformer c = Recurse $ return c
     in
-        runIdentity $ applyOnAST preReplace postReplace base_cat
+      runIdentity $ transformAST replaceRefTransformer base_cat
 
-replaceResolved :: Category -> Category
-replaceResolved cat =
+resolveReferences :: Category -> Category
+resolveReferences cat =
     let
-        postReplace :: (Category -> Identity Category)
-        postReplace rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} = return ph_c
-        postReplace cat = return cat
+        resolveReferencesTransformer :: Category -> TransformResult (Identity Category)
+        resolveReferencesTransformer rr@Placeholder{placeholder_type=Resolved, placeholder_category=ph_c} = Result $ return ph_c
+        resolveReferencesTransformer c = Recurse $ return c
     in
-        runIdentity $ applyOnAST (const Nothing) postReplace cat
+      runIdentity $ transformAST resolveReferencesTransformer cat
 
 data UnrollType = Flat | Recursive
 unroll :: UnrollType -> Category -> Category
@@ -390,28 +441,28 @@ call arg c@Composite{composite_type=Composition, inner_categories=head:rest} = d
       longer_list -> call result $ Composite Composition longer_list
 call arg c = throwError [Error{error_type=BadFunctionCall, error_stack=[arg, c]}]
 
-categoryType :: Category -> CategoryContext Category
-categoryType t@Thing{} = return t
-categoryType c@Composite{composite_type=Function, inner_categories=inner} = return c
-categoryType c@Composite{composite_type=Composition, inner_categories=inner} = do
-    head_type <- categoryType $ head inner
-    last_type <- categoryType $ last inner
+flatten :: Category -> CategoryContext Category
+flatten t@Thing{} = return t
+flatten c@Composite{composite_type=Function, inner_categories=inner} = return c
+flatten c@Composite{composite_type=Composition, inner_categories=inner} = do
+    head_type <- flatten $ head inner
+    last_type <- flatten $ last inner
     case (head_type, last_type) of
       (Composite{composite_type=Function, inner_categories=inner_head:_}, Composite{composite_type=Function, inner_categories=tmp}) -> return Composite{composite_type=Function, inner_categories=[inner_head, last tmp]}
       _ -> throwError [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
-categoryType c@Composite{composite_type=Case, inner_categories=inner} = do
-    result <- mapM categoryType inner
+flatten c@Composite{composite_type=Case, inner_categories=inner} = do
+    result <- mapM flatten inner
     let inputs = Composite{composite_type=Union, inner_categories=map (head . inner_categories) result}
     let outputs = Composite{composite_type=Union, inner_categories=map (last . inner_categories) result}
-    return Composite{composite_type=Function, inner_categories=[inputs, outputs]}
-categoryType c@Composite{composite_type=c_type, inner_categories=inner} = Composite c_type <$> mapM categoryType inner
-categoryType p@Placeholder{name=ph_name, placeholder_type=p_type, placeholder_category=ph_c} = Placeholder ph_name p_type <$> categoryType ph_c
-categoryType r@Refined{base=b, predicate=p} = Refined <$> categoryType b <*> categoryType p
-categoryType fc@FunctionCall{base=b, argument=a} = FunctionCall <$> categoryType b <*> categoryType a
-categoryType a@Access{base=b, access_id=a_id} = Access <$> categoryType b <*> return a_id
-categoryType d@Definition{def_category=def} = Definition <$> categoryType def
-categoryType mem@Membership{big_category=bc, small_category=sc} = Membership <$> categoryType bc <*> categoryType sc
-categoryType other = return other
+    return $ trace (show inputs) Composite{composite_type=Function, inner_categories=[inputs, outputs]}
+flatten c@Composite{composite_type=c_type, inner_categories=inner} = Composite c_type <$> mapM flatten inner
+flatten p@Placeholder{name=ph_name, placeholder_type=p_type, placeholder_category=ph_c} = Placeholder ph_name p_type <$> flatten ph_c
+flatten r@Refined{base=b, predicate=p} = Refined <$> flatten b <*> flatten p
+flatten fc@FunctionCall{base=b, argument=a} = FunctionCall <$> flatten b <*> flatten a
+flatten a@Access{base=b, access_id=a_id} = Access <$> flatten b <*> return a_id
+flatten d@Definition{def_category=def} = Definition <$> flatten def
+flatten mem@TypeAnnotation{big_category=bc, small_category=sc} = TypeAnnotation <$> flatten bc <*> flatten sc
+flatten other = return other
 
 evaluateAccess :: Category -> CategoryContext Category
 evaluateAccess a@Access{base=Composite{inner_categories=[]}, access_id=id} =
@@ -516,7 +567,7 @@ instance Ord CategoryLevel where
 --                 a@Access{base=bc,access_id=id} -> evaluateAccess a >>= level
 --                 i@Import{} -> return AnyLevel
 --                 def@Definition{def_category=d} -> level d
---                 mem@Membership{big_category=bc, small_category=sc} -> level sc
+--                 mem@TypeAnnotation{big_category=bc, small_category=sc} -> level sc
 --     in
 --         if isRecursiveCategory input_category || isCompositeOfType Union input_category
 --             then do
@@ -524,131 +575,202 @@ instance Ord CategoryLevel where
 --               return (incrementLevel result)
 --             else level_inner input_category
 
+
 has :: Category -> Category -> CategoryContext Bool
 has big_category small_category
-    | big_category == small_category = return True
+    | big_category == small_category = do
+      debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+      return True
     | otherwise = has_inner big_category small_category
         where
-            has_inner :: Category -> Category -> CategoryContext Bool
-            {- substitutive rules -}
-            has_inner (Composite _ [category]) small_category = has category small_category
-            has_inner big_category (Composite _ [category]) = has big_category category
-            has_inner def@Definition{def_category=d} other = has d other
-            has_inner other def@Definition{def_category=d} = has other d
-            has_inner mem@Membership{big_category=bc, small_category=sc} other = has sc other
-            has_inner (Placeholder _ Element category) small_category
-                | category == small_category = return True
-                | otherwise = has category small_category
-            has_inner big_category (Placeholder _ Element category) = has big_category category
-            has_inner (Placeholder _ Label category) small_category
-                | isRecursiveCategory big_category = has (unroll Recursive big_category) small_category
-                | otherwise = has category small_category
-            has_inner big_category (Placeholder _ Label category)
-                | isRecursiveCategory small_category = has big_category (unroll Recursive big_category)
-                | otherwise = has category small_category
-            has_inner big_category (Placeholder _ Resolved category) = big_category `has` category
-            has_inner (Placeholder _ Resolved category) small_category = category `has` small_category
-            has_inner c_big@Composite{composite_type=Composition} other_category = do
-                cat <- categoryType c_big
-                has cat other_category
-            has_inner other_category c_small@Composite{composite_type=Composition} = do
-              cat <- categoryType c_small
-              has cat other_category
-            has_inner c1@Composite{composite_type=Function, inner_categories=Definition d:rest1} c2@Composite{composite_type=c2_type} = do
-                result <- call d c1
-                result `has` c2
-            has_inner c1@Composite{composite_type=Function} c2@Composite{composite_type=c2_type, inner_categories=Definition d:rest} = do
-                result <- call d c2
-                c1 `has` result
-            {- Composite Categories -}
-            has_inner (Composite big_type []) (Composite small_type []) = return $ big_type == small_type
-            has_inner (Composite big_type []) _ = return False
-            {- Composite Tuple -}
-            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Tuple small_inner)
-                | length big_inner /= length small_inner = return False
-                | otherwise = and <$> zipWithM has big_inner small_inner
-            has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Union small_inner) =
-                or <$> mapM (has c_big) small_inner
-            has_inner c_big@(Composite Tuple _) other = return False
-            {- Composite Union -}
-            has_inner other_category (Composite Union sum_inner) =
-                and <$> mapM (has other_category) sum_inner
-            has_inner (Composite Union sum_inner) other_category =
-                or <$> mapM (`has` other_category) sum_inner
-            {- Composite Case -}
-            has_inner big@(Composite Case case_inner) other_category = has_inner big{composite_type=Union} other_category
-            {- Composite Function -}
-            has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} c2@Composite{composite_type=c2_type}
-                | isDataCompositeType c2_type = return False
-                | otherwise = has c1{composite_type=Tuple} c2{composite_type=Tuple}
-            has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} other = return False
-            {- Refined -}
-            {- TODO: Handle refinements via SMT solver and approximate methods -}
-            has_inner Refined{base=base, predicate=p} Refined{base=base_other, predicate=p_other} =
-                and <$> sequence [has base p, has p p_other]
-            has_inner Refined{base=base, predicate=p} other
-                | base == other = return True
-                | otherwise = return False
-            {- Special -}
-            has_inner Special{} _ = return True
-            has_inner _ Special{special_type=Flexible} = return True
-            has_inner _ Special{special_type=Universal} = return False
-            {- Reference -}
-            has_inner r@Reference{} other = throwError [Error{error_type=UnresolvedReference, error_stack=[r]}]
-            has_inner other r@Reference{} = throwError [Error{error_type=UnresolvedReference, error_stack=[r]}]
-            {- Function Call -}
-            has_inner mc@FunctionCall{base=bm, argument=a} other = do
-              cat <- call a bm
-              has cat other
-            has_inner other mc@FunctionCall{base=bm, argument=a} = do
-              cat <- call a bm
-              has other cat
-            {- Access -}
-            has_inner a@Access{base=b, access_id=id} other = do
-              cat <- evaluateAccess a
-              has cat other
-            {- Import -}
-            has_inner i@Import{} i2@Import{} = return (i == i2)
-            has_inner i@Import{} other = throwError [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
-            {- Things -}
-            -- equal things and other cases are handled above
-            has_inner (Thing t) _ = return False
+          debugTell :: (Show w, MonadWriter w m) => w -> m ()
+          -- debugTell x = trace (show x) (tell x)
+          debugTell x = tell x
 
-validateCategoryInner :: Category -> Either [Error] Category
-validateCategoryInner t@(Thing Unnamed) = Left [Error{error_type=UnnamedCategory, error_stack=[t]}]
-validateCategoryInner t@(Thing (Index _)) = Left [Error{error_type=IndexedNamed, error_stack=[t]}]
-validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=[]}
+          has_inner :: Category -> Category -> CategoryContext Bool
+          {- substitutive rules -}
+          has_inner (Composite _ [category]) small_category = do
+            debugTell [Has{has_msg=UnwrapComposite,on_which=Big,big=big_category,small=small_category}]
+            has category small_category
+          has_inner big_category (Composite _ [category]) = do
+            debugTell [Has{has_msg=UnwrapComposite,on_which=Small,big=big_category,small=small_category}]
+            has big_category category
+          has_inner def@Definition{def_category=d} other = do
+            debugTell [Has{has_msg=GoInsideDefinition,on_which=Big,big=big_category,small=small_category}]
+            has d other
+          has_inner other def@Definition{def_category=d} = do
+            debugTell [Has{has_msg=GoInsideDefinition,on_which=Small,big=big_category,small=small_category}]
+            has other d
+          has_inner mem@TypeAnnotation{big_category=bc, small_category=sc} other = do
+            debugTell [Has{has_msg=UseTypeAnnotation,on_which=Big,big=big_category,small=small_category}]
+            has bc other
+          has_inner other mem@TypeAnnotation{big_category=bc, small_category=sc} = do
+            debugTell [Has{has_msg=UseTypeAnnotation,on_which=Small,big=big_category,small=small_category}]
+            has other bc
+          has_inner (Placeholder _ Element category) small_category = do
+            debugTell [Has{has_msg=UsePlaceholderCategory,on_which=Big,big=big_category,small=small_category}]
+            has category small_category
+          has_inner big_category (Placeholder _ Element category) = do
+            debugTell [Has{has_msg=UsePlaceholderCategory,on_which=Small,big=big_category,small=small_category}]
+            has big_category category
+          has_inner (Placeholder _ Label category) small_category = do
+            debugTell [Has{has_msg=UnrollLabel,on_which=Big,big=big_category,small=small_category}]
+            if isRecursiveCategory big_category
+              then has (unroll Recursive big_category) small_category
+              else has category small_category
+          has_inner big_category (Placeholder _ Label category) = do
+            debugTell [Has{has_msg=UnrollLabel,on_which=Small,big=big_category,small=small_category}]
+            if isRecursiveCategory small_category
+              then has big_category (unroll Recursive big_category)
+              else has category small_category
+          has_inner (Placeholder _ Resolved category) small_category = do
+            debugTell [Has{has_msg=UnrollLabel,on_which=Big,big=big_category,small=small_category}]
+            category `has` small_category
+          has_inner big_category (Placeholder _ Resolved category) = do
+            debugTell [Has{has_msg=UnrollLabel,on_which=Small,big=big_category,small=small_category}]
+            big_category `has` category
+          has_inner c_big@Composite{composite_type=Composition} other_category = do
+            debugTell [Has{has_msg=UnrollLabel,on_which=Big,big=big_category,small=small_category}]
+            cat <- flatten c_big
+            cat `has` other_category
+          has_inner other_category c_small@Composite{composite_type=Composition} = do
+            debugTell [Has{has_msg=UnrollLabel,on_which=Small,big=big_category,small=small_category}]
+            cat <- flatten c_small
+            other_category `has` cat
+          has_inner c1@Composite{composite_type=Function, inner_categories=Definition d:rest1} c2@Composite{composite_type=c2_type} = do
+            debugTell [Has{has_msg=ReplaceInnerDefinitions,on_which=Big,big=big_category,small=small_category}]
+            result <- call d c1
+            result `has` c2
+          has_inner c1@Composite{composite_type=Function} c2@Composite{composite_type=c2_type, inner_categories=Definition d:rest} = do
+            debugTell [Has{has_msg=ReplaceInnerDefinitions,on_which=Small,big=big_category,small=small_category}]
+            result <- call d c2
+            c1 `has` result
+          {- Composite Categories -}
+          has_inner (Composite big_type []) (Composite small_type []) = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return $ big_type == small_type
+          has_inner (Composite big_type []) _ = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return False
+          {- Composite Tuple -}
+          has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Tuple small_inner)
+              | length big_inner /= length small_inner = do
+                debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+                return False
+              | otherwise = do
+                debugTell [Has{has_msg=MapEvaluateInner,on_which=Both,big=big_category,small=small_category}]
+                and <$> zipWithM has big_inner small_inner
+          has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Union small_inner) = do
+            debugTell [Has{has_msg=MapEvaluateInner,on_which=Small,big=big_category,small=small_category}]
+            or <$> mapM (has c_big) small_inner
+          has_inner c_big@(Composite Tuple _) other = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return False
+          {- Composite Union -}
+          has_inner other_category (Composite Union sum_inner) = do
+            debugTell [Has{has_msg=MapEvaluateInner,on_which=Small,big=big_category,small=small_category}]
+            and <$> mapM (has other_category) sum_inner
+          has_inner (Composite Union sum_inner) other_category = do
+            debugTell [Has{has_msg=MapEvaluateInner,on_which=Big,big=big_category,small=small_category}]
+            or <$> mapM (`has` other_category) sum_inner
+          {- Composite Case -}
+          has_inner big@(Composite Case case_inner) other_category = do
+            debugTell [Has{has_msg=Transform,on_which=Big,big=big_category,small=small_category}]
+            has_inner big{composite_type=Union} other_category
+          {- Composite Function -}
+          has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} c2@Composite{composite_type=c2_type}
+              | isDataCompositeType c2_type = do
+                debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+                return False
+              | otherwise = do
+                debugTell [Has{has_msg=Transform,on_which=Both,big=big_category,small=small_category}]
+                has c1{composite_type=Tuple} c2{composite_type=Tuple}
+          has_inner c1@Composite{composite_type=Function, inner_categories=input1:rest1} other = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return False
+          {- Refined -}
+          {- TODO: Handle refinements via SMT solver and approximate methods -}
+          has_inner Refined{base=base, predicate=p} Refined{base=base_other, predicate=p_other} = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            and <$> sequence [has base p, has p p_other]
+          has_inner Refined{base=base, predicate=p} other = do
+              debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+              if base == other
+                then return True
+                else return False
+          {- Special -}
+          has_inner Special{} _ = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return True
+          has_inner _ Special{special_type=Flexible} = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return True
+          has_inner _ Special{special_type=Universal} = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return False
+          {- Reference -}
+          has_inner r@Reference{} other = throwError [Error{error_type=UnresolvedReference, error_stack=[r]}]
+          has_inner other r@Reference{} = throwError [Error{error_type=UnresolvedReference, error_stack=[r]}]
+          {- Function Call -}
+          has_inner bmc@FunctionCall{base=bbm, argument=ba} smc@FunctionCall{base=sbm, argument=sa} = do
+            debugTell [Has{has_msg=MapEvaluateInner,on_which=Both,big=big_category,small=small_category}]
+            result <- and <$> sequence [bbm `has` sbm, ba `has` sa]
+            if result
+              then do
+                debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+                return result
+              else do
+                debugTell [Has{has_msg=Evaluate,on_which=Both,big=big_category,small=small_category}]
+                bc <- call ba bbm
+                sc <- call sa sbm
+                bc `has` sc
+          has_inner mc@FunctionCall{base=bm, argument=a} other = do
+            debugTell [Has{has_msg=Evaluate,on_which=Big,big=big_category,small=small_category}]
+            cat <- call a bm
+            has cat other
+          has_inner other mc@FunctionCall{base=bm, argument=a} = do
+            debugTell [Has{has_msg=Evaluate,on_which=Small,big=big_category,small=small_category}]
+            cat <- call a bm
+            has other cat
+          {- Access -}
+          has_inner a@Access{base=b, access_id=id} other = do
+            debugTell [Has{has_msg=Evaluate,on_which=Big,big=big_category,small=small_category}]
+            cat <- evaluateAccess a
+            has cat other
+          {- Import -}
+          has_inner i@Import{} i2@Import{} = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return (i == i2)
+          has_inner other i@Import{} = throwError [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
+          has_inner i@Import{} other = throwError [Error{error_type=CannotTypecheckRawImport, error_stack=[i]}]
+          {- Things -}
+          -- equal things and other cases are handled above
+          has_inner (Thing t) _ = do
+            debugTell [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
+            return False
+
+{- This does not do any checking which requires evaluation -}
+validateCategory :: Category -> CategoryContext Category
+validateCategory t@(Thing Unnamed) = throwError [Error{error_type=UnnamedCategory, error_stack=[t]}]
+validateCategory t@(Thing (Index _)) = throwError [Error{error_type=IndexedNamed, error_stack=[t]}]
+validateCategory c@Composite{composite_type=composition_type, inner_categories=[]}
     | isFunctionCompositeType composition_type =
-        Left [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
+        throwError [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
     | otherwise = return c
-validateCategoryInner c@Composite{composite_type=composition_type, inner_categories=inner_cats}
+validateCategory c@Composite{composite_type=composition_type, inner_categories=inner_cats}
     | (composition_type == Composition || composition_type == Case ) && not (all isFunctionComposite inner_cats) =
-        Left [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
+        throwError [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
     | (composition_type == Function) && all (\x -> isImport x || isDefinition x) inner_cats =
-        Left [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
+        throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
     | otherwise = return c
-validateCategoryInner ph@Placeholder{name=Unnamed} = Left [Error{error_type=UnnamedCategory, error_stack=[ph]}]
-validateCategoryInner ph@Placeholder{name=(Index _)} = Left [Error{error_type=IndexedNamed, error_stack=[ph]}]
-validateCategoryInner r@Refined{base=cat,predicate=p}
-    | not (isFunctionComposite p) = Left [Error{error_type=PredicateHasNonFunctionArgument, error_stack=[r]}]
-    | Composite{inner_categories=head:rest} <- cat, return True /= fst (runCategoryContext (head `has` cat)) =
-       Left [Error{error_type=BadRefinementPredicateInput, error_stack=[r]}]
-    | otherwise = return r
+validateCategory ph@Placeholder{name=Unnamed} = throwError [Error{error_type=UnnamedCategory, error_stack=[ph]}]
+validateCategory ph@Placeholder{name=(Index _)} = throwError [Error{error_type=IndexedNamed, error_stack=[ph]}]
 {- TODO: missed case here of nested function calls -}
-validateCategoryInner f@FunctionCall{base=c@Composite{inner_categories=[something]}, argument=a} = do
-    let result = validateCategoryInner f{base=something}
-    if isRight result
-        then return f
-        else result
-validateCategoryInner f@FunctionCall{base=c@Composite{composite_type=c_type, inner_categories=head:rest}, argument=a}
-    | not (isFunctionCompositeType c_type) = Left [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
-    | otherwise = return f
-validateCategoryInner f@FunctionCall{base=Thing{}} = Left [Error{error_type=NonFunctioninFunctionCallBase, error_stack=[f]}]
-validateCategoryInner a@Access{base=bc, access_id=Unnamed} = Left [Error{error_type=EmptyAccessID, error_stack=[a]}]
-validateCategoryInner other = return other
+validateCategory a@Access{base=bc, access_id=Unnamed} = throwError [Error{error_type=EmptyAccessID, error_stack=[a]}]
+validateCategory other = return other
 
-validateCategory :: Category -> Either [Error] Category
-validateCategory = applyOnAST (const Nothing) validateCategoryInner
+validateCategoryRecursive :: Category -> CategoryContext Category
+validateCategoryRecursive = transformAST (Recurse . validateCategory)
 
 -- simplifyInner :: Category -> Category
 -- simplifyInner (Composite _ [any]) = any
@@ -738,8 +860,8 @@ step opts@Options{importer=importer} i@Import{import_category=ic} =
     if result_ic == ic
         then throwError error
         else return $ Import result_ic
-step opts mem@Membership{big_category=bc, small_category=sc} = do
-  tell [Step{msg=MembershipCheck, input=[mem]}]
+step opts mem@TypeAnnotation{big_category=bc, small_category=sc} = do
+  tell [Step{msg=TypeAnnotationCheck, input=[mem]}]
   result <- identityToIO $ has bc sc
   if result
     then return sc
@@ -747,9 +869,9 @@ step opts mem@Membership{big_category=bc, small_category=sc} = do
       tell [Step{msg=DeeperEval, input=[mem]}]
       stepped_bc <- step opts bc
       stepped_sc <- step opts sc
-      let step_result = Membership stepped_bc stepped_sc
+      let step_result = TypeAnnotation stepped_bc stepped_sc
       if stepped_bc == bc && stepped_sc == sc
-        then throwError [Error{error_type=BadMembership, error_stack=[mem]}]
+        then throwError [Error{error_type=BadTypeAnnotation, error_stack=[mem]}]
         else return step_result
 step opts c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     tell [Step{msg=DeeperEval, input=[c]}]

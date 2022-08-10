@@ -19,7 +19,7 @@ Reference -> $Name <br>
 Universal -> Any <br>
 Call -> \<Function>[\<category>] <br>
 Dereference -> \<category>.ID <br>
-Membership -> \<category> :: \<category> <br>
+TypeAnnotation -> \<category> :: \<category> <br>
 Definition -> define \<category> <br>
 Import -> import \<category> <br>
                
