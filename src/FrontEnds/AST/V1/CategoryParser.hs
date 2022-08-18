@@ -1,7 +1,7 @@
 
 
 module FrontEnds.AST.V1.CategoryParser where
-import CategoryData
+import Category
 import System.Directory (doesFileExist)
 
 import Control.Monad.Trans (lift)

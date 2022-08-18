@@ -2,7 +2,7 @@
 module FrontEnds.AST.V1.CategoryWriter where
 
 import FrontEnds.AST.V1.CategoryParser (basePath)
-import CategoryData
+import Category
 import System.Directory (doesFileExist)
 import Control.Monad.Trans
 import Control.Monad.Except

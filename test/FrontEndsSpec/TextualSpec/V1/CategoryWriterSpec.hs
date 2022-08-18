@@ -5,7 +5,7 @@ module FrontEndsSpec.TextualSpec.V1.CategoryWriterSpec (spec) where
 import Test.Hspec
 
 import FrontEnds.Textual.V1.CategoryWriter
-import CategoryData
+import Category
 
 
 spec :: Spec
@@ -17,8 +17,8 @@ spec = do
             categoryToString Composite{composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"},Thing {name = Name "c"}]} `shouldBe` "(`a,`b,`c)"
         it "(Tuples) should write recursive tuples" $ do
             categoryToString Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]} `shouldBe` "(`a,(`b,`c))"
-        it "(Unions) should write sumples" $ do
-            categoryToString Composite {composite_type = Union, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "|`a,`b|"
+        it "(Eithers) should write sumples" $ do
+            categoryToString Composite {composite_type = Either, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "|`a,`b|"
         it "(Composition) should write composite categories" $ do
             categoryToString Composite {composite_type = Composition, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]} `shouldBe` "*(`a,`b)*"
         it "(Match) should write sumposite categories" $ do
@@ -29,15 +29,15 @@ spec = do
             categoryToString (Composite Function [Thing (Name "a"), Thing (Name "b")]) `shouldBe` "`a->`b"
         it "(Function) should handle nested chains" $ do
             categoryToString (Composite Function [Composite Function [Thing (Name "a"), Thing (Name "b")], Thing (Name "b")]) `shouldBe` "(`a->`b)->`b"
-        it "(Placeholder) should write placeholders" $ do
-            categoryToString Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")} `shouldBe` "x@`a"
+        it "(Variable) should write placeholders" $ do
+            categoryToString Variable{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")} `shouldBe` "x@`a"
         it "(Refinement) should write refinement" $ do
-            categoryToString Refined{base=Placeholder{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
-        it "(BuiltIn) should write flexible" $ do
-            categoryToString BuiltIn{special_type=Flexible} `shouldBe` "(%)"
-        it "(BuiltIn) should write Universal" $ do
-            categoryToString BuiltIn{special_type=Universal} `shouldBe` "Any"
-        it "(BuiltIn) should write Reference" $ do
+            categoryToString Refined{base=Variable{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
+        it "(Special) should write flexible" $ do
+            categoryToString Special{special_type=Flexible} `shouldBe` "(%)"
+        it "(Special) should write Any" $ do
+            categoryToString Special{special_type=Any} `shouldBe` "Any"
+        it "(Special) should write Reference" $ do
             categoryToString Reference{name=Name "Stuff"} `shouldBe` "$Stuff"
         it "(Call) should write call" $ do
             categoryToString FunctionCall{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg") } `shouldBe` "$base_foo[$some_arg]"
@@ -68,4 +68,4 @@ spec = do
           it "should handle imports" $ do
             prettyCategoryToString (Composite Function [Import (Reference (Name "base")), Thing (Name "a")]) `shouldBe` "import $base\n->\treturn `a"
           it "should handle definitions" $ do
-            prettyCategoryToString (Composite Function [Definition (Placeholder (Name "a") Label (Thing (Name "x"))), Reference (Name "a")]) `shouldBe` "define a:`x\n->\treturn $a"
+            prettyCategoryToString (Composite Function [Definition (Variable (Name "a") Label (Thing (Name "x"))), Reference (Name "a")]) `shouldBe` "define a:`x\n->\treturn $a"

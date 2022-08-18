@@ -1,7 +1,7 @@
 -- {-# LANGUAGE OverloadedStrings #-}
 module FrontEnds.Textual.V1.CategoryWriter where
 
-import CategoryData
+import Category
 
 import Data.Char (toLower)
 import Data.Text ( Text, pack, unpack )
@@ -21,7 +21,7 @@ categoryToText = pack . categoryToString
 categoryToString :: Category -> [Char]
 categoryToString (Thing name) = "`" ++ idToString name
 categoryToString (Composite Tuple inner) = "(" ++ intercalate "," (map categoryToString inner) ++ ")"
-categoryToString (Composite Union inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
+categoryToString (Composite Either inner) = "|" ++ intercalate "," (map categoryToString inner) ++ "|"
 categoryToString (Composite Composition inner) = "*(" ++ intercalate "," (map categoryToString inner) ++ ")*"
 categoryToString (Composite Match inner) = "*|" ++ intercalate "," (map categoryToString inner) ++ "|*"
 categoryToString (Composite Function inner) =
@@ -33,13 +33,13 @@ categoryToString (Composite Function inner) =
         innerFooToString (head:rest) = categoryToString head ++ "->" ++ innerFooToString rest
     in
         innerFooToString inner
-categoryToString (Placeholder name Element ph_category) = idToString name ++ "@" ++ categoryToString ph_category
-categoryToString (Placeholder name Label ph_category) = idToString name ++ ":" ++ categoryToString ph_category
--- categoryToString (Placeholder name Resolved ph_category) = "<" ++ idToString name ++ ">"
-categoryToString (Placeholder name Resolved ph_category) = "<" ++ categoryToString ph_category ++ ">"
+categoryToString (Variable name Element ph_category) = idToString name ++ "@" ++ categoryToString ph_category
+categoryToString (Variable name Label ph_category) = idToString name ++ ":" ++ categoryToString ph_category
+-- categoryToString (Variable name Resolved ph_category) = "<" ++ idToString name ++ ">"
+categoryToString (Variable name Resolved ph_category) = "<" ++ categoryToString ph_category ++ ">"
 categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ categoryToString _base_category ++ " | " ++ categoryToString _predicate ++ "}"
-categoryToString BuiltIn{special_type=Flexible} = "(%)"
-categoryToString BuiltIn{special_type=Universal} = "Any"
+categoryToString Special{special_type=Flexible} = "(%)"
+categoryToString Special{special_type=Any} = "Any"
 categoryToString Reference{name=name} = "$" ++ idToString name
 categoryToString FunctionCall{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_id=_id} = "(" ++ categoryToString bc ++ ")." ++ idToString _id
@@ -62,10 +62,10 @@ errorToStringInner (Error UnresolvedReference (Reference{name=n}:rest)) = "I don
 errorToStringInner (Error UnresolvedReference _) = error "unhandled"
 errorToStringInner (Error CallingADataCompositeCategory _) = "You cannot call a Data Category. Did you mean to make this a function?"
 errorToStringInner (Error UnnamedCategory (Thing{}:rest)) = "Things require textual names in order to be used. They cannot be left unnamed."
-errorToStringInner (Error UnnamedCategory (Placeholder{}:rest)) = "Placeholders require textual names in order to be used. They cannot be left unnamed."
+errorToStringInner (Error UnnamedCategory (Variable{}:rest)) = "Variables require textual names in order to be used. They cannot be left unnamed."
 errorToStringInner (Error UnnamedCategory _) = error "unhandled"
 errorToStringInner (Error IndexedNamed (Thing{}:rest)) = "Things require textual names in order to be used. They cannot be named with an index."
-errorToStringInner (Error IndexedNamed (Placeholder{}:rest)) = "Placeholders require textual names in order to be used. They cannot be named with an index."
+errorToStringInner (Error IndexedNamed (Variable{}:rest)) = "Variables require textual names in order to be used. They cannot be named with an index."
 errorToStringInner (Error IndexedNamed _) = error "unhandled"
 errorToStringInner (Error EmptyFunctionalComposite _) = "This is empty. Function composites should have functions inside them. Perhaps you meant for this to be a tuple or sumple?"
 errorToStringInner (Error InsufficientFunctionTerms _) = "I think this function needs more arguments for it to be properly called."
@@ -148,14 +148,14 @@ prettyCategoryToStringInner indenter (Thing name) = ["`" ++ idToString name]
 prettyCategoryToStringInner indenter (Composite c_type []) = do
   case c_type of
       Tuple -> ["()"]
-      Union -> ["||"]
+      Either -> ["||"]
       Composition -> ["*()*"]
       Match -> ["*||*"]
       Function -> ["<EMPTY FUNCTION>"]
 prettyCategoryToStringInner indenter (Composite c_type [something]) = do
   case c_type of
       Tuple -> wrapAround ("(", ")") $ prettyCategoryToStringInner indenter something
-      Union -> wrapAround ("|", "|") $ prettyCategoryToStringInner indenter something
+      Either -> wrapAround ("|", "|") $ prettyCategoryToStringInner indenter something
       Composition -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
       Match -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
       Function -> prettyCategoryToStringInner indenter something
@@ -178,24 +178,24 @@ prettyCategoryToStringInner indenter (Composite c_type inner) = do
     let comma = mapButLast (applyOnLast (++ ",")) tabbed
     case c_type of
       Tuple -> ["("] ++ concat comma ++ [")"]
-      Union -> ["|"] ++ concat comma ++ ["|"]
+      Either -> ["|"] ++ concat comma ++ ["|"]
       Composition -> ["*("] ++ concat comma ++ [")*"]
       Match -> ["*|"] ++ concat comma ++ ["|*"]
       Function -> error "Functions should not be handled here"
 prettyCategoryToStringInner indenter Import{import_category=cat} = incrementIndentButFirst $ applyOnFirst ("import " ++) $ prettyCategoryToStringInner indenter cat
 prettyCategoryToStringInner indenter Definition{def_category=cat} = incrementIndentButFirst $ applyOnFirst ("define " ++) $ prettyCategoryToStringInner indenter cat
 prettyCategoryToStringInner indenter Reference{name=name} = ["$" ++ idToString name]
-prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
+prettyCategoryToStringInner indenter (Variable name Label ph_category) = do
   let inner_result = prettyCategoryToStringInner indenter ph_category
   case inner_result of
     [] -> []
     something -> applyOnFirst ((idToString name ++ ":") ++) something
     -- longer_list -> (idToString name ++ ":") : incrementIndent longer_list
-prettyCategoryToStringInner indenter (Placeholder name Element ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
-prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") [idToString name] -- prettyCategoryToStringInner indenter ph_category
+prettyCategoryToStringInner indenter (Variable name Element ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
+prettyCategoryToStringInner indenter (Variable name Resolved ph_category) = wrapAround ("<", ">") [idToString name] -- prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
-prettyCategoryToStringInner indenter BuiltIn{special_type=Flexible} = ["(%)"]
-prettyCategoryToStringInner indenter BuiltIn{special_type=Universal} = ["Any"]
+prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["(%)"]
+prettyCategoryToStringInner indenter Special{special_type=Any} = ["Any"]
 prettyCategoryToStringInner indenter FunctionCall{base=bm, argument=a} = do
   let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)
   let pretty_a = wrapAround ("[", "]") (prettyCategoryToStringInner indenter a)

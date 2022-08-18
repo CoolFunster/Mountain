@@ -1,0 +1,10 @@
+SimpleConsole:
+  import (
+    base.String,
+    base.Dict
+  ) -> (
+    Console: #Console
+    print: (<Console>, String) -> <Console>,
+    input: (<Console>, String) -> (<Console>, String),
+    ConsoleProgram: (<Console>, [String], Dict (String,String)) -> (<Console>,Int)
+  )

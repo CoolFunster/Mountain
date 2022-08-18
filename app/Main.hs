@@ -1,6 +1,6 @@
 module Main where
 
-import CategoryData
+import Category
 
 main :: IO ()
 main = do

@@ -1,21 +1,21 @@
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
-module CategoryDataSpec (spec) where
+module CategorySpec (spec) where
 
 import Data.Either
 import Debug.Trace
 
 import Test.Hspec
-import CategoryData
+import Category
 import FrontEnds.AST.V1.CategoryParser
 
 -- TODO Split into respective files
 
 nat::Category
-nat = Placeholder{
+nat = Variable{
     name=Name "Nat",
     placeholder_type=Label,
     placeholder_category=Composite{
-        composite_type=Union,
+        composite_type=Either,
         inner_categories=[
             Thing (Name "0"),
             Composite Tuple [Thing (Name "S"), Reference (Name "Nat")]
@@ -24,7 +24,7 @@ nat = Placeholder{
 }
 
 simpleRecursiveCat::Category
-simpleRecursiveCat = Placeholder{
+simpleRecursiveCat = Variable{
     name=Name "self",
     placeholder_type=Label,
     placeholder_category=Composite{composite_type=Tuple,inner_categories=[
@@ -45,15 +45,15 @@ spec = do
             checkAST or isThing (Composite Tuple [Thing (Name "x")]) `shouldBe` True
         it "should work for composites with multiple categories" $ do
             checkAST or (isReferenceOfName (Name "self")) Composite{composite_type=Tuple,inner_categories=[Thing (Name "thing"), Reference{name=Name "self"}]} `shouldBe` True
-        it "should check properly for Placeholders" $ do
-            checkAST or isThing (Placeholder Unnamed Label (Thing (Name "x"))) `shouldBe` True
+        it "should check properly for Variables" $ do
+            checkAST or isThing (Variable Unnamed Label (Thing (Name "x"))) `shouldBe` True
         it "should check properly for Refined" $ do
             checkAST or isThing (Refined (Thing (Name "x")) valid) `shouldBe` True
     describe "isLabelOfName" $ do
         it "Should work for labels with a particular name" $ do
             isLabelOfName (Name "x") (Thing (Name "x")) `shouldBe` False
-            isLabelOfName (Name "x") (Placeholder (Name "x") Label valid) `shouldBe` True
-            isLabelOfName (Name "x") (Placeholder (Name "x") Element valid) `shouldBe` False
+            isLabelOfName (Name "x") (Variable (Name "x") Label valid) `shouldBe` True
+            isLabelOfName (Name "x") (Variable (Name "x") Element valid) `shouldBe` False
     describe "isRecursiveCategory" $ do
         it "Simple recursion should be identified" $ do
             isRecursiveCategory simpleRecursiveCat `shouldBe` True
@@ -63,10 +63,10 @@ spec = do
     --     it "(things) should have a level of zero" $ do
     --         let thing = Thing (Name "thing")
     --         level thing `shouldBe` Right (Specific 0)
-    --     it "(Union categories) should have a level of 1 more than their parts" $ do
+    --     it "(Either categories) should have a level of 1 more than their parts" $ do
     --         let thing = Thing (Name "thing")
     --         let thing2 = Thing (Name "thing2")
-    --         let higher_category = Composite Union [thing, thing2]
+    --         let higher_category = Composite Either [thing, thing2]
     --         level higher_category `shouldBe` Right (Specific 1)
     --     it "(Tuple categories) should have a level of their components" $ do
     --         let thing = Thing (Name "thing")
@@ -80,7 +80,7 @@ spec = do
     --         level morphism `shouldBe` Right (Specific 0)
     --     it "(Recursive) recursive categories should have an appropriate level" $ do
     --         let thing = Thing (Name "thing")
-    --         let recursive_cat = Placeholder{
+    --         let recursive_cat = Variable{
     --             name=Name "self",
     --             placeholder_type=Label,
     --             placeholder_category=Composite{composite_type=Tuple,inner_categories=[thing, Reference{name=Name "self"}]}}
@@ -137,8 +137,8 @@ spec = do
             has' product_things thing2 `shouldBe` Right False
             has' product_things product_things `shouldBe` Right True
             has' product_things (Composite Tuple [thing, thing2]) `shouldBe` Right False
-        it "(Union) should make a sum of things have each of those things" $ do
-            let sum_things = Composite Union [thing, thing2]
+        it "(Either) should make a sum of things have each of those things" $ do
+            let sum_things = Composite Either [thing, thing2]
             has' sum_things thing `shouldBe` Right True
             has' sum_things thing2 `shouldBe` Right True
             has' sum_things thing3 `shouldBe` Right False
@@ -146,9 +146,9 @@ spec = do
             has' thing2 sum_things `shouldBe` Right False
             has' thing3 sum_things `shouldBe` Right False
             has' sum_things sum_things `shouldBe` Right True
-            has' sum_things (Composite Union [thing, thing3]) `shouldBe` Right False
-            has' sum_things (Composite Union [thing, thing2, thing3]) `shouldBe` Right False
-            has' (Composite Union [thing, thing2, thing3]) sum_things `shouldBe` Right True
+            has' sum_things (Composite Either [thing, thing3]) `shouldBe` Right False
+            has' sum_things (Composite Either [thing, thing2, thing3]) `shouldBe` Right False
+            has' (Composite Either [thing, thing2, thing3]) sum_things `shouldBe` Right True
         it "(Composition) should only check input output of composite morphisms" $ do
             let composite_morphism = Composite Composition [a_b, b_c]
 
@@ -160,8 +160,8 @@ spec = do
             has' sumposite_morphism a_b `shouldBe` Right True
             has' sumposite_morphism b_c `shouldBe` Right True
             has' sumposite_morphism a_c `shouldBe` Right False
-        it "(Union) should have each of its inner categories" $ do
-            let higher_category = Composite Union [a,b,a_b,b_c]
+        it "(Either) should have each of its inner categories" $ do
+            let higher_category = Composite Either [a,b,a_b,b_c]
 
             has' higher_category a `shouldBe` Right True
             has' higher_category b `shouldBe` Right True
@@ -171,9 +171,9 @@ spec = do
             has' higher_category a_c `shouldBe` Right False
             has' higher_category d `shouldBe` Right False
             has' higher_category a_d `shouldBe` Right False
-        it "(Placeholder) should be contained by its category" $ do
-            let higher_category = Composite Union [a,b,a_b,b_c]
-            let ph_hc = Placeholder (Name "ph-all") Element higher_category
+        it "(Variable) should be contained by its category" $ do
+            let higher_category = Composite Either [a,b,a_b,b_c]
+            let ph_hc = Variable (Name "ph-all") Element higher_category
 
             has' higher_category ph_hc `shouldBe` Right True
             has' ph_hc higher_category  `shouldBe` Right True
@@ -223,13 +223,13 @@ spec = do
             call' b case_function `shouldBe` Right c
             isLeft (call' c case_function) `shouldBe` True
     describe "validateCategory" $ do
-        it "(Placeholder) should not modify this placeholder" $ do
+        it "(Variable) should not modify this placeholder" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
-            let a_b = Composite Union [a,b]
-            let x_elem_a_b = Placeholder (Name "x") Element a_b
+            let a_b = Composite Either [a,b]
+            let x_elem_a_b = Variable (Name "x") Element a_b
             validateCategory' x_elem_a_b `shouldBe` return x_elem_a_b
-        it "(Placeholder) should not modify this function call" $ do
+        it "(Variable) should not modify this function call" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Composite Function [a,b]
@@ -240,8 +240,8 @@ spec = do
     --     it "(simplify) should not modify this placeholder" $ do
     --         let a = Thing (Name "a")
     --         let b = Thing (Name "b")
-    --         let a_b = Composite Union [a,b]
-    --         let x_elem_a_b = Placeholder (Name "x") Element a_b
+    --         let a_b = Composite Either [a,b]
+    --         let x_elem_a_b = Variable (Name "x") Element a_b
     --         simplify x_elem_a_b `shouldBe` Right x_elem_a_b
     --     it "(simplify) should not modify this function call" $ do
     --         let a = Thing (Name "a")
@@ -269,7 +269,7 @@ spec = do
       it "(Match) should return the flattened case" $ do
         let foo = Composite Match [fooab, foobc]
         let result = getResultOf $ flatten foo
-        result `shouldBe` Right (Composite {composite_type = Function, inner_categories = [Composite {composite_type = Union, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Union, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]})
+        result `shouldBe` Right (Composite {composite_type = Function, inner_categories = [Composite {composite_type = Either, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Either, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]})
       it "(Match) should handle nested case" $ do
         let foo = Composite Match [fooab, foobc]
         let foo2 = Composite Match [fooab, foo]
@@ -293,11 +293,11 @@ spec = do
             let a2b = Composite Function [a, b]
             result <- executeAST a2b
             result `shouldBe` Right a2b
-        it "(Placeholder) should just return the placeholder" $ do
+        it "(Variable) should just return the placeholder" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
-            let a_b = Composite Union [a,b]
-            let x_elem_a_b = Placeholder (Name "x") Element a_b
+            let a_b = Composite Either [a,b]
+            let x_elem_a_b = Variable (Name "x") Element a_b
             result <- executeAST x_elem_a_b
             result `shouldBe` Right x_elem_a_b
         it "(FunctionCall) should just call the function" $ do
@@ -313,7 +313,7 @@ spec = do
         it "(RecursiveCategory) should be callable in a morphism call" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
-            let simple_ab = Placeholder{
+            let simple_ab = Variable{
                 name=Name "ab",
                 placeholder_type=Label,
                 placeholder_category=Composite {
@@ -335,30 +335,30 @@ spec = do
             result <- stepEvaluate unfolded_on_a
             result `shouldBe` Right b
             result <- stepEvaluate unfolded_on_b
-            result `shouldBe`  Right (FunctionCall {base = Placeholder {name = Name "ab", placeholder_type = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
+            result `shouldBe`  Right (FunctionCall {base = Variable {name = Name "ab", placeholder_type = Resolved, placeholder_category = Variable {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
             let extracted_result = fromRight (error "should not hit") result
             result2 <- executeAST extracted_result
             result2 `shouldBe` Right b
         it "(Import) should evaluate imports correctly" $ do
-            let c = Import (Placeholder (Name "x") Label (Reference (Name "test")))
+            let c = Import (Variable (Name "x") Label (Reference (Name "test")))
             result <- getResultOfT $ evaluateImport loadAST c
-            result `shouldBe` Right (Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
+            result `shouldBe` Right (Variable {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Variable {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
         it "(Definition) should properly handle definitions" $ do
-            let c = Composite Function [Definition (Placeholder (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
+            let c = Composite Function [Definition (Variable (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
             result <- executeAST c
             result `shouldBe` Right (Thing (Name "5"))
         it "(Import) should properly handle imports" $ do
-            let c = Composite Function [Import (Placeholder (Name "x") Label (Reference (Name "test"))), Reference (Name "x")]
+            let c = Composite Function [Import (Variable (Name "x") Label (Reference (Name "test"))), Reference (Name "x")]
             result1 <- stepEvaluate c
             let real_result1 = fromRight (error "should not hit 1") result1
             result2 <- stepEvaluate real_result1
             let real_result2 = fromRight (error "should not hit 2") result2
             result3 <- stepEvaluate real_result2
-            result3 `shouldBe` Right (Placeholder {name = Name "x", placeholder_type = Resolved, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
+            result3 `shouldBe` Right (Variable {name = Name "x", placeholder_type = Resolved, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Variable {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
     describe "access" $ do
         let evaluateAccess' a = getResultOf $ evaluateAccess a
         it "should handle indices on composites well" $ do
-            let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Placeholder{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
+            let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Variable{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
             evaluateAccess' Access{base=composite_category, access_id=Index 0} `shouldBe` Right (Thing (Name "a"))
             evaluateAccess' Access{base=composite_category, access_id=Index 1} `shouldBe` Right (Thing (Name "b"))
             evaluateAccess' Access{base=composite_category, access_id=Name "a"} `shouldBe` Right (Thing (Name "a"))
@@ -367,7 +367,7 @@ spec = do
             evaluateAccess' Access{base=composite_category, access_id=Name "d"} `shouldBe` Right Reference{name=Name "d"}
     describe "unroll" $ do
         it "should unroll recursive labels" $ do
-            let simple_ab = Placeholder{
+            let simple_ab = Variable{
                 name=Name "ab",
                 placeholder_type=Label,
                 placeholder_category=Composite {
@@ -378,13 +378,13 @@ spec = do
                     ]
                 }
             }
-            unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_type = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}}]}
+            unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Variable {name = Name "ab", placeholder_type = Resolved, placeholder_category = Variable {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}}]}
     describe "importCategories" $ do
         it "should import categories test1" $ do
             let test_item = Import{import_category=Access{base=Reference (Name "test"), access_id=Name "test1"}}
             result <- getResultOfT $ evaluateImport loadAST test_item
-            result `shouldBe` Right (Placeholder {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
+            result `shouldBe` Right (Variable {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Variable {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Variable {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
         it "should import categories test2" $ do
             let test_item = Import{import_category=Reference (Name "test.test2")}
             result <- getResultOfT $ evaluateImport loadAST test_item
-            result `shouldBe` Right Placeholder {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
+            result `shouldBe` Right Variable {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}

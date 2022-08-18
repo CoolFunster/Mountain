@@ -3,7 +3,7 @@ module FrontEndsSpec.TextualSpec.V1.Categories.ListSpec (spec) where
 
 import Test.Hspec
 
-import CategoryData
+import Category
 import FrontEnds.Textual.V1.CategoryParser
 import FrontEnds.Textual.V1.CategoryWriter
 

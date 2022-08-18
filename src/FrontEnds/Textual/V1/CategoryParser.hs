@@ -1,6 +1,6 @@
 module FrontEnds.Textual.V1.CategoryParser where
 
-import CategoryData
+import Category
 import FrontEnds.Textual.V1.CategoryWriter
 
 import Text.Megaparsec
@@ -135,7 +135,7 @@ pDefinition :: Parser Category
 pDefinition = withValidation $ do
     define_str <- symbol $ pack "define"
     _ <- spaceConsumer
-    category <- pPlaceholder
+    category <- pVariable
     return Definition{def_category=category}
 
 pGivenOrReturn :: Parser Category
@@ -145,14 +145,14 @@ pGivenOrReturn = do
     pTypeAnnotation
 
 pTypeAnnotation :: Parser Category
-pTypeAnnotation = withValidation $ makeExprParser pPlaceholder [
+pTypeAnnotation = withValidation $ makeExprParser pVariable [
             [
                 binaryN (pStringBetweenWS "::") (\x y -> TypeAnnotation{big_category=x,small_category=y})
             ]]
 
 {- If not a placeholder, falls through to other categories -}
-pPlaceholder :: Parser Category
-pPlaceholder = withValidation $ do
+pVariable :: Parser Category
+pVariable = withValidation $ do
     parsed_name <- optional (try pCategoryName)
     let name = fromMaybe Unnamed parsed_name
     let at = pack "@"
@@ -163,11 +163,11 @@ pPlaceholder = withValidation $ do
             Just some_val ->
                 if some_val == at
                     then Just Element
-                    else Just CategoryData.Label
+                    else Just Category.Label
     category <- pCategoryTerm
     case ph_type of
         Nothing -> return category
-        Just ph_t -> return $ Placeholder name ph_t category
+        Just ph_t -> return $ Variable name ph_t category
 
 pCategoryTerm :: Parser Category
 pCategoryTerm = withValidation $ do
@@ -201,14 +201,14 @@ pAccessExtension = do
 
 pStandardCategory :: Parser Category
 pStandardCategory = choice [
-    try pUniversal,
+    try pAny,
     try pThing,
     try pReference,
     try pFlexible,
     try pComposition,
     try pTuple,
     try pMatch,
-    try pUnion,
+    try pEither,
     try pRefinement]
 
 pThing :: Parser Category
@@ -223,15 +223,15 @@ pReference = withValidation $ do
     name <- pCategoryName
     return Reference{name=name}
 
-pUniversal :: Parser Category
-pUniversal = withValidation $ do
+pAny :: Parser Category
+pAny = withValidation $ do
     _ <- symbol (pack "Any")
-    return (BuiltIn Universal)
+    return (Special Any)
 
 pFlexible :: Parser Category
 pFlexible = withValidation $ do
     _ <- symbol (pack "(%)")
-    return (BuiltIn Flexible)
+    return (Special Flexible)
 
 
 {- Parses composite types that have a beg & end character wrapping them -}
@@ -247,8 +247,8 @@ pCategoryInnerList = sepBy pCategory (pStringBetweenWS ",")
 pTuple :: Parser Category
 pTuple = pCompositeTemplate Tuple ("(", ")")
 
-pUnion :: Parser Category
-pUnion = pCompositeTemplate Union ("|", "|")
+pEither :: Parser Category
+pEither = pCompositeTemplate Either ("|", "|")
 
 pComposition :: Parser Category
 pComposition = pCompositeTemplate Composition ("*(", ")*")
@@ -258,7 +258,7 @@ pMatch = pCompositeTemplate Match ("*|", "|*")
 
 pRefinementInner :: Parser Category
 pRefinementInner = withValidation $ do
-    ph <- pPlaceholder
+    ph <- pVariable
     _ <- spaceConsumer
     _ <- symbol (pack "|")
     _ <- spaceConsumer
