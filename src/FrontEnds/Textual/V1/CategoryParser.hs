@@ -175,21 +175,21 @@ pCategoryTerm = withValidation $ do
     extension <- many pCategoryExtension
     let collector = (\e b -> case b of
                 d@Access{} -> d{base=e}
-                mc@FunctionCall{} -> mc{base=e}
+                mc@Call{} -> mc{base=e}
                 anything_else -> anything_else
             )
     return (foldl collector base extension)
 
 pCategoryExtension :: Parser Category
 pCategoryExtension = choice [
-        try pFunctionCallExtension,
+        try pCallExtension,
         try pAccessExtension
     ]
 
-pFunctionCallExtension :: Parser Category
-pFunctionCallExtension = do
+pCallExtension :: Parser Category
+pCallExtension = do
     argument <- pWrapBetween "[" "]" pCategory
-    return FunctionCall{base=valid,argument=argument}
+    return Call{base=valid,argument=argument}
 
 pAccessExtension :: Parser Category
 pAccessExtension = do

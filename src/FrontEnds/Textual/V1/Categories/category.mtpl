@@ -25,11 +25,11 @@ import list:$base.linkedlist
 -> define Category:|
     thing:          (`Thing, name:$Id),
     composite:      (`Composite, composite_type:$CompositeType, inner_categories:$list[$Category]),
-    placeholder:    (`Variable, placeholder_type:$VariableType, placeholder_category:$Category),
+    placeholder:    (`Variable, variable_kind:$VariableType, variable_category:$Category),
     refined:        (`Refined, base:$Category, predicate:(`Composite, `Function, $list[$Category]),
     special:        (`Special, special_type:$SpecialType),
     reference:      (`Reference, name:$Id),
-    function_call:  (`FunctionCall, base:(`Composite, `Function, $list[$Category]), argument:$Category),
+    function_call:  (`Call, base:(`Composite, `Function, $list[$Category]), argument:$Category),
     access:         (`Access, base:$Category, access_id:$Id),
     import:         (`Import, import_category:$Category),
     definition:     (`Definition, def_category:$Category),
@@ -39,6 +39,6 @@ import list:$base.linkedlist
   id_type:$Id,
   special_category_type:$SpecialType,
   composite_type:$CompositeType,
-  placeholder_type:$VariableType,
+  variable_kind:$VariableType,
   category:$Category,
 )

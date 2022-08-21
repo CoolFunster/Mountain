@@ -13,8 +13,8 @@ import FrontEnds.AST.V1.CategoryParser
 nat::Category
 nat = Variable{
     name=Name "Nat",
-    placeholder_type=Label,
-    placeholder_category=Composite{
+    variable_kind=Label,
+    variable_category=Composite{
         composite_type=Either,
         inner_categories=[
             Thing (Name "0"),
@@ -26,8 +26,8 @@ nat = Variable{
 simpleRecursiveCat::Category
 simpleRecursiveCat = Variable{
     name=Name "self",
-    placeholder_type=Label,
-    placeholder_category=Composite{composite_type=Tuple,inner_categories=[
+    variable_kind=Label,
+    variable_category=Composite{composite_type=Tuple,inner_categories=[
         Thing (Name "thing"),
         Reference{name=Name "self"}]
     }
@@ -82,8 +82,8 @@ spec = do
     --         let thing = Thing (Name "thing")
     --         let recursive_cat = Variable{
     --             name=Name "self",
-    --             placeholder_type=Label,
-    --             placeholder_category=Composite{composite_type=Tuple,inner_categories=[thing, Reference{name=Name "self"}]}}
+    --             variable_kind=Label,
+    --             variable_category=Composite{composite_type=Tuple,inner_categories=[thing, Reference{name=Name "self"}]}}
     --         level recursive_cat `shouldBe` Right (Specific 1)
     describe "has" $ do
         let has' a b = getResultOf $ has a b
@@ -233,7 +233,7 @@ spec = do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Composite Function [a,b]
-            let a2b_on_a = FunctionCall a2b a
+            let a2b_on_a = Call a2b a
             let result = validateCategory' a2b_on_a
             result `shouldBe` Right a2b_on_a
     -- describe "simplify" $ do
@@ -247,7 +247,7 @@ spec = do
     --         let a = Thing (Name "a")
     --         let b = Thing (Name "b")
     --         let a2b = Composite Function [a,b]
-    --         let a2b_on_a = FunctionCall a2b a
+    --         let a2b_on_a = Call a2b a
     --         let result = simplify a2b_on_a
     --         result `shouldBe` Right a2b_on_a
     describe "flatten" $ do
@@ -300,11 +300,11 @@ spec = do
             let x_elem_a_b = Variable (Name "x") Element a_b
             result <- executeAST x_elem_a_b
             result `shouldBe` Right x_elem_a_b
-        it "(FunctionCall) should just call the function" $ do
+        it "(Call) should just call the function" $ do
             let a = Thing (Name "a")
             let b = Thing (Name "b")
             let a2b = Composite Function [a,b]
-            let a2b_on_a = FunctionCall a2b a
+            let a2b_on_a = Call a2b a
             result <- executeAST a2b_on_a
             result `shouldBe` Right b
         it "(RecursiveCategory) should just return itself" $ do
@@ -315,18 +315,18 @@ spec = do
             let b = Thing (Name "b")
             let simple_ab = Variable{
                 name=Name "ab",
-                placeholder_type=Label,
-                placeholder_category=Composite {
+                variable_kind=Label,
+                variable_category=Composite {
                     composite_type=Match,
                     inner_categories=[
                         Composite Function [a,b],
-                        Composite Function [b, FunctionCall (Reference (Name "ab")) a]
+                        Composite Function [b, Call (Reference (Name "ab")) a]
                     ]
                 }
             }
             let unfolded_simple_ab = unroll Recursive simple_ab
-            let unfolded_on_a = FunctionCall unfolded_simple_ab a
-            let unfolded_on_b = FunctionCall unfolded_simple_ab b
+            let unfolded_on_a = Call unfolded_simple_ab a
+            let unfolded_on_b = Call unfolded_simple_ab b
             -- print $ inner_expr simple_ab
             -- simplify unfolded_on_b `shouldBe` Right unfolded_on_b
             -- simplify unfolded_on_a `shouldBe` Right unfolded_on_a
@@ -335,14 +335,14 @@ spec = do
             result <- stepEvaluate unfolded_on_a
             result `shouldBe` Right b
             result <- stepEvaluate unfolded_on_b
-            result `shouldBe`  Right (FunctionCall {base = Variable {name = Name "ab", placeholder_type = Resolved, placeholder_category = Variable {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},FunctionCall {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
+            result `shouldBe`  Right (Call {base = Variable {name = Name "ab", variable_kind = Resolved, variable_category = Variable {name = Name "ab", variable_kind = Label, variable_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Call {base = Reference {name = Name "ab"}, argument = Thing {name = Name "a"}}]}]}}}, argument = Thing {name = Name "a"}})
             let extracted_result = fromRight (error "should not hit") result
             result2 <- executeAST extracted_result
             result2 `shouldBe` Right b
         it "(Import) should evaluate imports correctly" $ do
             let c = Import (Variable (Name "x") Label (Reference (Name "test")))
             result <- getResultOfT $ evaluateImport loadAST c
-            result `shouldBe` Right (Variable {name = Name "x", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Variable {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
+            result `shouldBe` Right (Variable {name = Name "x", variable_kind = Label, variable_category = Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "test1", variable_kind = Label, variable_category = Import {import_category = Reference {name = Name "test.test1"}}},Variable {name = Name "test2", variable_kind = Label, variable_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
         it "(Definition) should properly handle definitions" $ do
             let c = Composite Function [Definition (Variable (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
             result <- executeAST c
@@ -354,11 +354,11 @@ spec = do
             result2 <- stepEvaluate real_result1
             let real_result2 = fromRight (error "should not hit 2") result2
             result3 <- stepEvaluate real_result2
-            result3 `shouldBe` Right (Variable {name = Name "x", placeholder_type = Resolved, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "test1", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Variable {name = Name "test2", placeholder_type = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
+            result3 `shouldBe` Right (Variable {name = Name "x", variable_kind = Resolved, variable_category = Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "test1", variable_kind = Label, variable_category = Import {import_category = Reference {name = Name "test.test1"}}},Variable {name = Name "test2", variable_kind = Label, variable_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
     describe "access" $ do
         let evaluateAccess' a = getResultOf $ evaluateAccess a
         it "should handle indices on composites well" $ do
-            let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Variable{name=Name "c", placeholder_type=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
+            let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Variable{name=Name "c", variable_kind=Label, variable_category=Thing (Name "z")}, Reference{name=Name "d"}]
             evaluateAccess' Access{base=composite_category, access_id=Index 0} `shouldBe` Right (Thing (Name "a"))
             evaluateAccess' Access{base=composite_category, access_id=Index 1} `shouldBe` Right (Thing (Name "b"))
             evaluateAccess' Access{base=composite_category, access_id=Name "a"} `shouldBe` Right (Thing (Name "a"))
@@ -369,8 +369,8 @@ spec = do
         it "should unroll recursive labels" $ do
             let simple_ab = Variable{
                 name=Name "ab",
-                placeholder_type=Label,
-                placeholder_category=Composite {
+                variable_kind=Label,
+                variable_category=Composite {
                     composite_type=Tuple,
                     inner_categories=[
                         Thing (Name "0"),
@@ -378,13 +378,13 @@ spec = do
                     ]
                 }
             }
-            unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Variable {name = Name "ab", placeholder_type = Resolved, placeholder_category = Variable {name = Name "ab", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}}]}
+            unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Variable {name = Name "ab", variable_kind = Resolved, variable_category = Variable {name = Name "ab", variable_kind = Label, variable_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}}]}
     describe "importCategories" $ do
         it "should import categories test1" $ do
             let test_item = Import{import_category=Access{base=Reference (Name "test"), access_id=Name "test1"}}
             result <- getResultOfT $ evaluateImport loadAST test_item
-            result `shouldBe` Right (Variable {name = Name "test1", placeholder_type = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Variable {name = Name "x", placeholder_type = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "a", placeholder_type = Label, placeholder_category = Thing {name = Name "1"}},Variable {name = Name "b", placeholder_type = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
+            result `shouldBe` Right (Variable {name = Name "test1", variable_kind = Label, variable_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Variable {name = Name "x", variable_kind = Label, variable_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Variable {name = Name "a", variable_kind = Label, variable_category = Thing {name = Name "1"}},Variable {name = Name "b", variable_kind = Label, variable_category = Reference {name = Name "x"}}]}]}]}})
         it "should import categories test2" $ do
             let test_item = Import{import_category=Reference (Name "test.test2")}
             result <- getResultOfT $ evaluateImport loadAST test_item
-            result `shouldBe` Right Variable {name = Name "test2", placeholder_type = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
+            result `shouldBe` Right Variable {name = Name "test2", variable_kind = Label, variable_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}

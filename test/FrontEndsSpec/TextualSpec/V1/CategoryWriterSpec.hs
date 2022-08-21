@@ -30,9 +30,9 @@ spec = do
         it "(Function) should handle nested chains" $ do
             categoryToString (Composite Function [Composite Function [Thing (Name "a"), Thing (Name "b")], Thing (Name "b")]) `shouldBe` "(`a->`b)->`b"
         it "(Variable) should write placeholders" $ do
-            categoryToString Variable{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")} `shouldBe` "x@`a"
+            categoryToString Variable{name=Name "x", variable_kind=Element, variable_category=Thing (Name "a")} `shouldBe` "x@`a"
         it "(Refinement) should write refinement" $ do
-            categoryToString Refined{base=Variable{name=Name "x", placeholder_type=Element, placeholder_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
+            categoryToString Refined{base=Variable{name=Name "x", variable_kind=Element, variable_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
         it "(Special) should write flexible" $ do
             categoryToString Special{special_type=Flexible} `shouldBe` "(%)"
         it "(Special) should write Any" $ do
@@ -40,9 +40,9 @@ spec = do
         it "(Special) should write Reference" $ do
             categoryToString Reference{name=Name "Stuff"} `shouldBe` "$Stuff"
         it "(Call) should write call" $ do
-            categoryToString FunctionCall{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg") } `shouldBe` "$base_foo[$some_arg]"
+            categoryToString Call{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg") } `shouldBe` "$base_foo[$some_arg]"
         it "(Call) should write call consecutiveness" $ do
-            categoryToString FunctionCall{base=FunctionCall{base=Reference (Name "base_foo") ,argument=Reference (Name "some_arg") },argument=Reference (Name "some_other") } `shouldBe` "$base_foo[$some_arg][$some_other]"
+            categoryToString Call{base=Call{base=Reference (Name "base_foo") ,argument=Reference (Name "some_arg") },argument=Reference (Name "some_other") } `shouldBe` "$base_foo[$some_arg][$some_other]"
         it "(Dereference) should write dereferences" $ do
             categoryToString Access{base=Reference{name=Name "base_ref"}, access_id=Name "name"}  `shouldBe` "($base_ref).name"
         it "(TypeAnnotation) should write membership" $ do

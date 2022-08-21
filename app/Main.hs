@@ -8,5 +8,5 @@ main = do
   let b = Thing (Name "b")
   let a_b = Composite{composite_type=Function, inner_categories=[a,b]}
 
-  let expr = FunctionCall{base=a_b, argument=a}
+  let expr = Call{base=a_b, argument=a}
   putStr $ show expr

@@ -41,7 +41,7 @@ categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ ca
 categoryToString Special{special_type=Flexible} = "(%)"
 categoryToString Special{special_type=Any} = "Any"
 categoryToString Reference{name=name} = "$" ++ idToString name
-categoryToString FunctionCall{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
+categoryToString Call{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_id=_id} = "(" ++ categoryToString bc ++ ")." ++ idToString _id
 categoryToString TypeAnnotation{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
 categoryToString Import{import_category=import_str} = "import " ++ categoryToString import_str
@@ -70,11 +70,11 @@ errorToStringInner (Error IndexedNamed _) = error "unhandled"
 errorToStringInner (Error EmptyFunctionalComposite _) = "This is empty. Function composites should have functions inside them. Perhaps you meant for this to be a tuple or sumple?"
 errorToStringInner (Error InsufficientFunctionTerms _) = "I think this function needs more arguments for it to be properly called."
 errorToStringInner (Error DataInFunctionComposite _) = "Function Composites should be composed of functions, not data"
-errorToStringInner (Error BadFunctionCallInMatch stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n"
-errorToStringInner (Error BadFunctionCall stack) = "This function call does not produce a result or is invalid. Check the arguments?\n"
+errorToStringInner (Error BadCallInMatch stack) = "None of the functions in this case statement produce a valid result. Could be arguments or a bad formulation.\n"
+errorToStringInner (Error BadCall stack) = "This function call does not produce a result or is invalid. Check the arguments?\n"
 errorToStringInner (Error InvalidArgument stack) = "This function call argument is not valid for the function.\n"
 errorToStringInner (Error PredicateHasNonFunctionArgument _) = "Refined types must have a function which refines the data. The predicate is not a function here."
-errorToStringInner (Error NonFunctioninFunctionCallBase _) = "Function call base is not a function! Can't call a data type."
+errorToStringInner (Error NonFunctioninCallBase _) = "Function call base is not a function! Can't call a data type."
 errorToStringInner (Error BadRefinementPredicateInput _) = "Refinements must accept a "
 errorToStringInner (Error AccessIndexBelowZero _) = "Cannot access a negative index"
 errorToStringInner (Error AccessIndexOutsideRange _) = "This index does not exist in the host category"
@@ -196,7 +196,7 @@ prettyCategoryToStringInner indenter (Variable name Resolved ph_category) = wrap
 prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
 prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["(%)"]
 prettyCategoryToStringInner indenter Special{special_type=Any} = ["Any"]
-prettyCategoryToStringInner indenter FunctionCall{base=bm, argument=a} = do
+prettyCategoryToStringInner indenter Call{base=bm, argument=a} = do
   let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)
   let pretty_a = wrapAround ("[", "]") (prettyCategoryToStringInner indenter a)
   joinLastFirst pretty_bm pretty_a

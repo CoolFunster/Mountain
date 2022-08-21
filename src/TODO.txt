@@ -11,4 +11,23 @@ dev tooling
 - autocomplete
 
 Current Job
-  Annotate Has with debug messages
+
+Backlog
+  Add sets
+  Implement Binding and delete Definition
+    refactor call
+    Implement "chain"
+  Scope needs implementation
+    resolve
+    eval
+  Update has rules for new def of category not having itself
+    label has just that category
+    placeholder has means pc has small
+  Types of imports
+    Direct import   -> import (Data.String)
+    relabel import  -> import (x:Data.String)
+    hiding import   -> import (x:Data.String.-["String"])
+    sub import      -> import ()
+  Update Parser
+    @v means unnamed placeholder with type v
+  

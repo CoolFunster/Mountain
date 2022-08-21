@@ -1,0 +1,4 @@
+if: result_type@{Any} -> (x@Bool) -> x >> |
+  then: True -> @result_type,
+  else: False -> @result_type 
+|
