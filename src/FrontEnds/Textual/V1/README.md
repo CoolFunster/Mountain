@@ -2,23 +2,42 @@
 
 Here's the syntax of the textual language              
 
-Name -> "abc_..." | _ <br>
-ID -> Name | #\<num> <br>
+reserved keywords/symbols:<br>
+  * function
+  * return
+  * import
+  * \#
+  * :
 
-Thing -> `Name <br>
+
+
+Name -> "a-zA-Z_" | _ <br>
+ID -> Name
+
+Thing -> #ID <br>
+Set -> {\<category>}
+Unique -> <\<category>>
 Label -> Name:\<category> <br>
-Variable Of -> Name@\<category> <br>
+Variable -> Name@\<category> <br>
+Binding -> Variable = \<category>;
+Scope -> { Binding ... Binding *return* \<category>}
 Tuple -> (\<category>, \<category>, ...) <br>
 Either -> |\<category>, \<category>, ...| <br>
-Function -> \<category> -> \<category> <br>
-Composition -> \*(\<category>)* <br>
-Match -> \*|\<category>, \<category>, ...| <br>
+Function -> *function* \<category> -> ... -> *return* \<category> <br>
+Composition -> (function . function) <br>
+Match -> |\<category> . \<category> . ...| <br>
 Refined -> {\<category> | \<category> -> Bool } <br>
-Flexible -> (%) <br>
-Reference -> $Name <br>
-Any -> Any <br>
-Call -> \<Function>[\<category>] <br>
-Dereference -> \<category>.ID <br>
+Reference -> ID <br>
+Flexible -> ?ID <br>
+_ | Any -> Any <br>
+Call -> \<Function> \<category> <br>
+Dereference -> 
+  * \<category>.ID 
+  * \<category>[Int] 
+  * \<category>[ID] 
+<br>
+
+Import -> import \<category>
 TypeAnnotation -> \<category> :: \<category> <br>
 <!-- Definition -> define \<category> <br> -->
 <!-- Import -> import \<category> <br> -->

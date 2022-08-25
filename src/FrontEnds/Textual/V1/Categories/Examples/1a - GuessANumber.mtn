@@ -1,22 +1,22 @@
-import (
-  Base.Data.String,
-  Base.Data.Bool,
-  Base.Imperative.While.While,
-	Body.SimpleConsole.ConsoleModule,
-  Main: body.SimpleConsole.ConsoleProgram,
-) -> Main :: GuessANumber: (c, p_arg, k_arg) -> {
+import Base.Data.String ->
+import Base.Data.Bool ->
+import Base.Imperative.While.While ->
+import Body.SimpleConsole.ConsoleModule ->
+import Main: body.SimpleConsole.ConsoleProgram ->
+
+GuessANumber@Main = (c, p_arg, k_arg) -> {
   my_secret_number = 5
   max_guesses = 10
   while_loop = {
-    state = (<Console>, Maybe Int, Int)
-    init_state@state = (c, #Nothing, my_secret_number)
+    state = (<Console>, Maybe Int, Int);
+    init_state@state = (c, #Nothing, my_secret_number);
 
     condition@(state -> Bool) = |
       (c, #Nothing, my_secret_number) -> #False,
       (c, (#Something, num), my_secret_number) -> num == my_secret_number
-    |
+    |;
 
-    return while (max_guesses) (init_state) (condition)
+    return while (max_guesses) (init_state) (condition);
   }
   
   result = while_loop ((c, prev_guess, num) -> {

@@ -30,8 +30,6 @@ library
       FrontEnds.AST.V1.CategoryWriter
       FrontEnds.Textual.V1.CategoryParser
       FrontEnds.Textual.V1.CategoryWriter
-      FrontEnds.Textual.V2.CategoryParser
-      FrontEnds.Textual.V2.CategoryWriter
   other-modules:
       Paths_MTPL
   hs-source-dirs:
