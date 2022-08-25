@@ -45,7 +45,6 @@ categoryToString Call{base=bm, argument=a} = categoryToString bm ++ "[" ++ categ
 categoryToString Access{base=bc, access_id=_id} = "(" ++ categoryToString bc ++ ")." ++ idToString _id
 categoryToString TypeAnnotation{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
 categoryToString Import{import_category=import_str} = "import " ++ categoryToString import_str
-categoryToString Definition{def_category=cat} = "define " ++ categoryToString cat
 categoryToString Set{elements=inner} = "{" ++ intercalate "," (map categoryToString inner) ++ "}"
 categoryToString Unique{inner_category=c} = "<" ++ categoryToString c ++ ">"
 
@@ -172,7 +171,6 @@ prettyCategoryToStringInner indenter (Composite Function inner) =
     toTerm add_arrow [] = []
     toTerm add_arrow [x] = renderTerm True "return " x
     toTerm add_arrow (i@Import{}:xs) = renderTerm add_arrow "" i ++ toTerm True xs
-    toTerm add_arrow (def@Definition{}:xs) = renderTerm add_arrow "" def ++ toTerm True xs
     toTerm add_arrow (x:xs) = renderTerm add_arrow "given " x ++ toTerm True xs
   in
     toTerm False inner
@@ -187,7 +185,6 @@ prettyCategoryToStringInner indenter (Composite c_type inner) = do
       Match -> ["*|"] ++ concat comma ++ ["|*"]
       Function -> error "Functions should not be handled here"
 prettyCategoryToStringInner indenter Import{import_category=cat} = incrementIndentButFirst $ applyOnFirst ("import " ++) $ prettyCategoryToStringInner indenter cat
-prettyCategoryToStringInner indenter Definition{def_category=cat} = incrementIndentButFirst $ applyOnFirst ("define " ++) $ prettyCategoryToStringInner indenter cat
 prettyCategoryToStringInner indenter Reference{name=name} = ["$" ++ idToString name]
 prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
   let inner_result = prettyCategoryToStringInner indenter ph_category

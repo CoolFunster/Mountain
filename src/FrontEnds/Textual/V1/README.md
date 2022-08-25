@@ -20,8 +20,8 @@ Any -> Any <br>
 Call -> \<Function>[\<category>] <br>
 Dereference -> \<category>.ID <br>
 TypeAnnotation -> \<category> :: \<category> <br>
-Definition -> define \<category> <br>
-Import -> import \<category> <br>
+<!-- Definition -> define \<category> <br> -->
+<!-- Import -> import \<category> <br> -->
                
 
 

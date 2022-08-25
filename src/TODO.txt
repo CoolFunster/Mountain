@@ -13,11 +13,10 @@ dev tooling
 Current Job
 
 Backlog
-  Rename Placeholder back to Placeholder, to reflect mountain docs
-  Rename Category to something else
-  Implement Binding and delete Definition
-    refactor call
-    Implement "chain"
+  Implement Binding and delete Definition (IP)
+    refactor call (Done)
+    Implement "chain" (won't do)
+  Imports need reworking
   Scope needs implementation
     resolve
     eval
@@ -32,7 +31,9 @@ Backlog
   Update Parser
     @v means unnamed placeholder with type v
   Refinements
+  -Rename Category to something else (Won't do)
+  - Rank of Category
 
 Completed:
   -Add sets (DONE)
-  
+  -Rename Placeholder back to Placeholder, to reflect mountain docs (DONE)

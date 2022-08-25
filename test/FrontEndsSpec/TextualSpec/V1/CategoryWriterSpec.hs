@@ -67,5 +67,3 @@ spec = do
             prettyCategoryToString (Composite Function [Thing (Name "a"),Composite Tuple [Thing (Name "hello"),Thing (Name "hello2")]]) `shouldBe` "given `a\n->\treturn (\n\t\t`hello,\n\t\t`hello2\n\t)"
           it "should handle imports" $ do
             prettyCategoryToString (Composite Function [Import (Reference (Name "base")), Thing (Name "a")]) `shouldBe` "import $base\n->\treturn `a"
-          it "should handle definitions" $ do
-            prettyCategoryToString (Composite Function [Definition (Placeholder (Name "a") Label (Thing (Name "x"))), Reference (Name "a")]) `shouldBe` "define a:`x\n->\treturn $a"

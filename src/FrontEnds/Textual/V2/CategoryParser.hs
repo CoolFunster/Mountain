@@ -122,7 +122,7 @@ pFunction =
 pFunctionTerm :: Parser Category
 pFunctionTerm = do
     _ <- optional spaceConsumer
-    try pImport <|> try pDefinition <|> pGivenOrReturn
+    try pImport <|> pGivenOrReturn
 
 pImport :: Parser Category
 pImport = withValidation $ do
@@ -130,13 +130,6 @@ pImport = withValidation $ do
     _ <- spaceConsumer
     import_cat <- pCategory
     return Import{import_category=import_cat}
-
-pDefinition :: Parser Category
-pDefinition = withValidation $ do
-    define_str <- symbol $ pack "define"
-    _ <- spaceConsumer
-    category <- pPlaceholder
-    return Definition{def_category=category}
 
 pGivenOrReturn :: Parser Category
 pGivenOrReturn = do

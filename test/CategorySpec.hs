@@ -406,10 +406,6 @@ spec = do
             let c = Import (Placeholder (Name "x") Label (Reference (Name "test")))
             result <- getResultOfT $ evaluateImport loadAST c
             result `shouldBe` Right (Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
-        it "(Definition) should properly handle definitions" $ do
-            let c = Composite Function [Definition (Placeholder (Name "x") Label (Thing (Name "5"))), Reference (Name "x")]
-            result <- executeAST c
-            result `shouldBe` Right (Thing (Name "5"))
         it "(Import) should properly handle imports" $ do
             let c = Composite Function [Import (Placeholder (Name "x") Label (Reference (Name "test"))), Reference (Name "x")]
             result1 <- stepEvaluate c
@@ -417,7 +413,7 @@ spec = do
             result2 <- stepEvaluate real_result1
             let real_result2 = fromRight (error "should not hit 2") result2
             result3 <- stepEvaluate real_result2
-            result3 `shouldBe` Right (Placeholder {name = Name "x", placeholder_kind = Resolved, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]}})
+            result3 `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}}]})
     describe "access" $ do
         let evaluateAccess' a = getResultOf $ evaluateAccess a
         it "should handle indices on composites well" $ do

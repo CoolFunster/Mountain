@@ -94,9 +94,6 @@ data Category =
     | Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
         import_category::Category
     }
-    | Definition {
-        def_category::Category
-    }
     | TypeAnnotation {
         big_category::Category,
         small_category::Category
@@ -112,8 +109,6 @@ data StepMsgType =
     SingleCompositeUnwrap |
     SingleDefUnwrap |
     Importing |
-    ApplyingDefinition |
-    SkippingDefinition |
     ReducingComposite |
     TypeAnnotationCheck |
     Accessing
@@ -122,12 +117,10 @@ data StepMsgType =
 data HasMsgType =
   EqualResult |
   HasResult |
-  GoInsideDefinition |
   UseTypeAnnotation |
   UsePlaceholderCategory |
   UnrollLabel |
   ExtractFlatMapping |
-  ReplaceInnerDefinitions |
   MapEvaluateInner |
   Transform |
   Evaluate
@@ -348,21 +341,15 @@ isImport :: Category -> Bool
 isImport Import{} = True
 isImport _ = False
 
-isDefinition :: Category -> Bool
-isDefinition Definition{} = True
-isDefinition _ = False
-
 isNamedCategory :: Category -> Bool
 isNamedCategory Thing{} = True
 isNamedCategory Placeholder{} = True
 isNamedCategory Reference{} = True
 isNamedCategory Import{import_category=c} = isNamedCategory c
-isNamedCategory Definition{def_category=d} = isNamedCategory d
 isNamedCategory _ = False
 
 getName :: Category -> Maybe Id
 getName Import{import_category=c} = getName c
-getName Definition{def_category=c} = getName c
 getName input_category
     | not $ isNamedCategory input_category = Nothing
     | otherwise = Just $ name input_category
@@ -382,7 +369,6 @@ checkAST aggregator checker r@Reference{} = checker r
 checkAST aggregator checker fc@Call{base=b, argument=a} = aggregator (checker fc: map (checkAST aggregator checker) [b,a])
 checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker a, checkAST aggregator checker b]
 checkAST aggregator checker i@Import{} = checker i
-checkAST aggregator checker def@Definition{def_category=d} = aggregator [checker def, checkAST aggregator checker d]
 checkAST aggregator checker mem@TypeAnnotation{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
 
 {- This transforms the AST according to an input mapping -}
@@ -410,7 +396,6 @@ transformAST transformer input_category = do
         fc@(Call b a) -> Call <$> recurse b <*> recurse a
         a@(Access b a_id) -> Access <$> recurse b <*> pure a_id
         i@(Import i_c) -> Import <$> recurse i_c
-        d@(Definition d_c) -> Definition <$> recurse d_c
         m@(TypeAnnotation b s) -> TypeAnnotation <$> recurse b <*> recurse s
 
 -- {- Category Functions -}
@@ -449,7 +434,7 @@ resolveReferences cat =
 data UnrollType = Flat | Recursive
 unroll :: UnrollType -> Category -> Category
 unroll t c = unroll_inner t (normalize c)
-  where 
+  where
     unroll_inner :: UnrollType -> Category -> Category
     unroll_inner Flat l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} =
         replaceReferences rec_name Special{special_type=Flexible} rec_cat
@@ -545,7 +530,6 @@ flatten p@Placeholder{name=ph_name, placeholder_kind=p_type, placeholder_categor
 flatten r@Refined{base=b, predicate=p} = Refined <$> flatten b <*> flatten p
 flatten fc@Call{base=b, argument=a} = Call <$> flatten b <*> flatten a
 flatten a@Access{base=b, access_id=a_id} = Access <$> flatten b <*> return a_id
-flatten d@Definition{def_category=def} = Definition <$> flatten def
 flatten mem@TypeAnnotation{big_category=bc, small_category=sc} = TypeAnnotation <$> flatten bc <*> flatten sc
 flatten other = return other
 
@@ -667,7 +651,6 @@ debugTell x = tell x
 
 normalize :: Category -> Category
 normalize (Composite _ [category]) = normalize category
-normalize (Definition category) = normalize category
 normalize (Placeholder _ Resolved category) = normalize category
 normalize x = x
 
@@ -743,15 +726,6 @@ has big_category small_category = do
             cat <- flatten c_small
             result2 <- other_category `has` cat
             return $ result1 || result2
-          {- Todo: DEPRECATE DEFINITIONS -}
-          has_inner c1@Composite{composite_type=Function, inner_categories=Definition d:rest1} c2@Composite{composite_type=c2_type} = do
-            debugTell  [Has{has_msg=ReplaceInnerDefinitions,on_which=Big,big=big_category,small=small_category}]
-            result <- call d c1
-            result `has` c2
-          has_inner c1@Composite{composite_type=Function} c2@Composite{composite_type=c2_type, inner_categories=Definition d:rest} = do
-            debugTell  [Has{has_msg=ReplaceInnerDefinitions,on_which=Small,big=big_category,small=small_category}]
-            result <- call d c2
-            c1 `has` result
           {- Composite Function -}
           has_inner c1@Composite{composite_type=Function, inner_categories=c1ic} c2@Composite{composite_type=Function, inner_categories=c2ic} = do
                 debugTell  [Has{has_msg=Transform,on_which=Both,big=big_category,small=small_category}]
@@ -865,8 +839,6 @@ has big_category small_category = do
           {- Normalized away cases -}
           has_inner _ (Placeholder _ Resolved _) = error "should not reach"
           has_inner (Placeholder _ Resolved _) _ = error "should not reach"
-          has_inner _ (Definition _) = error "should not reach"
-          has_inner (Definition _) _ = error "should not reach"
 
 {- This does not do any checking which requires evaluation -}
 validateCategory :: Category -> CategoryContext Category
@@ -879,7 +851,7 @@ validateCategory c@Composite{composite_type=composition_type, inner_categories=[
 validateCategory c@Composite{composite_type=composition_type, inner_categories=inner_cats}
     | (composition_type == Composition || composition_type == Match ) && not (all isFunctionComposite inner_cats) =
         throwError [Error{error_type=DataInFunctionComposite, error_stack=[c]}]
-    | (composition_type == Function) && all (\x -> isImport x || isDefinition x) inner_cats =
+    | (composition_type == Function) && all isImport inner_cats =
         throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
     | otherwise = return c
 validateCategory ph@Placeholder{name=Unnamed} = throwError [Error{error_type=UnnamedCategory, error_stack=[ph]}]
@@ -953,9 +925,6 @@ step :: CategoryEvalOptions -> Category -> CategoryContextT IO Category
 step _ c@Composite{inner_categories=[something]} = do
   debugTell  [Step{msg=SingleCompositeUnwrap, input=[c]}]
   return something
-step _ def@Definition{def_category=d} = do
-  debugTell  [Step{msg=SingleDefUnwrap, input=[def]}]
-  return d
 step opts f@Call{base=bc, argument=a} =
     do
       debugTell  [Step{msg=Calling, input=[f]}]
@@ -994,23 +963,12 @@ step opts mem@TypeAnnotation{big_category=bc, small_category=sc} = do
 step opts c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     debugTell  [Step{msg=DeeperEval, input=[c]}]
     resolved_import <- step opts i
-    let result = c{inner_categories=Definition resolved_import:rest}
-    return result
-step opts c@Composite{composite_type=Function, inner_categories=def@(Definition p@(Placeholder ph_name Label ph_c)):rest} = do
-    debugTell  [Step{msg=ApplyingDefinition, input=[c]}]
+    let p@(Placeholder ph_name Label ph_c) = resolved_import
     let replacement = if isRecursiveCategory p then p else ph_c
     case rest of
       [] -> throwError [Error InsufficientFunctionTerms [c]]
       more_terms -> do
         let result = c{inner_categories=map (replaceReferences ph_name replacement) more_terms}
-        return result
-{- This skips a definition which has no label, which can't be referenced later -}
-step opts c@Composite{composite_type=Function, inner_categories=Definition d:rest} = do
-  debugTell  [Step{msg=SkippingDefinition, input=[c]}]
-  case rest of
-      [] -> throwError [Error InsufficientFunctionTerms [c]]
-      more_terms -> do
-        let result = c{inner_categories=rest}
         return result
 step opts a@Access{base=b, access_id=a_id} = do
     debugTell  [Step{msg=Accessing, input=[a]}]

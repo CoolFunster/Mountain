@@ -83,8 +83,6 @@ spec = do
             parseCategoryString "self:(`a -> $self[`b])" `shouldBe`  Placeholder {name = Name "self", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Call {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
         it "(Import) should parse import" $ do
             parseCategoryString "import $test.test1" `shouldBe` Import {import_category = Access {base = Reference {name = Name "test"}, access_id = Name "test1"}}
-        it "(Define) should parse define" $ do
-            parseCategoryString "define x:`something" `shouldBe` Definition{def_category=Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "something")}}
     describe "File loading" $ do
         it "should load files - test1" $ do
             result <- executeTextual (Import (Reference (Name "test.test1")))
@@ -92,9 +90,6 @@ spec = do
         it "should load files - test2" $ do
             result <- executeTextual (Import (Reference (Name "test.test2")))
             result `shouldBe` Right (Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}})
-        it "should load files - test3" $ do
-            result <- executeTextual (Import (Reference (Name "test.test_define")))
-            result `shouldBe`  Right (Placeholder {name = Name "test_define", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Definition {def_category = Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "something"}}},Reference {name = Name "x"}]}]}})
         it "should load dirs" $ do
             result <- executeTextual (Import (Reference (Name "test")))
             result `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test1"}}},Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test2"}}},Placeholder {name = Name "test_define", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "test.test_define"}}}]})
