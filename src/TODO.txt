@@ -13,8 +13,7 @@ dev tooling
 Current Job
 
 Backlog
-  Add sets
-  Rename Variable back to Placeholder, to reflect mountain docs
+  Rename Placeholder back to Placeholder, to reflect mountain docs
   Rename Category to something else
   Implement Binding and delete Definition
     refactor call
@@ -33,4 +32,7 @@ Backlog
   Update Parser
     @v means unnamed placeholder with type v
   Refinements
+
+Completed:
+  -Add sets (DONE)
   

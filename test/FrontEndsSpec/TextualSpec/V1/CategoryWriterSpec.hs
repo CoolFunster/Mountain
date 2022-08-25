@@ -29,10 +29,10 @@ spec = do
             categoryToString (Composite Function [Thing (Name "a"), Thing (Name "b")]) `shouldBe` "`a->`b"
         it "(Function) should handle nested chains" $ do
             categoryToString (Composite Function [Composite Function [Thing (Name "a"), Thing (Name "b")], Thing (Name "b")]) `shouldBe` "(`a->`b)->`b"
-        it "(Variable) should write placeholders" $ do
-            categoryToString Variable{name=Name "x", variable_kind=Element, variable_category=Thing (Name "a")} `shouldBe` "x@`a"
+        it "(Placeholder) should write placeholders" $ do
+            categoryToString Placeholder{name=Name "x", placeholder_kind=Variable, placeholder_category=Thing (Name "a")} `shouldBe` "x@`a"
         it "(Refinement) should write refinement" $ do
-            categoryToString Refined{base=Variable{name=Name "x", variable_kind=Element, variable_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
+            categoryToString Refined{base=Placeholder{name=Name "x", placeholder_kind=Variable, placeholder_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
         it "(Special) should write flexible" $ do
             categoryToString Special{special_type=Flexible} `shouldBe` "(%)"
         it "(Special) should write Any" $ do
@@ -68,4 +68,4 @@ spec = do
           it "should handle imports" $ do
             prettyCategoryToString (Composite Function [Import (Reference (Name "base")), Thing (Name "a")]) `shouldBe` "import $base\n->\treturn `a"
           it "should handle definitions" $ do
-            prettyCategoryToString (Composite Function [Definition (Variable (Name "a") Label (Thing (Name "x"))), Reference (Name "a")]) `shouldBe` "define a:`x\n->\treturn $a"
+            prettyCategoryToString (Composite Function [Definition (Placeholder (Name "a") Label (Thing (Name "x"))), Reference (Name "a")]) `shouldBe` "define a:`x\n->\treturn $a"

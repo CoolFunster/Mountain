@@ -17,15 +17,15 @@ import list:$base.linkedlist
     `Composition,
     `Match
   |
--> define VariableType:|
+-> define PlaceholderType:|
     `Label,
-    `Element,
+    `Variable,
     `Resolved
   |
 -> define Category:|
     thing:          (`Thing, name:$Id),
     composite:      (`Composite, composite_type:$CompositeType, inner_categories:$list[$Category]),
-    placeholder:    (`Variable, variable_kind:$VariableType, variable_category:$Category),
+    placeholder:    (`Placeholder, placeholder_kind:$PlaceholderType, placeholder_category:$Category),
     refined:        (`Refined, base:$Category, predicate:(`Composite, `Function, $list[$Category]),
     special:        (`Special, special_type:$SpecialType),
     reference:      (`Reference, name:$Id),
@@ -39,6 +39,6 @@ import list:$base.linkedlist
   id_type:$Id,
   special_category_type:$SpecialType,
   composite_type:$CompositeType,
-  variable_kind:$VariableType,
+  placeholder_kind:$PlaceholderType,
   category:$Category,
 )

@@ -24,9 +24,9 @@ Mountain:
       DataCompositeType,
       FunctionCompositeType,
     |,
-    VariableType:|
+    PlaceholderType:|
       #Label,
-      #Element,
+      #Variable,
       #Resolved
     |,
     Category:|
@@ -36,9 +36,9 @@ Mountain:
           composite_type@CompositeType, 
           inner_categories@(List Category),
       ),
-      (#Variable, 
-          variable_kind@VariableType),
-          variable_category@Category,
+      (#Placeholder, 
+          placeholder_kind@PlaceholderType),
+          placeholder_category@Category,
       ),
       (#Refined,
           base@Category,

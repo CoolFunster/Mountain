@@ -135,7 +135,7 @@ pDefinition :: Parser Category
 pDefinition = withValidation $ do
     define_str <- symbol $ pack "define"
     _ <- spaceConsumer
-    category <- pVariable
+    category <- pPlaceholder
     return Definition{def_category=category}
 
 pGivenOrReturn :: Parser Category
@@ -145,14 +145,14 @@ pGivenOrReturn = do
     pTypeAnnotation
 
 pTypeAnnotation :: Parser Category
-pTypeAnnotation = withValidation $ makeExprParser pVariable [
+pTypeAnnotation = withValidation $ makeExprParser pPlaceholder [
             [
                 binaryN (pStringBetweenWS "::") (\x y -> TypeAnnotation{big_category=x,small_category=y})
             ]]
 
 {- If not a placeholder, falls through to other categories -}
-pVariable :: Parser Category
-pVariable = withValidation $ do
+pPlaceholder :: Parser Category
+pPlaceholder = withValidation $ do
     parsed_name <- optional (try pCategoryName)
     let name = fromMaybe Unnamed parsed_name
     let at = pack "@"
@@ -162,12 +162,12 @@ pVariable = withValidation $ do
             Nothing -> Nothing
             Just some_val ->
                 if some_val == at
-                    then Just Element
+                    then Just Variable
                     else Just Category.Label
     category <- pCategoryTerm
     case ph_type of
         Nothing -> return category
-        Just ph_t -> return $ Variable name ph_t category
+        Just ph_t -> return $ Placeholder name ph_t category
 
 pCategoryTerm :: Parser Category
 pCategoryTerm = withValidation $ do
@@ -264,7 +264,7 @@ pMatch = pCompositeTemplate Match ("*|", "|*")
 
 pRefinementInner :: Parser Category
 pRefinementInner = withValidation $ do
-    ph <- pVariable
+    ph <- pPlaceholder
     _ <- spaceConsumer
     _ <- symbol (pack "|")
     _ <- spaceConsumer

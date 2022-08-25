@@ -7,7 +7,7 @@ ID -> Name | #\<num> <br>
 
 Thing -> `Name <br>
 Label -> Name:\<category> <br>
-Element Of -> Name@\<category> <br>
+Variable Of -> Name@\<category> <br>
 Tuple -> (\<category>, \<category>, ...) <br>
 Either -> |\<category>, \<category>, ...| <br>
 Function -> \<category> -> \<category> <br>
