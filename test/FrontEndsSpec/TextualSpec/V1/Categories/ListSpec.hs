@@ -20,7 +20,10 @@ import Data.List (intercalate)
 spec :: Spec
 spec = do
     describe "Category List" $ do
-        let executeTextual = fmap fst . runCategoryContextT . execute (Options{reduce_composite=False, importer=loadTextual})
+        let executePlain = execute (Options{reduce_composite=False, importer=loadTextual})
+        let executeTextual = getResultOfT . executePlain
+        let executeLog = getLogOfT . executePlain
+        let fromRight' = fromRight (error "404")
         let executeToCategory = \c -> do {
             result <- executeTextual c;
             return $ resolveReferences $ fromRight (error "404") result;
@@ -28,31 +31,39 @@ spec = do
         describe "list" $ do
             let has' a b = getResultOf $ has a b
             it "(list) should substitute type correctly on evaluate" $ do
-                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
-                categoryToString execute_result `shouldBe` "list_def:|`empty,nonempty:(`1,$list_def)|"
+                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
+                categoryToString execute_result `shouldBe` "list_def:|empty:{`empty},nonempty:({`1},$list_def)|"
             it "(list) should have the empty" $ do
                 let empty_test = parseCategoryString "`empty"
-                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
+                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
                 execute_result `has'` empty_test `shouldBe` Right True
             it "(list) should have the single elem list" $ do
                 let test1 = parseCategoryString "(`1,`empty)"
-                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
+                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
                 execute_result `has'` test1 `shouldBe` Right True
             it "(list) should have the two elem list" $ do
                 let test2 = parseCategoryString "(`1,(`1,`empty))"
-                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
-                execute_result `has'` test2 `shouldBe` Right True
+                let result = executePlain (parseCategoryString "(import $base.linkedlist)[{`1}].list")
+                execute_result <- getResultOfT result
+                -- logs <- getLogOfT result
+                -- print execute_result
+                -- execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
+                -- let has_result = (fromRight' execute_result) `has` test2
+                -- let has_logs = getLogOf has_result
+                (fromRight' execute_result) `has'` test2 `shouldBe` Right True
             it "(list) should have the three elem list" $ do
                 let test3 = parseCategoryString "(`1,(`1,(`1,`empty)))"
-                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[`1].list")
+                execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
                 execute_result `has'` test3 `shouldBe` Right True
         describe "join" $ do
             it "(join) should properly access join" $ do
                 let list_on_1_join = parseCategoryString "(import $base.linkedlist)[`1].join"
                 -- dbg_result <- executeTextual list_on_1_join
                 -- putStrLn (intercalate "\n====\n" $ map tracedToString dbg_result)
-                execute_result <- executeToCategory list_on_1_join
-                categoryToString execute_result `shouldBe` "new_head@`1->original_list@list_def:|`empty,nonempty:(<`1>,$list_def)|->(list_def:|`empty,nonempty:(<`1>,$list_def)|)::(($new_head,$original_list))"
+                let ctx_result = executePlain list_on_1_join
+                execute_result <- getResultOfT ctx_result
+                log_result <- getLogOfT ctx_result
+                categoryToString (fromRight' execute_result) `shouldBe` "new_head@<`1>->original_list@<list_def:|empty:{`empty},nonempty:(<`1>,$list_def)|>->(<list_def:|empty:{`empty},nonempty:(<`1>,$list_def)|>)::(($new_head,$original_list))"
             it "(join) should properly join on empty" $ do
                 let list_on_1_join_empty = parseCategoryString "((import $base.linkedlist)[`1].join)[`1][`empty]"
                 execute_result <- executeToCategory list_on_1_join_empty
@@ -89,7 +100,7 @@ spec = do
             it "should be accessed properly" $ do
                 let test_case = parseCategoryString "(import $base.linkedlist)[`1].tail"
                 execute_result <- executeToCategory test_case
-                categoryToString execute_result `shouldBe` "input@((list_def:|`empty,nonempty:(<`1>,$list_def)|).nonempty)->(list_def:|`empty,nonempty:(<`1>,$list_def)|)::(($input).#1)"
+                categoryToString execute_result `shouldBe` "input@((list_def:|empty:{`empty},nonempty:(<`1>,$list_def)|).nonempty)->(list_def:|empty:{`empty},nonempty:(<`1>,$list_def)|)::(($input).#1)"
             it "should be returning the tail elem 1" $ do
                 let test_case = parseCategoryString "(import $base.linkedlist)[`1].tail[(`1, `empty)]"
                 -- somethings not getting evaluated correctly

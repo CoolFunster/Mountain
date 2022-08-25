@@ -3,8 +3,6 @@ cabal-version: 1.12
 -- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
---
--- hash: a6d4f44d031445b9bc99a862e9691ba267070979f8fe6f5374b1e5c1cf5127c0
 
 name:           MTPL
 version:        0.1.0.0
@@ -32,6 +30,8 @@ library
       FrontEnds.AST.V1.CategoryWriter
       FrontEnds.Textual.V1.CategoryParser
       FrontEnds.Textual.V1.CategoryWriter
+      FrontEnds.Textual.V2.CategoryParser
+      FrontEnds.Textual.V2.CategoryWriter
   other-modules:
       Paths_MTPL
   hs-source-dirs:

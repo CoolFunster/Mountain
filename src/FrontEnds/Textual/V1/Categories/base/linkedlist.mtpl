@@ -1,6 +1,6 @@
 given list_type@Any
 -> define list_def: |
-        `empty,
+        empty:{`empty},
         nonempty:($list_type, $list_def)
     |
 -> define join_def: (

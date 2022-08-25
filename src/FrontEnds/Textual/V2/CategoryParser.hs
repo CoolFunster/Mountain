@@ -1,4 +1,4 @@
-module FrontEnds.Textual.V1.CategoryParser where
+module FrontEnds.Textual.V2.CategoryParser where
 
 import Category
 import FrontEnds.Textual.V1.CategoryWriter

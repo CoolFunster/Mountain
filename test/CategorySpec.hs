@@ -38,6 +38,17 @@ spec = do
     let executeAST = fmap fst . runCategoryContextT . execute Options{reduce_composite=False, importer=loadAST}
     let stepEvaluate = fmap fst . runCategoryContextT . step Options{reduce_composite=False, importer=loadAST}
     let validateCategory' = fst . runCategoryContext . validateCategory
+    let thing = Thing (Name "thing")
+    let thing2 = Thing (Name "thing2")
+    let thing3 = Thing (Name "thing3")
+    let a = Thing (Name "a")
+    let b = Thing (Name "b")
+    let c = Thing (Name "c")
+    let d = Thing (Name "d")
+    let a_b = Composite Function [a, b]
+    let b_c = Composite Function [b, c]
+    let a_c = Composite Function [a, c]
+    let a_d = Composite Function [a, d]
     describe "checkAST" $ do
         it "should check properly for things" $ do
             checkAST or isThing (Thing (Name "x")) `shouldBe` True
@@ -85,102 +96,154 @@ spec = do
     --             variable_kind=Label,
     --             variable_category=Composite{composite_type=Tuple,inner_categories=[thing, Reference{name=Name "self"}]}}
     --         level recursive_cat `shouldBe` Right (Specific 1)
+    describe "getBindings" $ do
+      it "should bind simple placeholders" $ do
+        let bindable = Variable (Name "x") Element (Set [a])
+        let bindee = a
+        let result = getResultOf $ getBindings bindable bindee
+        fromRight (error "bad") result `shouldBe` (True, [(Reference (Name "x"), Thing (Name "a"))])
+      it "should bind simple labels" $ do
+        let bindable = Variable (Name "x") Label a
+        let bindee = a
+        let result = getResultOf $ getBindings bindable bindee
+        fromRight (error "bad") result `shouldBe` (True, [(Reference (Name "x"), Thing (Name "a"))])
+      it "should bind identical things" $ do
+        let bindable = a
+        let bindee = a
+        let result = getResultOf $ getBindings bindable bindee
+        fromRight (error "bad") result `shouldBe` (True, [])
+      it "should bind placeholder tuples" $ do
+        let bindable = Composite Tuple [Variable (Name "x") Label a, Variable (Name "y") Label b]
+        let bindee = Composite Tuple [a, b]
+        let result = getResultOf $ getBindings bindable bindee
+        fromRight (error "bad") result `shouldBe` (True, [(Reference {name = Name "x"},Thing {name = Name "a"}),(Reference {name = Name "y"},Thing {name = Name "b"})])
+      it "should bind placeholder functions" $ do
+        let bindable = Composite Function [Variable (Name "x") Label a, Variable (Name "y") Label b]
+        let bindee = Composite Function [a, b]
+        let result = getResultOf $ getBindings bindable bindee
+        fromRight (error "bad") result `shouldBe` (True, [(Reference {name = Name "x"},Thing {name = Name "a"}),(Reference {name = Name "y"},Thing {name = Name "b"})])
     describe "has" $ do
         let has' a b = getResultOf $ has a b
-        let thing = Thing (Name "thing")
-        let thing2 = Thing (Name "thing2")
-        let thing3 = Thing (Name "thing3")
-        let a = Thing (Name "a")
-        let b = Thing (Name "b")
-        let c = Thing (Name "c")
-        let d = Thing (Name "d")
-        let a_b = Composite Function [a, b]
-        let b_c = Composite Function [b, c]
-        let a_c = Composite Function [a, c]
-        let a_d = Composite Function [a, d]
+        let setOf any = Set [any]
+        let has'' a b = getResultOf $ has (setOf a) b
+        let phOf name any = Variable (Name name) Element (setOf any)
+        let compType (Composite x inner)= Composite x (map setOf inner)
+            compType _ = error "should not reach"
         it "(things) should make equal things have each other" $ do
-            has' thing thing `shouldBe` Right True
+            has' thing thing `shouldBe` Right False
+            has' (setOf thing) thing `shouldBe` Right True
             has' thing thing2 `shouldBe` Right False
+            has' (setOf thing) thing2 `shouldBe` Right False
             has' thing2 thing `shouldBe` Right False
+            has' (setOf thing2) thing `shouldBe` Right False
         it "(things) should make things have equal singular algebraic types" $ do
             let product_things = Composite Tuple [thing]
-            has' thing product_things `shouldBe` Right True
+            has' thing product_things `shouldBe` Right False
+            has' (setOf thing) product_things `shouldBe` Right True
             has' thing2 product_things `shouldBe` Right False
+            has' (setOf thing2) product_things `shouldBe` Right False
             let product_things = Composite Tuple [thing]
-            has' thing product_things `shouldBe` Right True
+            has' thing product_things `shouldBe` Right False
+            has' (setOf thing) product_things `shouldBe` Right True
             has' thing2 product_things `shouldBe` Right False
-        it "(morphisms) properly checks simple morphisms" $ do
+            has' (setOf thing2) product_things `shouldBe` Right False
+        it "(set) should have only its elements" $ do
+            has' (Set [a,b]) a `shouldBe` Right True
+            has' (Set [a,b]) b `shouldBe` Right True
+            has' (Set [a,b]) c `shouldBe` Right False
+        it "(set) should have eithers" $ do
+            has' (Set [a,b,c]) (Composite Either [a,b]) `shouldBe` Right True
+            has' (Set [a,b,c]) (Composite Either [b,c]) `shouldBe` Right True
+            has' (Set [a,b,c]) (Composite Either [a,c]) `shouldBe` Right True
+            has' (Set [a,b]) (Composite Either [a,b]) `shouldBe` Right True
+        it "(function) properly checks simple function" $ do
             let a_b = Composite Function [a, b]
             let a_c = Composite Function [a, c]
             let b_c = Composite Function [b, c]
 
-            has' a_b a_b `shouldBe` Right True
+            has' a_b a_b `shouldBe` Right False
+            has' (compType a_b) a_b `shouldBe` Right True
             has' a_b a_c `shouldBe` Right False
-            has' a_b b_c `shouldBe` Right False
-        it "(morphisms) does not allow intermediate morphisms" $ do
-            let a_b = Composite Function [a, b]
-            let a_c = Composite Function [a, c]
-            let b_c = Composite Function [b, c]
+            has' (compType a_b) a_c `shouldBe` Right False
+            has'  a_b b_c `shouldBe` Right False
+            has' (compType a_b) b_c `shouldBe` Right False
+        it "(function) does not allow intermediate function" $ do
             let a_b_c = Composite Function [a, b_c]
 
-            has' a_c a_b_c `shouldBe` Right False
+            has' (setOf a_c) a_b_c `shouldBe` Right False
+        it "(function) should handle either args" $ do
+            let big = Composite Function [Set [a,b], Set [b,c]]
+            let small = Composite Function [Composite Either [a,b], Composite Either [b,c]]
+            has' big small `shouldBe` Right True
         it "(Product) should make Tuple of things have only a Tuple of those things" $ do
             let product_things = Composite Tuple [thing, thing2]
-            has' product_things thing `shouldBe` Right False
-            has' product_things thing2 `shouldBe` Right False
-            has' product_things thing3 `shouldBe` Right False
-            has' product_things product_things `shouldBe` Right True
-            has' product_things (Composite Tuple [thing, thing3]) `shouldBe` Right False
+            has' (setOf product_things) thing `shouldBe` Right False
+            has' (setOf product_things) thing2 `shouldBe` Right False
+            has' (setOf product_things) thing3 `shouldBe` Right False
+            has' (setOf product_things) product_things `shouldBe` Right True
+            has' (setOf product_things) (Composite Tuple [thing, thing3]) `shouldBe` Right False
         it "(Product) should ignore products of length 1" $ do
             let product_things = Composite Tuple [thing]
-            has' product_things thing `shouldBe` Right True
-            has' product_things thing2 `shouldBe` Right False
-            has' product_things product_things `shouldBe` Right True
-            has' product_things (Composite Tuple [thing, thing2]) `shouldBe` Right False
+            has'' product_things thing `shouldBe` Right True
+            has'' product_things thing2 `shouldBe` Right False
+            has'' product_things product_things `shouldBe` Right True
+            has'' product_things (Composite Tuple [thing, thing2]) `shouldBe` Right False
+        it "(Product) should handle inner eithers" $ do
+            let big = Composite Tuple [Set [a,b], Set [b,c]]
+            let small = Composite Tuple [Composite Either [a,b], Composite Either [b,c]]
+            has' big small `shouldBe` Right True
         it "(Either) should make a sum of things have each of those things" $ do
             let sum_things = Composite Either [thing, thing2]
-            has' sum_things thing `shouldBe` Right True
-            has' sum_things thing2 `shouldBe` Right True
-            has' sum_things thing3 `shouldBe` Right False
-            has' thing sum_things `shouldBe` Right False
-            has' thing2 sum_things `shouldBe` Right False
-            has' thing3 sum_things `shouldBe` Right False
-            has' sum_things sum_things `shouldBe` Right True
+            has' (compType sum_things) thing `shouldBe` Right True
+            has' (compType sum_things) thing2 `shouldBe` Right True
+            has' (compType sum_things) thing3 `shouldBe` Right False
+            has' (setOf thing) sum_things `shouldBe` Right False
+            has' (setOf thing2) sum_things `shouldBe` Right False
+            has' (setOf thing3) sum_things `shouldBe` Right False
+            has' (setOf sum_things) sum_things `shouldBe` Right True
+            has' (Set [thing, thing2]) sum_things `shouldBe` Right True
+            has' (compType sum_things) sum_things `shouldBe` Right False
             has' sum_things (Composite Either [thing, thing3]) `shouldBe` Right False
+            has' (setOf sum_things) (Composite Either [thing, thing3]) `shouldBe` Right False
+            has' (compType sum_things) (Composite Either [thing, thing3]) `shouldBe` Right False
             has' sum_things (Composite Either [thing, thing2, thing3]) `shouldBe` Right False
-            has' (Composite Either [thing, thing2, thing3]) sum_things `shouldBe` Right True
-        it "(Composition) should only check input output of composite morphisms" $ do
+            has' (Composite Either [thing, thing2, thing3]) sum_things `shouldBe` Right False
+            has' (Set [thing, thing2, thing3]) sum_things `shouldBe` Right True
+            has' (compType (Composite Either [thing, thing2, thing3])) sum_things `shouldBe` Right False
+        it "(Either) should handle eithers of sets well" $ do
+            let c = Composite Either [Set [thing], Set [thing2]]
+            has' c thing `shouldBe` Right True
+            has' c thing2 `shouldBe` Right True
+            has' c (Set [thing]) `shouldBe` Right False
+        it "(Composition) should only check input output of composite function" $ do
             let composite_morphism = Composite Composition [a_b, b_c]
-
-            has' composite_morphism a_c `shouldBe` Right True
-            has' a_c composite_morphism `shouldBe` Right True
+            let tcomposite_morphism = Composite Composition [compType a_b, compType b_c]
+            has' tcomposite_morphism composite_morphism `shouldBe` Right True
+            has' (setOf a_c) composite_morphism `shouldBe` Right True
+            has' tcomposite_morphism a_c `shouldBe` Right True
         it "(Match) should pass it on to any of the interal foos" $ do
             let sumposite_morphism = Composite Match [a_b, b_c]
+            let flat_type = Composite Function [Set [a,b],Set [b,c]]
+            has' flat_type sumposite_morphism `shouldBe` Right True
+            has' flat_type a_b `shouldBe` Right True
+            has' flat_type b_c `shouldBe` Right True
+            has' flat_type a_c `shouldBe` Right True
 
-            has' sumposite_morphism a_b `shouldBe` Right True
-            has' sumposite_morphism b_c `shouldBe` Right True
-            has' sumposite_morphism a_c `shouldBe` Right False
-        it "(Either) should have each of its inner categories" $ do
-            let higher_category = Composite Either [a,b,a_b,b_c]
-
-            has' higher_category a `shouldBe` Right True
-            has' higher_category b `shouldBe` Right True
-            has' higher_category c `shouldBe` Right False
-            has' higher_category a_b `shouldBe` Right True
-            has' higher_category b_c `shouldBe` Right True
-            has' higher_category a_c `shouldBe` Right False
-            has' higher_category d `shouldBe` Right False
-            has' higher_category a_d `shouldBe` Right False
+            let basic_type = Set [a_b, b_c]
+            has' basic_type sumposite_morphism `shouldBe` Right True
+            has' basic_type a_b `shouldBe` Right True
+            has' basic_type b_c `shouldBe` Right True
+            has' basic_type a_c `shouldBe` Right False
         it "(Variable) should be contained by its category" $ do
-            let higher_category = Composite Either [a,b,a_b,b_c]
-            let ph_hc = Variable (Name "ph-all") Element higher_category
+            let big_c = Set [a,b,c]
+            let ph_c = Variable Unnamed Element big_c
 
-            has' higher_category ph_hc `shouldBe` Right True
-            has' ph_hc higher_category  `shouldBe` Right True
-        it "(RecursiveCategory) should have each of the component elements" $ do
-            nat `has'` Thing (Name "0") `shouldBe` Right True
-            nat `has'` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Right True
-            nat `has'` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Right True
+            has' big_c ph_c `shouldBe` Right True
+            has' ph_c big_c  `shouldBe` Right False
+        -- it "(RecursiveCategory) should have each of the component elements" $ do
+        --     nat `has'` Thing (Name "0") `shouldBe` Right True
+        --     nat `has'` Composite Tuple [Thing (Name "S"), Thing (Name "0")] `shouldBe` Right True
+        --     nat `has'` Composite Tuple [Composite Tuple [Thing (Name "S"),Thing (Name "0")]] `shouldBe` Right True
     describe "call" $ do
         let call' a b = getResultOf $ call a b
         it "(NonMorphism) should return Nothing" $ do
