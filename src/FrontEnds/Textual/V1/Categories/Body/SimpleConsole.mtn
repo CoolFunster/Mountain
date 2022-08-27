@@ -5,6 +5,6 @@ SimpleConsole:
   ) -> (
     Console: #Console
     print: (<Console>, String) -> <Console>,
-    input: (<Console>, String) -> (<Console>, String),
+    input: (<Console>, prompt@String) -> (<Console>, returnString@String),
     ConsoleProgram: (<Console>, [String], Dict (String,String)) -> (<Console>,Int)
   )

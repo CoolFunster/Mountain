@@ -29,7 +29,6 @@ import Debug.Trace (trace)
 {- add specific name for symbolic execution cases-}
 data Id =
     Name [Char] |
-    Index Int |
     Unnamed
     deriving (Eq, Show, Read)
 
@@ -44,9 +43,6 @@ data CompositeType =
     Function | -- a function, a category that has a dependency on another category
     Composition | -- a chain of functions (a->b, b->c = a->c)
     Match -- a case statement of functions     (a->b, b->c = a->c)
-    -- TO ADD LATER
-    -- | Superposition
-    -- | Subtractive
     deriving (Eq, Show, Read)
 
 data PlaceholderType =
@@ -54,6 +50,11 @@ data PlaceholderType =
     Variable | -- a way of referring to categories contained by the category
     Resolved  -- the way of marking a label as having been resolved to a category
     deriving (Eq, Show, Read)
+
+data AccessType =
+  ByIndex Int |
+  ByLabelGroup [Id]
+  deriving (Eq, Show, Read)
 
 data Category =
     -- categories
@@ -89,7 +90,7 @@ data Category =
     }
     | Access {
         base::Category,
-        access_id::Id
+        access_type::AccessType
     }
     | Import { -- TODO MAKE ON REFERENCE & TUPLE of REFS
         import_category::Category
@@ -97,6 +98,13 @@ data Category =
     | TypeAnnotation {
         big_category::Category,
         small_category::Category
+    }
+    | Scope {
+        statements::[Category]
+    }
+    | Binding {
+        placeholder::Category,
+        category_to_bind::Category
     }
     deriving (Eq, Show, Read)
 
@@ -149,16 +157,11 @@ data ErrorType =
     EmptyAccessBase |
     EmptyAccessID |
     BadAccess |
-    BadBinding |
-    IndexAccessOnFunction |
     UndefinedAccess |
     RefinementNotHandledInAccess |
     UnresolvedReference |
-    -- SubstituteArgOnEmptyCategory |
-    -- BadSubstituteArgs |
     CallingADataCompositeCategory |
     UnnamedCategory |
-    IndexedNamed |
     EmptyFunctionalComposite |
     InsufficientFunctionTerms |
     DataInFunctionComposite |
@@ -167,15 +170,16 @@ data ErrorType =
     InvalidArgument |
     PredicateHasNonFunctionArgument |
     NonFunctioninCallBase |
-    -- NotSubstitutableArgs |
     BadRefinementPredicateInput |
-    AccessIndexBelowZero |
-    AccessIndexOutsideRange |
     BadImport |
     BadExportFileExists |
     CannotTypecheckRawImport |
     CannotTypecheckRawDefinition |
-    BadTypeAnnotation
+    BadTypeAnnotation |
+    EmptyScope |
+    NoReturnInScope |
+    BadBinding |
+    BindingOutsideOfScope
     deriving (Eq, Show, Read)
 
 data Error = Error {
@@ -221,30 +225,6 @@ getResultOfT c = fst <$> runCategoryContextT c
 
 getResultOf :: CategoryContext a -> Either [Error] a
 getResultOf c = fst $ runCategoryContext c
-
-
--- newtype Binding = Binding (Category, Category)
---   deriving (Show, Eq)
--- newtype Context = Context [Map.Map String Category]
---   deriving (Show, Eq)
-
--- putBinding :: Binding -> Context -> Context
--- putBinding r (Context []) = putBinding r (Context [Map.empty])
--- putBinding (Binding (r@(Reference (Name n)), cat)) (Context (head:tail)) = Context (Map.insert n cat head : tail)
--- putBinding other _ = error "Bad use of putBinding"
-
--- pushContext :: Context -> Context
--- pushContext (Context m) = Context (Map.empty : m)
-
--- popContext :: Context -> Context
--- popContext (Context (x:xs)) = Context xs
--- popContext (Context []) = Context []
-
--- getValueOfBinding :: Category -> Context -> Maybe Category
--- getValueOfBinding r@(Reference _) (Context []) = Nothing
--- getValueOfBinding r@(Reference (Name n)) (Context (head:tail)) = Map.lookup n head
--- getValueOfBinding _ _ = error "Bad use of get value of binding"
-
 
 -- useful categories
 
@@ -359,7 +339,7 @@ getName input_category
 
 checkAST :: ([Bool] -> Bool) -> (Category -> Bool) -> Category -> Bool
 checkAST aggregator checker t@Thing{} = checker t
-checkAST aggregator checker s@Set{elements=e} = aggregator $ map checker e
+checkAST aggregator checker s@Set{elements=e} = aggregator $ checker s : map checker e
 checkAST aggregator checker t@Unique{inner_category=ic} = checker ic
 checkAST aggregator checker c@Composite{inner_categories=inner} = aggregator $ checker c : map (checkAST aggregator checker) inner
 checkAST aggregator checker p@Placeholder{placeholder_category=ph_c} = aggregator [checker p, checkAST aggregator checker ph_c]
@@ -367,9 +347,11 @@ checkAST aggregator checker r@Refined{base=b, predicate=p} = aggregator (checker
 checkAST aggregator checker s@Special{} = checker s
 checkAST aggregator checker r@Reference{} = checker r
 checkAST aggregator checker fc@Call{base=b, argument=a} = aggregator (checker fc: map (checkAST aggregator checker) [b,a])
-checkAST aggregator checker a@Access{base=b, access_id=id} = aggregator [checker a, checkAST aggregator checker b]
+checkAST aggregator checker a@Access{base=b, access_type=id} = aggregator [checker a, checkAST aggregator checker b]
 checkAST aggregator checker i@Import{} = checker i
 checkAST aggregator checker mem@TypeAnnotation{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
+checkAST aggregator checker s@Scope{statements=st} = aggregator $ checker s : map checker st
+checkAST aggregator checker b@Binding{placeholder=ph, category_to_bind=c} = aggregator $ [checker b, checker ph, checker c]
 
 {- This transforms the AST according to an input mapping -}
 data TransformResult a =
@@ -394,18 +376,19 @@ transformAST transformer input_category = do
         p@(Placeholder n p_type ph_c) -> Placeholder n p_type <$> recurse ph_c
         r@(Refined b p) -> Refined <$> recurse b <*> recurse p
         fc@(Call b a) -> Call <$> recurse b <*> recurse a
-        a@(Access b a_id) -> Access <$> recurse b <*> pure a_id
+        a@(Access b access_type) -> Access <$> recurse b <*> pure access_type
         i@(Import i_c) -> Import <$> recurse i_c
         m@(TypeAnnotation b s) -> TypeAnnotation <$> recurse b <*> recurse s
-
+        s@Scope{statements=st} -> Scope <$> mapM recurse st
+        b@Binding{placeholder=ph, category_to_bind=c} -> Binding <$> recurse ph <*> recurse c
 -- {- Category Functions -}
 
-isRecursiveCategory :: Category -> Bool
+isRecursiveCategory :: Category -> CategoryContext Bool
 isRecursiveCategory c = do
-  let new_c = normalize c
+  new_c <- normalize c
   case new_c of
-    Placeholder{name=ph_name, placeholder_kind=Label, placeholder_category=ph_c} -> checkAST or (isReferenceOfName ph_name) ph_c
-    _ -> False
+    Placeholder{name=ph_name, placeholder_kind=Label, placeholder_category=ph_c} -> return $ checkAST or (isReferenceOfName ph_name) ph_c
+    _ -> return False
 
 replaceReferences :: Id -> Category -> Category -> Category
 replaceReferences ref_name new_cat base_cat =
@@ -432,20 +415,25 @@ resolveReferences cat =
       runIdentity $ transformAST resolveReferencesTransformer cat
 
 data UnrollType = Flat | Recursive
-unroll :: UnrollType -> Category -> Category
-unroll t c = unroll_inner t (normalize c)
+unroll :: UnrollType -> Category -> CategoryContext Category
+unroll t l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} = do
+  isRecursive <- isRecursiveCategory l
+  if isRecursive
+    then unroll_inner t <$> normalize l
+    else return rec_cat
   where
     unroll_inner :: UnrollType -> Category -> Category
     unroll_inner Flat l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} =
         replaceReferences rec_name Special{special_type=Flexible} rec_cat
     unroll_inner Recursive l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} =
         replaceReferences rec_name l rec_cat
-    unroll_inner _ something_else = something_else
+    unroll_inner _ other = other
+unroll _ something_else = return something_else
 
 getBindings :: Category -> Category -> CategoryContext (Bool, [(Category, Category)])
 getBindings bind_term potential_bind = do
-  let nbind_term = normalize bind_term
-  let npot_bind = normalize potential_bind
+  nbind_term <- normalize bind_term
+  npot_bind <- normalize potential_bind
   if nbind_term == npot_bind
     then return (True, [])
     else do
@@ -468,7 +456,7 @@ getBindings bind_term potential_bind = do
         then return (False, [])
         else getBindings (Composite Function inner) (Composite Function inner2)
     bind_inner bind_term@(Placeholder n Label ph_c) potential_bind = do
-      let unrolled = unroll Recursive bind_term
+      unrolled <- unroll Recursive bind_term
       (result, bindings) <- getBindings unrolled potential_bind
       return (result, (Reference n, potential_bind) : bindings)
     bind_inner bind_term@(Placeholder n Variable ph_c) potential_bind = do
@@ -479,25 +467,30 @@ getBindings bind_term potential_bind = do
         else return (False, [])
     bind_inner a b = return (a == b, [])
 
+applyBindings :: [(Category, Category)] -> [Category] -> [Category]
+applyBindings bindings categories = do
+  let apply_bindings = map (\(Reference n, binding) -> replaceReferences n binding) bindings
+  foldr map categories apply_bindings
+
 call :: Category -> Category -> CategoryContext Category
 call arg foo = do
-  let n_arg = normalize arg
-  let n_foo = normalize foo
+  n_arg <- normalize arg
+  n_foo <- normalize foo
   call_inner n_arg n_foo
   where
     call_inner :: Category -> Category -> CategoryContext Category
-    call_inner arg p@Placeholder{placeholder_kind=Label} = call arg (unroll Recursive p)
+    call_inner arg p@Placeholder{placeholder_kind=Label} = do
+      unrolled <- unroll Recursive p
+      call arg unrolled
     call_inner arg c@Composite{composite_type=Function, inner_categories=head:tail} = do
       (bind_result, bindings) <- getBindings head arg
       if not bind_result
         then throwError [Error{error_type=InvalidArgument, error_stack=[arg, c]}]
         else do
-          let apply_bindings = map (\(Reference n, binding) -> replaceReferences n binding) bindings
-          let new_tail = foldr map tail apply_bindings
-          case new_tail of
+          case applyBindings bindings tail of
               [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
               [something] -> return something
-              other -> return c{inner_categories=new_tail}
+              other -> return c{inner_categories=other}
     call_inner arg c@Composite{composite_type=Match, inner_categories=inner} = do
         let result = rights $ map (fst . runCategoryContext . call arg) inner
         case result of
@@ -529,47 +522,68 @@ flatten c@Composite{composite_type=c_type, inner_categories=inner} = Composite c
 flatten p@Placeholder{name=ph_name, placeholder_kind=p_type, placeholder_category=ph_c} = Placeholder ph_name p_type <$> flatten ph_c
 flatten r@Refined{base=b, predicate=p} = Refined <$> flatten b <*> flatten p
 flatten fc@Call{base=b, argument=a} = Call <$> flatten b <*> flatten a
-flatten a@Access{base=b, access_id=a_id} = Access <$> flatten b <*> return a_id
+flatten a@Access{base=b, access_type=a_type} = Access <$> flatten b <*> return a_type
 flatten mem@TypeAnnotation{big_category=bc, small_category=sc} = TypeAnnotation <$> flatten bc <*> flatten sc
 flatten other = return other
 
+evaluateScope :: Category -> CategoryContext Category
+evaluateScope (Scope []) = throwError [Error{error_type=EmptyScope, error_stack=[]}]
+evaluateScope (Scope [s]) = return s
+evaluateScope (Scope (b@(Binding big c):rest)) = do
+  (valid, bindings) <- getBindings big c
+  if not valid
+    then throwError [Error{error_type=BadBinding, error_stack=[b]}]
+    else
+      case applyBindings bindings rest of
+        [] -> throwError [Error{error_type=NoReturnInScope, error_stack=[b]}]
+        [something] -> return something
+        many -> evaluateScope $ Scope many
+evaluateScope (Scope (_:rest)) = evaluateScope $ Scope rest
+evaluateScope other = error $ "bad use for reduce Statement with " ++ show other
+
+
 evaluateAccess :: Category -> CategoryContext Category
-evaluateAccess a@Access{base=Composite{inner_categories=[]}, access_id=id} =
+evaluateAccess a@Access{base=Composite{inner_categories=[]}} =
     throwError [Error{error_type=EmptyAccessBase,error_stack=[a]}]
 evaluateAccess a@Access{base=Composite{inner_categories=[something]}} = evaluateAccess a{base=something}
-evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_id=id} =
-    case id of
-        Index idx ->
-            if isFunctionCompositeType c_type
-                then throwError [Error{error_type=IndexAccessOnFunction, error_stack=[a]}]
-                else return (inner!!idx)
-        Name str_name -> do
-            case filter (\x -> getName x == Just (Name str_name))  inner of
-                [] -> throwError [Error{error_type=BadAccess,error_stack=[a]}]
-                stuff -> do
-                    let result = head stuff
-                    if isRecursiveCategory result
-                        then return result
-                        else if isPlaceholder result
-                            then return $ placeholder_category result
-                            else return result
-        Unnamed -> throwError [Error{error_type=EmptyAccessID,error_stack=[a]}]
-evaluateAccess a@Access{base=Special{special_type=Flexible}, access_id=output} = return Special{special_type=Flexible}
-evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Label, placeholder_category=ph_c}, access_id=id} = do
-    let new_base = if isRecursiveCategory p then unroll Recursive p else ph_c
+evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=ByLabelGroup labels} =
+  let
+    getSubCategory ::  Id -> CategoryContext Category
+    getSubCategory id =
+      case id of
+          Name str_name -> do
+              case filter (\x -> getName x == Just (Name str_name))  inner of
+                  [] -> throwError [Error{error_type=BadAccess,error_stack=[a]}]
+                  stuff -> do
+                      let result = head stuff
+                      isRecursive <- isRecursiveCategory result
+                      if isRecursive
+                          then return result
+                          else if isPlaceholder result
+                              then return $ placeholder_category result
+                              else return result
+          Unnamed -> throwError [Error{error_type=EmptyAccessID,error_stack=[a]}]
+  in do
+    inner <- mapM getSubCategory labels
+    case inner of
+      [something] -> return something
+      _ -> return c{inner_categories = inner }
+evaluateAccess a@Access{base=Special{special_type=Flexible}, access_type=output} = return Special{special_type=Flexible}
+evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Label, placeholder_category=ph_c}, access_type=id} = do
+    new_base <- unroll Recursive p
     evaluateAccess a{base=new_base}
-evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Resolved, placeholder_category=ph_c}, access_id=id} =
+evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Resolved, placeholder_category=ph_c}, access_type=id} =
   evaluateAccess a{base=ph_c}
-evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_id=id} =
+evaluateAccess a@Access{base=Refined{base=b_cat, predicate=p}, access_type=id} =
         {- TODO: handle predicates -}
         throwError [Error RefinementNotHandledInAccess [a]]
-evaluateAccess a@Access{base=f@Call{base=b, argument=arg}, access_id=output} = do
+evaluateAccess a@Access{base=f@Call{base=b, argument=arg}, access_type=output} = do
     result <- call arg b
     evaluateAccess a{base=result}
-evaluateAccess a@Access{base=a_inner@Access{}, access_id=id} = do
+evaluateAccess a@Access{base=a_inner@Access{}, access_type=id} = do
     result <- evaluateAccess a_inner
     evaluateAccess a{base=result}
-evaluateAccess a@Access{base=Reference{}, access_id=id} = return (Special{special_type=Flexible})
+evaluateAccess a@Access{base=Reference{}, access_type=id} = return (Special{special_type=Flexible})
 evaluateAccess a@Access{} = throwError [Error{error_type=UndefinedAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
 
@@ -649,15 +663,23 @@ debugTell :: (Show w, MonadWriter w m) => w -> m ()
 -- debugTell x = trace (show x) (tell x)
 debugTell x = tell x
 
-normalize :: Category -> Category
+normalize :: Category -> CategoryContext Category
 normalize (Composite _ [category]) = normalize category
 normalize (Placeholder _ Resolved category) = normalize category
-normalize x = x
+normalize s@(Scope _) = evaluateScope s
+normalize x = return x
+
+fullNormalize :: Category -> CategoryContext Category
+fullNormalize c = do
+  x <- normalize c
+  if x == c
+    then return x
+    else fullNormalize x
 
 has :: Category -> Category -> CategoryContext Bool
 has big_category small_category = do
-    let normalized_big = normalize big_category
-    let normalized_small = normalize small_category
+    normalized_big <- normalize big_category
+    normalized_small <- normalize small_category
 
     if big_category == small_category
       then do
@@ -686,15 +708,21 @@ has big_category small_category = do
                 debugTell  [Has{has_msg=UsePlaceholderCategory,on_which=Small,big=big_category,small=small_category}]
                 has big_category category
           {- Placeholder Label -}
-          has_inner (Placeholder _ Label category) small_category = do
+          has_inner p@(Placeholder _ Label category) small_category = do
             debugTell  [Has{has_msg=UnrollLabel,on_which=Big,big=big_category,small=small_category}]
-            if isRecursiveCategory big_category
-              then has (unroll Recursive big_category) small_category
+            isRecursive <- isRecursiveCategory p
+            if isRecursive
+              then do
+                unrolled <- unroll Recursive p
+                has unrolled small_category
               else has category small_category
-          has_inner big_category (Placeholder _ Label category) = do
+          has_inner big_category p@(Placeholder _ Label category) = do
             debugTell  [Has{has_msg=UnrollLabel,on_which=Small,big=big_category,small=small_category}]
-            if isRecursiveCategory small_category
-              then has big_category (unroll Recursive big_category)
+            isRecursive <- isRecursiveCategory big_category
+            if isRecursive
+              then do
+                unrolled <- unroll Recursive p
+                has big_category p
               else has category small_category
           {- Composition -}
           has_inner c_big@Composite{composite_type=Composition, inner_categories=big_ic} other_category = do
@@ -748,12 +776,12 @@ has big_category small_category = do
                 debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
                 return True
               else do
-                let normalized_inner = map normalize either_inner
+                normalized_inner <- mapM normalize either_inner
                 debugTell  [Has{has_msg=MapEvaluateInner,on_which=Both,big=big_category,small=small_category}]
                 and <$> mapM (has c_big) normalized_inner
           has_inner c_big@(Set set_elems) other = do
             debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
-            let normalized_elems = map normalize set_elems
+            normalized_elems <- mapM normalize set_elems
             return $ other `elem` normalized_elems
           {- Composite Tuple -}
           has_inner c_big@(Composite Tuple big_inner) c_small@(Composite Tuple small_inner)
@@ -821,7 +849,7 @@ has big_category small_category = do
             cat <- call a bm
             has other cat
           {- Access -}
-          has_inner a@Access{base=b, access_id=id} other = do
+          has_inner a@Access{base=b, access_type=id} other = do
             debugTell  [Has{has_msg=Evaluate,on_which=Big,big=big_category,small=small_category}]
             cat <- evaluateAccess a
             has cat other
@@ -836,6 +864,24 @@ has big_category small_category = do
           has_inner (Thing t) _ = do
             debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return False
+          {- Statements -}
+          has_inner big_category s@(Scope statements) = do
+            error "should not reach here because should be normalized"
+            debugTell  [Has{has_msg=Transform,on_which=Small,big=big_category,small=small_category}]
+            reduced <- evaluateScope s
+            has_inner big_category reduced
+          has_inner s@(Scope statements) small_category = do
+            error "should not reach here because should be normalized"
+            debugTell  [Has{has_msg=Transform,on_which=Big,big=big_category,small=small_category}]
+            reduced <- evaluateScope s
+            has_inner big_category reduced
+          {- Bindings -}
+          has_inner big_category (Binding b other_cat) = do
+            debugTell  [Has{has_msg=Transform,on_which=Small,big=big_category,small=small_category}]
+            has_inner big_category b
+          has_inner (Binding b other_cat) small_category = do
+            debugTell  [Has{has_msg=Transform,on_which=Small,big=big_category,small=small_category}]
+            has_inner b small_category
           {- Normalized away cases -}
           has_inner _ (Placeholder _ Resolved _) = error "should not reach"
           has_inner (Placeholder _ Resolved _) _ = error "should not reach"
@@ -843,7 +889,6 @@ has big_category small_category = do
 {- This does not do any checking which requires evaluation -}
 validateCategory :: Category -> CategoryContext Category
 validateCategory t@(Thing Unnamed) = throwError [Error{error_type=UnnamedCategory, error_stack=[t]}]
-validateCategory t@(Thing (Index _)) = throwError [Error{error_type=IndexedNamed, error_stack=[t]}]
 validateCategory c@Composite{composite_type=composition_type, inner_categories=[]}
     | isFunctionCompositeType composition_type =
         throwError [Error{error_type=EmptyFunctionalComposite, error_stack=[c]}]
@@ -854,9 +899,10 @@ validateCategory c@Composite{composite_type=composition_type, inner_categories=i
     | (composition_type == Function) && all isImport inner_cats =
         throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
     | otherwise = return c
-validateCategory ph@Placeholder{name=Unnamed} = throwError [Error{error_type=UnnamedCategory, error_stack=[ph]}]
-validateCategory ph@Placeholder{name=(Index _)} = throwError [Error{error_type=IndexedNamed, error_stack=[ph]}]
-validateCategory a@Access{base=bc, access_id=Unnamed} = throwError [Error{error_type=EmptyAccessID, error_stack=[a]}]
+validateCategory a@Access{base=bc, access_type=ByLabelGroup labels} =
+  if Unnamed `elem` labels || null labels
+    then throwError [Error{error_type=EmptyAccessID, error_stack=[a]}]
+    else return a
 validateCategory other = return other
 
 validateCategoryRecursive :: Category -> CategoryContext Category
@@ -903,11 +949,11 @@ loadModule module_base_path file_ext importer fp =
 evaluateImport :: CategoryImporter -> Category -> CategoryContextT IO Category
 evaluateImport importer (Import i@(Import _)) = evaluateImport importer i
 evaluateImport importer (Import (Reference (Name n))) = importer n
-evaluateImport importer (Import a@Access{base=bc, access_id=id}) =
+evaluateImport importer (Import a@Access{base=bc, access_type=id}) =
     let
         extractFilePath :: Category -> FilePath
         extractFilePath (Reference (Name n)) = n
-        extractFilePath (Access bc (Name n)) = extractFilePath bc ++ "." ++ n
+        extractFilePath (Access bc (ByLabelGroup [Name n])) = extractFilePath bc ++ "." ++ n
         extractFilePath _ = error "Something weird"
     in
         importer (extractFilePath a)
@@ -964,13 +1010,14 @@ step opts c@Composite{composite_type=Function, inner_categories=(i@(Import somet
     debugTell  [Step{msg=DeeperEval, input=[c]}]
     resolved_import <- step opts i
     let p@(Placeholder ph_name Label ph_c) = resolved_import
-    let replacement = if isRecursiveCategory p then p else ph_c
+    isRecursive <- identityToIO $ isRecursiveCategory p
+    let replacement = if isRecursive then p else ph_c
     case rest of
       [] -> throwError [Error InsufficientFunctionTerms [c]]
       more_terms -> do
         let result = c{inner_categories=map (replaceReferences ph_name replacement) more_terms}
         return result
-step opts a@Access{base=b, access_id=a_id} = do
+step opts a@Access{base=b, access_type=a_id} = do
     debugTell  [Step{msg=Accessing, input=[a]}]
     identityToIO $ evaluateAccess a
   `catchError` \errors -> do
@@ -994,6 +1041,8 @@ step opts@Options{reduce_composite=reduce_composite} c@Composite{composite_type=
           debugTell  [Step ReducingComposite [c]]
           stepped_inner <- mapM (step opts) inner_c
           return $ Composite c_type stepped_inner
+step opts s@Scope{} = identityToIO $ evaluateScope s
+step opts b@Binding{} = throwError [Error BindingOutsideOfScope [b]]
 step _ other = do
   debugTell  [Step{msg=Returning, input=[other]}]
   return other

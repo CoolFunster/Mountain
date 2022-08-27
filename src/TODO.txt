@@ -13,20 +13,9 @@ dev tooling
 Current Job
 
 Backlog
-  Update Parser
-    Function instead of given (Done)
-    _@v means unnamed placeholder with type v
-    x or x@_ means a placeholder of type Any
-  Update Access
-    Refactor to have access type with args
-    Fix parser to include []
-    Fix so ID no longer needs qualification
-  Flexible needs a name & palceholder
-  Scope & Binding needs implementation
-    resolve
-    eval
   validation
     Function return must only be last element
+    Binding can only appear within a scope
   Types of imports 
     Direct import   -> import (Data.String)
     relabel import  -> import (x:Data.String)
@@ -40,6 +29,7 @@ Backlog
     Float
     Integer
     Bool
+  Subtractive Access
 
 Completed:
   -Add sets (DONE)
@@ -51,3 +41,16 @@ Completed:
   -Update has rules for new def of category not having itself (Done)
     label has just that category
     placeholder has means pc has small
+  Update Parser (Done)
+    Function instead of given (Done)
+    _@v means unnamed placeholder with type v
+    x or x@_ means a placeholder of type Any
+  Flexible needs a name & palceholder (Done)
+  Update Access (Done)
+    Refactor to have access type with args
+    Fix parser to include []
+    Fix so ID no longer needs qualification
+    Tests
+  Scope & Binding needs implementation (Done)
+    resolve
+    eval

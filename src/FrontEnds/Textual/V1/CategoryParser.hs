@@ -103,13 +103,20 @@ pCategoryName :: Parser Id
 pCategoryName = do
     name <- some (alphaNumChar <|> char '_')
     case name of
-        "_" -> return Unnamed
-        other -> 
+        other ->
           if other `elem` reserved
-            then error $ "Cannot use " ++ other ++ " as it is a reserved keyword"
+            then fail $ "Cannot use " ++ other ++ " as it is a reserved keyword"
             else return $ Name other
 
-pCategory = pFunction
+pCategory = pPlaceholder
+
+pPlaceholder :: Parser Category
+pPlaceholder = withValidation $ makeExprParser (try pFunction) [
+            [
+                binaryR (pStringBetweenWS "::") (\x y -> TypeAnnotation{big_category=x,small_category=y}),
+                binaryR (pStringBetweenWS "@") (\Reference{name=n} rhs -> Placeholder n Variable rhs),
+                binaryR (pStringBetweenWS ":") (\Reference{name=n} rhs -> Placeholder n Category.Label rhs)
+            ]]
 
 pFunction :: Parser Category
 pFunction =
@@ -118,13 +125,13 @@ pFunction =
         combineFunctions a c@Composite{composite_type=Function,inner_categories=inner} = c{inner_categories=a:inner}
         combineFunctions a b = Composite{composite_type=Function, inner_categories=[a,b]}
     in
-      withValidation $ makeExprParser pFunctionTerm [
+      withValidation $ makeExprParser (try pFunctionTerm) [
           [binaryR (pStringBetweenWS "->") combineFunctions]]
 
 pFunctionTerm :: Parser Category
 pFunctionTerm = do
     _ <- optional spaceConsumer
-    try pImport <|> pFunctionOrReturn
+    try pImport <|> try pFunctionOrReturn
 
 pImport :: Parser Category
 pImport = withValidation $ do
@@ -137,34 +144,34 @@ pFunctionOrReturn :: Parser Category
 pFunctionOrReturn = do
     function_or_return <- optional (symbol (pack "function") <|> symbol (pack "return"))
     _ <- optional spaceConsumer
-    pTypeAnnotation
-
-pTypeAnnotation :: Parser Category
-pTypeAnnotation = withValidation $ makeExprParser (pPlaceholder <|> pCategoryTerm) [
-            [
-                binaryN (pStringBetweenWS "::") (\x y -> TypeAnnotation{big_category=x,small_category=y})
-            ]]
-
-pPlaceholder :: Parser Category
-pPlaceholder = withValidation $ makeExprParser pCategoryTerm [
-            [
-                binaryN (pStringBetweenWS "@") (\Reference{name=n} rhs -> Placeholder n Variable rhs),
-                binaryN (pStringBetweenWS ":") (\Reference{name=n} rhs -> Placeholder n Category.Label rhs)
-            ]]
+    try pCategoryTerm
 
 pCategoryTerm :: Parser Category
 pCategoryTerm = try pAccess <|> try pCall <|> try pStandardCategory
-
-pAccessExt :: Parser Id
-pAccessExt = do
-  _ <- symbol (pack ".")
-  try pCategoryName
 
 pAccess :: Parser Category
 pAccess = withValidation $ do
   base <- pStandardCategory
   ids <- some pAccessExt
-  return $ foldl (\c id -> Access{base=c, access_id=id}) base ids
+  return $ foldl (\c id -> Access{base=c, access_type=id}) base ids
+
+pAccessExt :: Parser AccessType
+pAccessExt = choice [
+      try pDotAccess,
+      try pBracketAccess
+    ]
+
+pDotAccess :: Parser AccessType
+pDotAccess = do
+  _ <- symbol (pack ".")
+  cat_name <- try pCategoryName
+  return $ ByLabelGroup [cat_name]
+
+pBracketAccess :: Parser AccessType
+pBracketAccess = do
+  let pIdList = sepBy pCategoryName (pStringBetweenWS ",")
+  id_list <- between (symbol (pack "[") <* optional spaceConsumer) (optional spaceConsumer <* symbol (pack "]")) (sepBy pCategoryName (pStringBetweenWS ","))
+  return $ ByLabelGroup id_list
 
 pCall :: Parser Category
 pCall = withValidation $
@@ -176,6 +183,7 @@ pCall = withValidation $
 pStandardCategory :: Parser Category
 pStandardCategory = choice [
     try pAny,
+    try pVarAny,
     try pThing,
     try pReference,
     try pFlexible,
@@ -184,7 +192,8 @@ pStandardCategory = choice [
     try pEither,
     try pComposition,
     try pMatch,
-    try pRefinement]
+    try pRefinement,
+    try pScope]
 
 pThing :: Parser Category
 pThing = withValidation $ do
@@ -203,9 +212,14 @@ pReference = withValidation $ do
     name <- pCategoryName
     return Reference{name=name}
 
+pVarAny :: Parser Category
+pVarAny = withValidation $ do
+  _ <- symbol (pack "_")
+  return $ Placeholder Unnamed Variable universal
+
 pAny :: Parser Category
 pAny = withValidation $ do
-    _ <- symbol (pack "Any") <|> symbol (pack "_")
+    _ <- symbol (pack "Any")
     return (Special Any)
 
 pFlexible :: Parser Category
@@ -249,6 +263,22 @@ pRefinementInner = withValidation $ do
 
 pRefinement :: Parser Category
 pRefinement = pWrapBetween "{" "}" pRefinementInner
+
+pScope :: Parser Category
+pScope = withValidation $ do
+  let parseInnerScope = sepBy (try pBinding <|> try pCategory) (pStringBetweenWS ";")
+  stuff <- pWrapBetween "{" "}" parseInnerScope
+  return $ Scope stuff
+
+
+pBinding :: Parser Category
+pBinding = withValidation $ makeExprParser pCategory [
+    [binaryR (pStringBetweenWS "=") (\lhs rhs ->
+      case lhs of
+        Reference n -> Binding (Placeholder n Variable universal) rhs
+        _ -> Binding lhs rhs)
+    ]
+  ]
 
 -- Pretty loader
 

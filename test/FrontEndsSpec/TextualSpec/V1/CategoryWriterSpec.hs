@@ -44,7 +44,7 @@ spec = do
         it "(Call) should write call consecutiveness" $ do
             categoryToString Call{base=Call{base=Reference (Name "base_foo") ,argument=Reference (Name "some_arg") },argument=Reference (Name "some_other") } `shouldBe` "$base_foo[$some_arg][$some_other]"
         it "(Dereference) should write dereferences" $ do
-            categoryToString Access{base=Reference{name=Name "base_ref"}, access_id=Name "name"}  `shouldBe` "($base_ref).name"
+            categoryToString Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name"]}  `shouldBe` "($base_ref).name"
         it "(TypeAnnotation) should write membership" $ do
             categoryToString TypeAnnotation{big_category=Reference (Name "base_category"), small_category=Reference (Name "child_category") } `shouldBe` "($base_category)::($child_category)"
     describe "prettyCategoryToString" $ do

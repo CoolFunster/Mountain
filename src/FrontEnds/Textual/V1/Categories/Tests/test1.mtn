@@ -1,6 +1,5 @@
-test1:(
-  x:#something -> (
+test1:
+  (x:#something) -> (
     a: #1,
     b: $x
   )
-)

@@ -67,9 +67,9 @@ spec = do
             isLabelOfName (Name "x") (Placeholder (Name "x") Variable valid) `shouldBe` False
     describe "isRecursiveCategory" $ do
         it "Simple recursion should be identified" $ do
-            isRecursiveCategory simpleRecursiveCat `shouldBe` True
+            getResultOf (isRecursiveCategory simpleRecursiveCat) `shouldBe` Right True
         it "Nats should be recursive" $ do
-            isRecursiveCategory nat `shouldBe` True
+            getResultOf (isRecursiveCategory nat) `shouldBe` Right True
     -- describe "level" $ do
     --     it "(things) should have a level of zero" $ do
     --         let thing = Thing (Name "thing")
@@ -387,7 +387,7 @@ spec = do
                     ]
                 }
             }
-            let unfolded_simple_ab = unroll Recursive simple_ab
+            let unfolded_simple_ab = fromRight (error "404") (getResultOf (unroll Recursive simple_ab))
             let unfolded_on_a = Call unfolded_simple_ab a
             let unfolded_on_b = Call unfolded_simple_ab b
             -- print $ inner_expr simple_ab
@@ -418,12 +418,10 @@ spec = do
         let evaluateAccess' a = getResultOf $ evaluateAccess a
         it "should handle indices on composites well" $ do
             let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Placeholder{name=Name "c", placeholder_kind=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
-            evaluateAccess' Access{base=composite_category, access_id=Index 0} `shouldBe` Right (Thing (Name "a"))
-            evaluateAccess' Access{base=composite_category, access_id=Index 1} `shouldBe` Right (Thing (Name "b"))
-            evaluateAccess' Access{base=composite_category, access_id=Name "a"} `shouldBe` Right (Thing (Name "a"))
-            evaluateAccess' Access{base=composite_category, access_id=Name "b"} `shouldBe` Right (Thing (Name "b"))
-            evaluateAccess' Access{base=composite_category, access_id=Name "c"} `shouldBe` Right (Thing (Name "z"))
-            evaluateAccess' Access{base=composite_category, access_id=Name "d"} `shouldBe` Right Reference{name=Name "d"}
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "a"]} `shouldBe` Right (Thing (Name "a"))
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "b"]} `shouldBe` Right (Thing (Name "b"))
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "c"]} `shouldBe` Right (Thing (Name "z"))
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "d"]} `shouldBe` Right Reference{name=Name "d"}
     describe "unroll" $ do
         it "should unroll recursive labels" $ do
             let simple_ab = Placeholder{
@@ -437,13 +435,31 @@ spec = do
                     ]
                 }
             }
-            unroll Recursive simple_ab `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_kind = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}}]}
+            let result = fromRight (error "404") (getResultOf (unroll Recursive simple_ab))
+            result `shouldBe` Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Placeholder {name = Name "ab", placeholder_kind = Resolved, placeholder_category = Placeholder {name = Name "ab", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "0"},Reference {name = Name "ab"}]}}}]}
     describe "importCategories" $ do
         it "should import categories test1" $ do
-            let test_item = Import{import_category=Access{base=Reference (Name "test"), access_id=Name "test1"}}
+            let test_item = Import{import_category=Access{base=Reference (Name "test"), access_type=ByLabelGroup [Name "test1"]}}
             result <- getResultOfT $ evaluateImport loadAST test_item
             result `shouldBe` Right (Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "something"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "a", placeholder_kind = Label, placeholder_category = Thing {name = Name "1"}},Placeholder {name = Name "b", placeholder_kind = Label, placeholder_category = Reference {name = Name "x"}}]}]}]}})
         it "should import categories test2" $ do
             let test_item = Import{import_category=Reference (Name "test.test2")}
             result <- getResultOfT $ evaluateImport loadAST test_item
             result `shouldBe` Right Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "first"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "second"},Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}}
+    describe "Scope & Binding" $ do
+      it "(Scope) should become its return if no other statements" $ do
+        let test_item = Scope{statements=[a]}
+        let result = getResultOf (evaluateScope test_item)
+        result `shouldBe` Right a
+      it "(Scope) should handle bindings" $ do
+        let test_item = Scope{statements=[Binding (Placeholder (Name "x") Variable universal) (a), Reference (Name "x")]}
+        let result = getResultOf (evaluateScope test_item >>= fullNormalize)
+        result `shouldBe` Right a
+      it "(Scope) should handle multiple bindings" $ do
+        let test_item = Scope{statements=[
+          Binding (Placeholder (Name "x") Variable universal) (a), 
+          Binding (Placeholder (Name "y") Variable universal) (b),
+          Composite Tuple [Reference (Name "x"), Reference (Name "y")]
+        ]}
+        let result = getResultOf (evaluateScope test_item >>= fullNormalize)
+        result `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Resolved, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Resolved, placeholder_category = Thing {name = Name "b"}}]})

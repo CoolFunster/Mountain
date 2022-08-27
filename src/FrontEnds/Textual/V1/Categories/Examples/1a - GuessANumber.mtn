@@ -4,9 +4,9 @@ import Base.Imperative.While.While ->
 import Body.SimpleConsole.ConsoleModule ->
 import Main: body.SimpleConsole.ConsoleProgram ->
 
-GuessANumber@Main = (c, p_arg, k_arg) -> {
-  my_secret_number = 5
-  max_guesses = 10
+Main :: function (c, p_arg, k_arg) -> {
+  my_secret_number = 5;
+  max_guesses = 10;
   while_loop = {
     state = (<Console>, Maybe Int, Int);
     init_state@state = (c, #Nothing, my_secret_number);
