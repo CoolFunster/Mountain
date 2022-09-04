@@ -83,3 +83,4 @@ Completed:
     relabel import  -> import (x:Data.String)
     hiding import   -> import (x:Data.String.-["String"])
     sub import      -> import ()
+  Binding as (:) (DONE)

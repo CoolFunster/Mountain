@@ -2,7 +2,7 @@ HelloWorld: (
   import (
     sc : Body.SimpleConsole
   ) -> *{
-    HelloWorld@sc.ConsoleProgram = (c, _, _) -> sc.print (c, _);
+    sc.ConsoleProgram::HelloWorld : (c, _, _) -> sc.print (c, _);
     return HelloWorld;
   }*
 )

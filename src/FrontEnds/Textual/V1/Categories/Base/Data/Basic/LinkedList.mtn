@@ -27,7 +27,7 @@ LinkedList:
       state -> *|
         #empty        -> for_body -> #empty;
         (head, tail)  -> for_body -> *{
-          State_Type::new_state = for_body state head;
+          State_Type::new_state: for_body state head;
           return (new_state, forl2r state tail for_body);
         }*;
       |*

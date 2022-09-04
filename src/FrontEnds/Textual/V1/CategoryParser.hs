@@ -109,14 +109,22 @@ pCategoryName = do
             else return $ Name other
 
 pCategory :: Parser Category
-pCategory = pPlaceholder
+pCategory = pBinding
 
-pPlaceholder :: Parser Category
-pPlaceholder = withValidation $ makeExprParser (try pFunction) [
-            [
-                binaryR (pStringBetweenWS "@") (\Reference{name=n} rhs -> Placeholder n Variable rhs),
-                binaryR (pStringBetweenWS ":") (\Reference{name=n} rhs -> Placeholder n Category.Label rhs)
-            ]]
+pBinding :: Parser Category
+pBinding = withValidation $ makeExprParser pFunction [
+    [binaryR (pStringBetweenWS ":") (\lhs rhs ->
+      case (lhs, rhs) of
+        (Reference n, rhs) -> Placeholder n Category.Label rhs
+        _ -> Binding lhs rhs)
+    ]
+  ]
+
+-- pPlaceholder :: Parser Category
+-- pPlaceholder = withValidation $ makeExprParser (try pFunction) [
+--             [
+--                 binaryR (pStringBetweenWS ":") Binding
+--             ]]
 
 pFunction :: Parser Category
 pFunction =
@@ -169,7 +177,10 @@ pCallArg base = do
 
 pTypeAnnotation :: Parser Category
 pTypeAnnotation = withValidation $ makeExprParser (try pCategoryTerm) [[
-                binaryR (pStringBetweenWS "::") TypeAnnotation
+                binaryR (pStringBetweenWS "::") (\lhs rhs ->
+                  case (lhs, rhs) of
+                    (a, Reference n) -> Placeholder n Variable a
+                    (a,b) -> TypeAnnotation a b)
             ]]
 
 pCategoryTerm :: Parser Category
@@ -272,7 +283,7 @@ pMatch = pCompositeTemplate Match ("*|", ";", "|*")
 
 pRefinementInner :: Parser Category
 pRefinementInner = withValidation $ do
-    ph <- pPlaceholder
+    ph <- pCategory
     _ <- spaceConsumer
     _ <- symbol (pack "|")
     _ <- spaceConsumer
@@ -284,19 +295,9 @@ pRefinement = pWrapBetween "{" "}" pRefinementInner
 
 pScope :: Parser Category
 pScope = withValidation $ do
-  let parseInnerScope = sepEndBy (try pBinding <|> try pCategory) (pStringBetweenWS ";")
+  let parseInnerScope = sepEndBy (try pCategory) (pStringBetweenWS ";")
   stuff <- pWrapBetween "*{" "}*" parseInnerScope
   return $ Scope stuff
-
-
-pBinding :: Parser Category
-pBinding = withValidation $ makeExprParser pCategory [
-    [binaryR (pStringBetweenWS "=") (\lhs rhs ->
-      case lhs of
-        Reference n -> Binding (Placeholder n Variable universal) rhs
-        _ -> Binding lhs rhs)
-    ]
-  ]
 
 -- Pretty loader
 
