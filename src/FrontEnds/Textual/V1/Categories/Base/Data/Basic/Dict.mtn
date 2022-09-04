@@ -1,0 +1,6 @@
+Dict:
+  import List ->
+  Type::(KeyType) ->
+  Type::(ValueType) -> (
+    Dict: List (key: KeyType, value ValueType)
+  )

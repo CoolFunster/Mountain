@@ -1,0 +1,6 @@
+// From https://argumatronic.com/posts/2019-06-21-algebra-cheatsheet.html
+Monoid:
+  import Base.Data.Algebraic.Semigroup ->
+  s:(Semigroup t) -> { (id: t,<>: s.<>) | 
+    x `<> id == x &&
+    id `<> x == x }

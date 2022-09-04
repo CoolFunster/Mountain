@@ -218,7 +218,12 @@ prettyCategoryToStringInner indenter Set{elements=elems} = do
   let comma = mapButLast (applyOnLast (++ ",")) tabbed
   ["{"] ++ concat comma ++ ["}"]
 prettyCategoryToStringInner indenter Unique{inner_category=inner} = ["<"] ++ prettyCategoryToStringInner indenter inner ++ [">"]
-
+prettyCategoryToStringInner indenter Binding{placeholder=ph, category_to_bind=c2b} = prettyCategoryToStringInner indenter ph ++ [": "] ++ prettyCategoryToStringInner indenter c2b
+prettyCategoryToStringInner indenter Scope{statements=s} = do
+  let raw_result = map (prettyCategoryToStringInner indenter) s
+  let tabbed = map incrementIndent raw_result
+  let comma = mapButLast (applyOnLast (++ ";")) tabbed
+  ["*{"] ++ concat comma ++ ["}"]
 
 prettyCategoryToString :: Category -> String
 prettyCategoryToString category = intercalate "\n" (prettyCategoryToStringInner "\t" (prepareForPrinting category))

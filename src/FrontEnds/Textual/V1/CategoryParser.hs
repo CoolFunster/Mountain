@@ -93,7 +93,7 @@ withValidation parser = do
 
 {- This wraps a parser around a pair of characters -}
 pWrapBetween :: [Char] -> [Char] -> Parser a -> Parser a
-pWrapBetween open_char close_char = between (pStringBetweenWS open_char) (pStringBetweenWS close_char)
+pWrapBetween open_char close_char = between (symbol (pack open_char) <* optional spaceConsumer) (optional spaceConsumer *> symbol (pack close_char))
 -- {- megaparsec helpers end -}The func
 
 reserved :: [String]
@@ -108,12 +108,12 @@ pCategoryName = do
             then fail $ "Cannot use " ++ other ++ " as it is a reserved keyword"
             else return $ Name other
 
+pCategory :: Parser Category
 pCategory = pPlaceholder
 
 pPlaceholder :: Parser Category
 pPlaceholder = withValidation $ makeExprParser (try pFunction) [
             [
-                binaryR (pStringBetweenWS "::") (\x y -> TypeAnnotation{big_category=x,small_category=y}),
                 binaryR (pStringBetweenWS "@") (\Reference{name=n} rhs -> Placeholder n Variable rhs),
                 binaryR (pStringBetweenWS ":") (\Reference{name=n} rhs -> Placeholder n Category.Label rhs)
             ]]
@@ -129,25 +129,51 @@ pFunction =
           [binaryR (pStringBetweenWS "->") combineFunctions]]
 
 pFunctionTerm :: Parser Category
-pFunctionTerm = do
-    _ <- optional spaceConsumer
-    try pImport <|> try pFunctionOrReturn
+pFunctionTerm = pImport <|> pFunctionOrReturn
 
 pImport :: Parser Category
 pImport = withValidation $ do
     import_str <- symbol $ pack "import"
     _ <- spaceConsumer
-    import_cat <- pCategory
+    import_cat <- pCategoryTerm
     return Import{import_category=import_cat}
 
 pFunctionOrReturn :: Parser Category
 pFunctionOrReturn = do
-    function_or_return <- optional (symbol (pack "function") <|> symbol (pack "return"))
-    _ <- optional spaceConsumer
-    try pCategoryTerm
+    function_or_return <- optional $ choice [
+        try $ symbol (pack "function") <* spaceConsumer,
+        try $ symbol (pack "return") <* spaceConsumer
+      ]
+    case function_or_return of
+      Nothing -> try pCall
+      Just _ -> pCategory
+
+-- pCall :: Parser Category
+-- pCall = withValidation $ makeExprParser (lookAhead pCategoryTerm) [
+--           [binaryL (symbol (pack " ")) Call]]
+
+pCall :: Parser Category
+pCall = withValidation $ do
+  base <- pTypeAnnotation
+  pCallArg base
+
+pCallArg :: Category -> Parser Category
+pCallArg base = do
+   i <- getInput
+   call_term <- observing $ try $ spaceConsumer *> pTypeAnnotation
+   i <- getInput
+   case call_term of
+     Left pe -> return base
+     Right cat -> pCallArg (Call base cat)
+
+
+pTypeAnnotation :: Parser Category
+pTypeAnnotation = withValidation $ makeExprParser (try pCategoryTerm) [[
+                binaryR (pStringBetweenWS "::") TypeAnnotation
+            ]]
 
 pCategoryTerm :: Parser Category
-pCategoryTerm = try pAccess <|> try pCall <|> try pStandardCategory
+pCategoryTerm = try pAccess <|> try pStandardCategory
 
 pAccess :: Parser Category
 pAccess = withValidation $ do
@@ -169,16 +195,8 @@ pDotAccess = do
 
 pBracketAccess :: Parser AccessType
 pBracketAccess = do
-  let pIdList = sepBy pCategoryName (pStringBetweenWS ",")
-  id_list <- between (symbol (pack "[") <* optional spaceConsumer) (optional spaceConsumer <* symbol (pack "]")) (sepBy pCategoryName (pStringBetweenWS ","))
+  id_list <- pWrapBetween "[" "]" (sepEndBy pCategoryName (pStringBetweenWS ","))
   return $ ByLabelGroup id_list
-
-pCall :: Parser Category
-pCall = withValidation $
-  makeExprParser pStandardCategory [
-      [
-          binaryL spaceConsumer Call
-      ]]
 
 pStandardCategory :: Parser Category
 pStandardCategory = choice [
@@ -237,20 +255,20 @@ pCompositeTemplate c_type (beg_sep, mid_sep, end_sep) = withValidation $ do
     return Composite{composite_type=c_type, inner_categories=inner_categories}
 
 pCategoryInnerList :: [Char] -> Parser [Category]
-pCategoryInnerList mid_sep = sepBy pCategory (pStringBetweenWS mid_sep)
+pCategoryInnerList mid_sep = sepEndBy pCategory (pStringBetweenWS mid_sep) <* optional (pStringBetweenWS mid_sep)
 
 
 pTuple :: Parser Category
 pTuple = pCompositeTemplate Tuple ("(", ",", ")")
 
 pEither :: Parser Category
-pEither = pCompositeTemplate Either ("|", ",", "|")
+pEither = pCompositeTemplate Either ("*|", ",", "|*")
 
 pComposition :: Parser Category
 pComposition = pCompositeTemplate Composition ("(", ";", ")")
 
 pMatch :: Parser Category
-pMatch = pCompositeTemplate Match ("|", ";", "|")
+pMatch = pCompositeTemplate Match ("*|", ";", "|*")
 
 pRefinementInner :: Parser Category
 pRefinementInner = withValidation $ do
@@ -266,8 +284,8 @@ pRefinement = pWrapBetween "{" "}" pRefinementInner
 
 pScope :: Parser Category
 pScope = withValidation $ do
-  let parseInnerScope = sepBy (try pBinding <|> try pCategory) (pStringBetweenWS ";")
-  stuff <- pWrapBetween "{" "}" parseInnerScope
+  let parseInnerScope = sepEndBy (try pBinding <|> try pCategory) (pStringBetweenWS ";")
+  stuff <- pWrapBetween "*{" "}*" parseInnerScope
   return $ Scope stuff
 
 

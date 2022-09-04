@@ -1,8 +1,8 @@
-HelloWorld:
+HelloWorld: (
   import (
-    sc : body.SimpleConsole
-  ) -> {
-    HelloWorld@sc.ConsoleProgram =
-      (c, _, _) -> sc.print (c, _);
+    sc : Body.SimpleConsole
+  ) -> *{
+    HelloWorld@sc.ConsoleProgram = (c, _, _) -> sc.print (c, _);
     return HelloWorld;
-  }
+  }*
+)

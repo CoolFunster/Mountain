@@ -1,0 +1,16 @@
+Bool:(
+  Bool:|#True,#False|,
+  and: (Bool -> Bool -> Bool)::|
+    #True -> #True -> #True  ;
+    #True -> #False -> #False ;
+    _ -> _ -> #False;
+  |,
+  or: (Bool -> Bool -> Bool)::|
+    #False -> x -> x      ;
+    #True -> _ -> #True   ;
+  |,
+  not: (Bool -> Bool)::|
+    #True -> #False  ;
+    #False -> #True  ;
+  |
+)

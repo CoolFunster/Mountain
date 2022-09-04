@@ -13,23 +13,47 @@ dev tooling
 Current Job
 
 Backlog
+  Rename Category as Structure
+  Import
+    import must load references within tuples
+  Parser
+    remove @ and replace with ::(<varname>)
+    backtick is infix operator
+      on definition if backtick then non backtick is infix
+  Subtractive Access
+  Sets & types 
+    123. -> float
+    123 -> integer
+    n123 -> nat
+    "" - strings
+    ^, V, - Set operations
+  Parser presidence
+    Labels
+    Functions
+    Call
+    type annotations
+    std categories
+  Parser Additions
+    Type - sets whose rank is 1 or greater
+  validate parser by writing some of the standard library
+    linked list (in progress)
   validation
     Function return must only be last element
     Binding can only appear within a scope
-  Types of imports 
-    Direct import   -> import (Data.String)
-    relabel import  -> import (x:Data.String)
-    hiding import   -> import (x:Data.String.-["String"])
-    sub import      -> import ()
+    Files must have label
+    Sets cannot be recursive
+    Type annotations need rank 1
   Refinements
-  -Rename Category to something else (Won't do)
-  - Rank of Category
+  Rename Category to something else (Won't do)
+  Rank of Category
   Builtin parse
     String
     Float
     Integer
     Bool
-  Subtractive Access
+  ignore training commas/semicolons
+  improve parser error messages
+  operator presidence
 
 Completed:
   -Add sets (DONE)
@@ -54,3 +78,8 @@ Completed:
   Scope & Binding needs implementation (Done)
     resolve
     eval
+  Types of imports 
+    Direct import   -> import (Data.String)
+    relabel import  -> import (x:Data.String)
+    hiding import   -> import (x:Data.String.-["String"])
+    sub import      -> import ()

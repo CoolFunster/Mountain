@@ -1,0 +1,35 @@
+LinkedList:
+  import Type ->
+  Type::ListType -> (
+    LinkedList: Type::*|
+      empty:{#empty},
+      nonempty:(head:ListType, tail:LinkedList ListType)
+    |*,
+    push: (ListType -> LinkedList ListType -> LinkedList ListType)::*|
+      new_head -> old_list -> (new_head, old_list)
+    |*,
+    push: (ListType -> LinkedList ListType -> LinkedList ListType)::*|
+      new_head -> old_list -> (new_head, old_list)
+    |*,
+    head: (LinkedList.nonempty -> LinkedList)::*|
+      (head, tail) -> head
+    |*,
+    tail: ((LinkedList ListType).nonempty -> LinkedList ListType)::*|
+      (head, tail) -> tail
+    |*,
+    map: ((ListType -> ResultType) -> LinkedList ListType -> LinkedList ResultType)::*|
+      map_foo -> *|
+        #empty -> #empty;
+        (head, tail) -> (map_foo head, map map_foo tail);
+      |*
+    |*,
+    forl2r: (State_Type -> LinkedList ListType -> (State_Type -> LinkedList ListType -> State_Type) -> State_Type)::*|
+      state -> *|
+        #empty        -> for_body -> #empty;
+        (head, tail)  -> for_body -> *{
+          State_Type::new_state = for_body state head;
+          return (new_state, forl2r state tail for_body);
+        }*;
+      |*
+    |*
+  )
