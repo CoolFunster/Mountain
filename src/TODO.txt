@@ -15,6 +15,7 @@ Current Job
 Backlog
   Subtractive Access
     access with dot operator
+  StdLib Strings
   Sets & types 
     123. -> float
     123 -> integer

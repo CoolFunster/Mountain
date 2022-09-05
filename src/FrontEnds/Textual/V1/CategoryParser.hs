@@ -190,14 +190,14 @@ pAccess = withValidation $ do
   return $ foldl (\c id -> Access{base=c, access_type=id}) base ids
 
 pAccessExt :: Parser AccessType
-pAccessExt = choice [
-      try pDotAccess,
-      try pBracketAccess
+pAccessExt = symbol (pack ".") *> choice [
+      try pStandardAccess,
+      try pBracketAccess,
+      try pSubtractive
     ]
 
-pDotAccess :: Parser AccessType
-pDotAccess = do
-  _ <- symbol (pack ".")
+pStandardAccess :: Parser AccessType
+pStandardAccess = do
   cat_name <- try pCategoryName
   return $ ByLabelGroup [cat_name]
 
@@ -205,6 +205,11 @@ pBracketAccess :: Parser AccessType
 pBracketAccess = do
   id_list <- pWrapBetween "[" "]" (sepEndBy pCategoryName (pStringBetweenWS ","))
   return $ ByLabelGroup id_list
+
+pSubtractive :: Parser AccessType
+pSubtractive = do
+  id_list <- pWrapBetween "-[" "]" (sepEndBy pCategoryName (pStringBetweenWS ","))
+  return $ Subtractive id_list
 
 pStandardCategory :: Parser Category
 pStandardCategory = choice [

@@ -53,7 +53,8 @@ data PlaceholderType =
 
 data AccessType =
   ByIndex Int |
-  ByLabelGroup [Id]
+  ByLabelGroup [Id] |
+  Subtractive [Id]
   deriving (Eq, Show, Read)
 
 data Category =
@@ -353,7 +354,7 @@ checkAST aggregator checker a@Access{base=b, access_type=id} = aggregator [check
 checkAST aggregator checker i@Import{} = checker i
 checkAST aggregator checker mem@TypeAnnotation{big_category=bc, small_category=sc} = aggregator (checker mem: map (checkAST aggregator checker) [bc,sc])
 checkAST aggregator checker s@Scope{statements=st} = aggregator $ checker s : map checker st
-checkAST aggregator checker b@Binding{placeholder=ph, category_to_bind=c} = aggregator $ [checker b, checker ph, checker c]
+checkAST aggregator checker b@Binding{placeholder=ph, category_to_bind=c} = aggregator [checker b, checker ph, checker c]
 
 {- This transforms the AST according to an input mapping -}
 data TransformResult a =
@@ -595,6 +596,12 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
     case inner of
       [something] -> return something
       _ -> return c{inner_categories = inner }
+evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=Subtractive bad_labels} = do
+  let should_label_be_excluded = (\label -> not $ label `elem` bad_labels)
+  let should_cat_be_excluded cat = case getName cat of 
+        Just n -> should_label_be_excluded n
+        Nothing -> False
+  return c{inner_categories=filter should_cat_be_excluded inner}
 evaluateAccess a@Access{base=Special{special_type=Flexible}, access_type=output} = return Special{special_type=Flexible}
 evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Label, placeholder_category=ph_c}, access_type=id} = do
     new_base <- unroll Recursive p

@@ -203,15 +203,20 @@ spec = do
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name"]}
     it "(Access) should parse bracket" $ do
-      let result = parseCategoryString "base_ref[name]" 
+      let result = parseCategoryString "base_ref.[name]" 
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name"]}
     it "(Access) should parse multiple bracket" $ do
-      let result = parseCategoryString "base_ref[name, a , b]" 
+      let result = parseCategoryString "base_ref.[name, a , b]" 
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name", Name "a", Name "b"]}
+    it "(Access) should parse subtractive bracket" $ do
+      let result = parseCategoryString "base_ref.-[name, a , b]" 
+      case result of
+        Left e -> error e
+        Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=Subtractive [Name "name", Name "a", Name "b"]}
     it "(Recursive) should parse recursion" $ do
       let result = parseCategoryString "self:(#a -> self #b)" 
       case result of
