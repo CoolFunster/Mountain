@@ -122,6 +122,11 @@ spec = do
         let bindee = Composite Function [a, b]
         let result = getResultOf $ getBindings bindable bindee
         fromRight (error "bad") result `shouldBe` (True, [(Reference {name = Name "x"},Thing {name = Name "a"}),(Reference {name = Name "y"},Thing {name = Name "b"})])
+      it "should handle star" $ do
+        let bindable = Composite Tuple [Reference (Name "*")]
+        let bindee = Composite Tuple [Placeholder (Name "x") Label a, Placeholder (Name "y") Label b]
+        let result = getResultOf $ getBindings bindable bindee
+        fromRight (error "bad") result `shouldBe` (True, [(Reference {name = Name "x"},Thing {name = Name "a"}),(Reference {name = Name "y"},Thing {name = Name "b"})])
     describe "has" $ do
         let has' a b = getResultOf $ has a b
         let setOf any = Set [any]

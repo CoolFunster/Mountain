@@ -120,12 +120,6 @@ pBinding = withValidation $ makeExprParser pFunction [
     ]
   ]
 
--- pPlaceholder :: Parser Category
--- pPlaceholder = withValidation $ makeExprParser (try pFunction) [
---             [
---                 binaryR (pStringBetweenWS ":") Binding
---             ]]
-
 pFunction :: Parser Category
 pFunction =
     let
@@ -156,23 +150,26 @@ pFunctionOrReturn = do
       Nothing -> try pCall
       Just _ -> pCategory
 
--- pCall :: Parser Category
--- pCall = withValidation $ makeExprParser (lookAhead pCategoryTerm) [
---           [binaryL (symbol (pack " ")) Call]]
-
 pCall :: Parser Category
 pCall = withValidation $ do
   base <- pTypeAnnotation
-  pCallArg base
+  tryParseCallArg base
+  where
+    tryParseCallArg :: Category -> Parser Category
+    tryParseCallArg base_cat = do
+      result <- observing (try $ pCallArg base_cat)
+      case result of
+        Left pe -> return base_cat
+        Right cat -> tryParseCallArg cat
 
 pCallArg :: Category -> Parser Category
 pCallArg base = do
-   i <- getInput
-   call_term <- observing $ try $ spaceConsumer *> pTypeAnnotation
-   i <- getInput
-   case call_term of
-     Left pe -> return base
-     Right cat -> pCallArg (Call base cat)
+   _ <- spaceConsumer
+   infex <- optional (symbol (pack "`"))
+   call_term <- pTypeAnnotation
+   case (infex, call_term) of
+     (Just _, cat) -> return (Call cat base)
+     (Nothing, cat) -> return (Call base cat)
 
 
 pTypeAnnotation :: Parser Category

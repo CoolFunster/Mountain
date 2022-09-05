@@ -179,7 +179,9 @@ data ErrorType =
     EmptyScope |
     NoReturnInScope |
     BadBinding |
-    BindingOutsideOfScope
+    BindingOutsideOfScope |
+    ImportIsNotLabeled |
+    BadRelabel
     deriving (Eq, Show, Read)
 
 data Error = Error {
@@ -414,6 +416,21 @@ resolveReferences cat =
     in
       runIdentity $ transformAST resolveReferencesTransformer cat
 
+relabel :: Id -> Category -> CategoryContext Category
+relabel new_name p2@(Placeholder n2 Label ph_c2) =
+    let
+      relabelTransformer :: Category -> TransformResult (Identity Category)
+      relabelTransformer label1@(Placeholder k Label ph_ck) =
+        if k == new_name
+          then do
+            let new_phck = replaceReferences k (Reference new_name) ph_ck
+            Result $ return $ Placeholder new_name Label new_phck
+          else Recurse $ return label1
+      relabelTransformer k = Recurse $ return k
+    in
+      return $ runIdentity $ transformAST relabelTransformer p2
+relabel n c = throwError [Error BadRelabel [Reference n, c]]
+
 data UnrollType = Flat | Recursive
 unroll :: UnrollType -> Category -> CategoryContext Category
 unroll t l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} = do
@@ -434,10 +451,7 @@ getBindings :: Category -> Category -> CategoryContext (Bool, [(Category, Catego
 getBindings bind_term potential_bind = do
   nbind_term <- normalize bind_term
   npot_bind <- normalize potential_bind
-  if nbind_term == npot_bind
-    then return (True, [])
-    else do
-      bind_inner nbind_term npot_bind
+  bind_inner nbind_term npot_bind
   where
     bind_inner :: Category -> Category -> CategoryContext (Bool, [(Category, Category)])
     bind_inner unique@(Unique id c) other@(Unique id2 c2) =
@@ -451,6 +465,12 @@ getBindings bind_term potential_bind = do
       let bound_result = foldr map xs apply_bindings
       (res2, new_bindings) <- getBindings (Composite Function xs) (Composite Function ys)
       return (res && res2, bindings ++ new_bindings)
+    bind_inner r@(Reference (Name "*")) c2@(Composite Tuple inner2) = do
+      result <- mapM (bind_inner r) inner2
+      return (any fst result, concatMap snd result)
+    bind_inner r@(Reference (Name "*")) p@(Placeholder n Label ph_c) = do
+      unrolled <- unroll Recursive p
+      return (True, [(Reference n, unrolled)])
     bind_inner c@(Composite Tuple inner) c2@(Composite Tuple inner2) = do
       if length inner /= length inner2
         then return (False, [])
@@ -465,6 +485,13 @@ getBindings bind_term potential_bind = do
         then do
           return (True, [(Reference n, potential_bind)])
         else return (False, [])
+    bind_inner r@(Reference a) p@(Placeholder n Label ph_c) = do
+      if n == a
+        then return (True, [(Reference a, ph_c)])
+        else do
+          result <- relabel a p
+          return (True, [(Reference a, result)])
+    bind_inner (Reference a) other = return (True, [(Reference a, other)])
     bind_inner a b = return (a == b, [])
 
 applyBindings :: [(Category, Category)] -> [Category] -> [Category]
@@ -908,17 +935,6 @@ validateCategory other = return other
 validateCategoryRecursive :: Category -> CategoryContext Category
 validateCategoryRecursive = transformAST (Recurse . validateCategory)
 
--- simplifyInner :: Category -> Category
--- simplifyInner (Composite _ [any]) = any
--- simplifyInner ph@Placeholder{placeholder_kind=Variable, placeholder_category=category}
---     | level category == return (Specific 0) = category
---     | otherwise = ph
--- simplifyInner Placeholder{name=n, placeholder_kind=Label, placeholder_category=p2@Placeholder{name=n2}} = p2
--- simplifyInner input_category = input_category
-
--- simplify :: Category -> Either [Error] Category
--- simplify = applyOnAST (const Nothing) (Right . simplifyInner)
-
 -- Basic Interpreter makers
 
 loadModule :: FilePath -> String -> CategoryImporter -> FilePath -> CategoryContextT IO Category
@@ -1009,14 +1025,17 @@ step opts mem@TypeAnnotation{big_category=bc, small_category=sc} = do
 step opts c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     debugTell  [Step{msg=DeeperEval, input=[c]}]
     resolved_import <- step opts i
-    let p@(Placeholder ph_name Label ph_c) = resolved_import
-    isRecursive <- identityToIO $ isRecursiveCategory p
-    let replacement = if isRecursive then p else ph_c
-    case rest of
-      [] -> throwError [Error InsufficientFunctionTerms [c]]
-      more_terms -> do
-        let result = c{inner_categories=map (replaceReferences ph_name replacement) more_terms}
-        return result
+    case resolved_import of
+      p@(Placeholder ph_name Label ph_c) -> do
+        (bind_result, bindings) <- identityToIO $ getBindings (Reference ph_name) p
+        if not bind_result
+          then throwError [Error{error_type=BadBinding, error_stack=[i]}]
+          else do
+            case applyBindings bindings rest of
+                  [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
+                  [something] -> return something
+                  other -> return c{inner_categories=other}
+      _ -> throwError [Error ImportIsNotLabeled [i]]
 step opts a@Access{base=b, access_type=a_id} = do
     debugTell  [Step{msg=Accessing, input=[a]}]
     identityToIO $ evaluateAccess a

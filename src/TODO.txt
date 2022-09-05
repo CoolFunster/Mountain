@@ -13,26 +13,14 @@ dev tooling
 Current Job
 
 Backlog
-  Rename Category as Structure
-  Import
-    import must load references within tuples
-  Parser
-    remove @ and replace with ::(<varname>)
-    backtick is infix operator
-      on definition if backtick then non backtick is infix
   Subtractive Access
+    access with dot operator
   Sets & types 
     123. -> float
     123 -> integer
     n123 -> nat
     "" - strings
     ^, V, - Set operations
-  Parser presidence
-    Labels
-    Functions
-    Call
-    type annotations
-    std categories
   Parser Additions
     Type - sets whose rank is 1 or greater
   validate parser by writing some of the standard library
@@ -53,7 +41,9 @@ Backlog
     Bool
   ignore training commas/semicolons
   improve parser error messages
-  operator presidence
+  operator presidence?
+    probably not
+  Rename Category as Structure
 
 Completed:
   -Add sets (DONE)
@@ -84,3 +74,15 @@ Completed:
     hiding import   -> import (x:Data.String.-["String"])
     sub import      -> import ()
   Binding as (:) (DONE)
+  Parser
+    remove @ and replace with ::(<varname>)
+    backtick is infix operator
+      on definition if backtick then non backtick is infix
+  Parser presidence
+    Labels
+    Functions
+    Call
+    type annotations
+    std categories
+  Import
+    import imports a single reference & access

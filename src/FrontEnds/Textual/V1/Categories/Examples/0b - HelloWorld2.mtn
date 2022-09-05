@@ -1,13 +1,5 @@
-import (
-	body.SimpleConsole,
-) -> ConsoleProgram :: (c, _, _) -> (print (c,"Hello World")), 0);
+import *:Body.SimpleConsole -> 
 
-"""
-Should generate in c
-
-#include <stdio.h>
-int main() {
-   printf("Hello, World!");
-   return 0;
-}
-"""
+ConsoleProgram :: (
+  (c, _, _) -> (print (c,"Hello World")), 0)
+);
