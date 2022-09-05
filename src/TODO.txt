@@ -13,8 +13,6 @@ dev tooling
 Current Job
 
 Backlog
-  Subtractive Access
-    access with dot operator
   StdLib Strings
   Sets & types 
     123. -> float
@@ -87,3 +85,5 @@ Completed:
     std categories
   Import
     import imports a single reference & access
+  Subtractive Access
+    access with dot operator

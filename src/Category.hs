@@ -582,14 +582,7 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
           Name str_name -> do
               case filter (\x -> getName x == Just (Name str_name))  inner of
                   [] -> throwError [Error{error_type=BadAccess,error_stack=[a]}]
-                  stuff -> do
-                      let result = head stuff
-                      isRecursive <- isRecursiveCategory result
-                      if isRecursive
-                          then return result
-                          else if isPlaceholder result
-                              then return $ placeholder_category result
-                              else return result
+                  stuff -> return $ head stuff
           Unnamed -> throwError [Error{error_type=EmptyAccessID,error_stack=[a]}]
   in do
     inner <- mapM getSubCategory labels

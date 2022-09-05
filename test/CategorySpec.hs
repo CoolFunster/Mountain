@@ -425,8 +425,23 @@ spec = do
             let composite_category = Composite Tuple [Thing (Name "a"), Thing (Name "b"), Placeholder{name=Name "c", placeholder_kind=Label, placeholder_category=Thing (Name "z")}, Reference{name=Name "d"}]
             evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "a"]} `shouldBe` Right (Thing (Name "a"))
             evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "b"]} `shouldBe` Right (Thing (Name "b"))
-            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "c"]} `shouldBe` Right (Thing (Name "z"))
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "c"]} `shouldBe` Right (Placeholder {name = Name "c", placeholder_kind = Label, placeholder_category = Thing {name = Name "z"}})
             evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "d"]} `shouldBe` Right Reference{name=Name "d"}
+        it "should handle access on group" $ do
+            let composite_category = Composite Tuple [
+                  Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")}, 
+                  Placeholder{name=Name "y", placeholder_kind=Label, placeholder_category=Thing (Name "b")}, 
+                  Placeholder{name=Name "z", placeholder_kind=Label, placeholder_category=Thing (Name "c")}]
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "x", Name "y"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}}]})
+            evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "x", Name "y", Name "z"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Placeholder {name = Name "z", placeholder_kind = Label, placeholder_category = Thing {name = Name "c"}}]})
+        it "should handle access on subtractive" $ do
+            let composite_category = Composite Tuple [
+                  Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")}, 
+                  Placeholder{name=Name "y", placeholder_kind=Label, placeholder_category=Thing (Name "b")}, 
+                  Placeholder{name=Name "z", placeholder_kind=Label, placeholder_category=Thing (Name "c")}]
+            evaluateAccess' Access{base=composite_category, access_type=Subtractive [Name "x"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Placeholder {name = Name "z", placeholder_kind = Label, placeholder_category = Thing {name = Name "c"}}]})
+            evaluateAccess' Access{base=composite_category, access_type=Subtractive [Name "x", Name "y"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "z", placeholder_kind = Label, placeholder_category = Thing {name = Name "c"}}]})
+            evaluateAccess' Access{base=composite_category, access_type=Subtractive [Name "x", Name "y", Name "z"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = []})
     describe "unroll" $ do
         it "should unroll recursive labels" $ do
             let simple_ab = Placeholder{
