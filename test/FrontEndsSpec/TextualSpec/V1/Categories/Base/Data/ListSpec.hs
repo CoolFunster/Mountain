@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FrontEndsSpec.TextualSpec.V1.Categories.ListSpec (spec) where
+module FrontEndsSpec.TextualSpec.V1.Categories.Base.Data.ListSpec (spec) where
 
 import Test.Hspec
 
@@ -22,19 +22,28 @@ spec = do
     describe "Category List" $ do
       it "TMP" $ do
         1 `shouldBe` 1
-    --     let executePlain = execute (Options{reduce_composite=False, importer=loadTextual})
-    --     let executeTextual = getResultOfT . executePlain
-    --     let executeLog = getLogOfT . executePlain
-    --     let fromRight' = fromRight (error "404")
-    --     let executeToCategory = \c -> do {
-    --         result <- executeTextual c;
-    --         return $ resolveReferences $ fromRight (error "404") result;
-    --     }
-    --     describe "list" $ do
-    --         let has' a b = getResultOf $ has a b
-    --         it "(list) should substitute type correctly on evaluate" $ do
-    --             execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
-    --             categoryToString execute_result `shouldBe` "list_def:|empty:{`empty},nonempty:({`1},$list_def)|"
+      -- let executePlain = execute (Options{reduce_composite=False, importer=loadTextual})
+      -- let executeTextual = getResultOfT . executePlain
+      -- let executeLog = getLogOfT . executePlain
+      -- let fromRight' = fromRight (error "404")
+      -- let executeToCategory = \c -> do {
+      --     result <- executeTextual c;
+      --     return $ resolveReferences $ fromRight (error "404") result;
+      -- }
+      -- describe "list" $ do
+      --   let has' a b = getResultOf $ has a b
+      --   it "(list) should substitute type correctly on evaluate" $ do
+      --       let parsed_category = parseCategoryString "import (l:Base.Data.Basic.LinkedList) -> (l {#1}).list"
+      --       let result = case parsed_category of
+      --             Left s -> error s
+      --             Right cat -> cat
+      --       execute_result <- executeTextual result
+      --       case execute_result of
+      --         Left e -> error (show e)
+      --         Right cat -> 1 `shouldBe` 1
+            -- categoryToString execute_result `shouldBe` "list_def:|empty:{`empty},nonempty:({`1},$list_def)|"
+
+            -- execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")
     --         it "(list) should have the empty" $ do
     --             let empty_test = parseCategoryString "`empty"
     --             execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")

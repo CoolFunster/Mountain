@@ -1,7 +1,6 @@
 LinkedList:
-  import Type ->
-  Type::ListType -> (
-    LinkedList: Type::*|
+  ListType -> (
+    LinkedList: *|
       empty:{#empty},
       nonempty:(head:ListType, tail:LinkedList ListType)
     |*,

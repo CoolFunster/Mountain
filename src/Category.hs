@@ -181,7 +181,7 @@ data ErrorType =
     NoReturnInScope |
     BadBinding |
     BindingOutsideOfScope |
-    ImportIsNotLabeled |
+    IsNotLabeled |
     BadRelabel
     deriving (Eq, Show, Read)
 
@@ -448,6 +448,16 @@ unroll t l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_catego
     unroll_inner _ other = other
 unroll _ something_else = return something_else
 
+getInnerBindings :: Category -> CategoryContext [(Category, Category)]
+getInnerBindings c@(Composite Tuple inner) = concat <$> mapM getInnerBindings inner
+getInnerBindings p@(Placeholder n Label ph_cat) = do
+  res <- unroll Recursive p
+  (bind_result, bindings) <- getBindings (Reference n) res
+  if not bind_result
+    then throwError [Error{error_type=BadBinding, error_stack=[p]}]
+    else return bindings
+getInnerBindings k = return []
+
 getBindings :: Category -> Category -> CategoryContext (Bool, [(Category, Category)])
 getBindings bind_term potential_bind = do
   nbind_term <- normalize bind_term
@@ -591,7 +601,7 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
       _ -> return c{inner_categories = inner }
 evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=Subtractive bad_labels} = do
   let should_label_be_excluded = (\label -> not $ label `elem` bad_labels)
-  let should_cat_be_excluded cat = case getName cat of 
+  let should_cat_be_excluded cat = case getName cat of
         Just n -> should_label_be_excluded n
         Nothing -> False
   return c{inner_categories=filter should_cat_be_excluded inner}
@@ -610,7 +620,7 @@ evaluateAccess a@Access{base=f@Call{base=b, argument=arg}, access_type=output} =
 evaluateAccess a@Access{base=a_inner@Access{}, access_type=id} = do
     result <- evaluateAccess a_inner
     evaluateAccess a{base=result}
-evaluateAccess a@Access{base=Reference{}, access_type=id} = return (Special{special_type=Flexible})
+evaluateAccess a@Access{base=Reference{}, access_type=id} = throwError [Error BadAccess [a]]
 evaluateAccess a@Access{} = throwError [Error{error_type=UndefinedAccess,error_stack=[a]}]
 evaluateAccess other = error $ "Cannot evaluate access on non access category : " ++ show other
 
@@ -1025,17 +1035,11 @@ step opts mem@TypeAnnotation{big_category=bc, small_category=sc} = do
 step opts c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     debugTell  [Step{msg=DeeperEval, input=[c]}]
     resolved_import <- step opts i
-    case resolved_import of
-      p@(Placeholder ph_name Label ph_c) -> do
-        (bind_result, bindings) <- identityToIO $ getBindings (Reference ph_name) p
-        if not bind_result
-          then throwError [Error{error_type=BadBinding, error_stack=[i]}]
-          else do
-            case applyBindings bindings rest of
-                  [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
-                  [something] -> return something
-                  other -> return c{inner_categories=other}
-      _ -> throwError [Error ImportIsNotLabeled [i]]
+    bindings <- identityToIO $ getInnerBindings resolved_import
+    case applyBindings bindings rest of
+          [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
+          [something] -> return something
+          other -> return c{inner_categories=other}
 step opts a@Access{base=b, access_type=a_id} = do
     debugTell  [Step{msg=Accessing, input=[a]}]
     identityToIO $ evaluateAccess a

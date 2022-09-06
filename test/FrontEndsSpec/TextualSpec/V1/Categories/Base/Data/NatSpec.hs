@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FrontEndsSpec.TextualSpec.V1.Categories.NatSpec (spec) where
+module FrontEndsSpec.TextualSpec.V1.Categories.Base.Data.NatSpec (spec) where
 
 import Test.Hspec
 

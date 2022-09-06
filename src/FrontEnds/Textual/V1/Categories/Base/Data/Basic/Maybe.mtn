@@ -1,6 +1,5 @@
-(
-  Maybe: a:Any -> |
+Maybe: 
+  a:Any -> *|
     #Nothing,
     (#Something, a)
-  |
-)
+  |*

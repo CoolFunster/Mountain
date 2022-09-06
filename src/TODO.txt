@@ -13,6 +13,8 @@ dev tooling
 Current Job
 
 Backlog
+  Linked List testing
+    linked list (in progress)
   StdLib Strings
   Sets & types 
     123. -> float
@@ -22,8 +24,6 @@ Backlog
     ^, V, - Set operations
   Parser Additions
     Type - sets whose rank is 1 or greater
-  validate parser by writing some of the standard library
-    linked list (in progress)
   validation
     Function return must only be last element
     Binding can only appear within a scope

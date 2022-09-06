@@ -101,12 +101,15 @@ reserved = ["Any", "function", "return", "import", ".", "#", "$", "_", "?"]
 
 pCategoryName :: Parser Id
 pCategoryName = do
-    name <- some (alphaNumChar <|> char '_')
+    name <- some (try alphaNumChar <|> try (char '_') <|> try asterisk)
     case name of
         other ->
           if other `elem` reserved
             then fail $ "Cannot use " ++ other ++ " as it is a reserved keyword"
             else return $ Name other
+    where
+      asterisk =
+        char '*' <* notFollowedBy (choice [char '{', char '|'])
 
 pCategory :: Parser Category
 pCategory = pBinding

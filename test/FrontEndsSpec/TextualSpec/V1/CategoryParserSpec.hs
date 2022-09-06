@@ -15,7 +15,7 @@ import System.Posix.Internals (puts)
 import qualified Data.Text.IO as TextIO
 import Debug.Trace
 
-parseTest :: String -> Category -> Bool 
+parseTest :: String -> Category -> Bool
 parseTest s c = do
   let result = parseCategoryString s
   result == Right c
@@ -35,7 +35,7 @@ spec = do
       let result = parseCategoryString "#_"
       result `shouldSatisfy` isLeft
     it "(Tuples) should parse tuples" $ do
-      let result = parseCategoryString "(#a, #b, #c)" 
+      let result = parseCategoryString "(#a, #b, #c)"
       shouldBe result $ Right $ Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"},Thing {name = Name "c"}]}
     it "(Tuples) should parse recursive tuples" $ do
       let result = parseCategoryString "(#a, (#b, #c))"
@@ -44,17 +44,17 @@ spec = do
       let result = parseCategoryString "(#a -> #b, #b -> #c)"
       shouldBe result $ Right $ Composite {composite_type = Tuple, inner_categories = [Composite {composite_type=Function, inner_categories=[Thing (Name "a"), Thing (Name "b")]}, Composite {composite_type=Function, inner_categories=[Thing (Name "b"), Thing (Name "c")]}]}
     it "(Tuples) should handle spaces better" $ do
-      let result = parseCategoryString "( #anything , #empty_list )" 
+      let result = parseCategoryString "( #anything , #empty_list )"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Tuple, inner_categories = [Thing (Name "anything"), Thing (Name "empty_list")]}
     it "(Tuples) should parse inner function calls" $ do
-      let result = parseCategoryString "(#anything #empty_list)" 
+      let result = parseCategoryString "(#anything #empty_list)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Tuple, inner_categories = [Call {base = Thing {name = Name "anything"}, argument = Thing {name = Name "empty_list"}}]}
     it "(Tuples) should allow trailing comma" $ do
-      let result = parseCategoryString "(#anything, #empty_list,)" 
+      let result = parseCategoryString "(#anything, #empty_list,)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "anything"},Thing {name = Name "empty_list"}]}
@@ -87,15 +87,15 @@ spec = do
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Function, inner_categories = [Call {base = Reference {name = Name "a"}, argument = Reference {name = Name "b"}},Call {base = Reference {name = Name "a"}, argument = Reference {name = Name "b"}}]}
-    
+
     it "(Eithers) should parse sumples" $ do
-      let result = parseCategoryString "*|#a, #b|*" 
+      let result = parseCategoryString "*|#a, #b|*"
       shouldBe result $ Right $ Composite {composite_type = Either, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}
     it "(Eithers) should parse sumple of a function" $ do
-      let result = parseCategoryString "*|a -> b|*" 
+      let result = parseCategoryString "*|a -> b|*"
       shouldBe result $ Right (Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "a"},Reference {name = Name "b"}]}]})
     it "(Eithers) should parse nested eithers" $ do
-      let result = parseCategoryString "*|a -> *|a,b|*|*" 
+      let result = parseCategoryString "*|a -> *|a,b|*|*"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "a"},Composite {composite_type = Either, inner_categories = [Reference {name = Name "a"},Reference {name = Name "b"}]}]}]}
@@ -114,22 +114,22 @@ spec = do
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Match, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}]},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "b"},Thing {name = Name "c"}]}]}]}
     it "(Placeholder) should parse placeholders" $ do
-      let result = parseCategoryString "#a::x" 
+      let result = parseCategoryString "#a::x"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Placeholder{name=Name "x", placeholder_kind=Variable, placeholder_category=Thing (Name "a")}
     it "(Placeholder) should parse labels" $ do
-      let result = parseCategoryString "x:#a" 
+      let result = parseCategoryString "x:#a"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")}
     it "(Placeholder) should parse nested labels" $ do
-      let result = parseCategoryString "x:(x:#a)" 
+      let result = parseCategoryString "x:(x:#a)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}}]}}
     it "(Refinement) should parse refinement" $ do
-      let result = parseCategoryString "{#a::x | #a -> #b}" 
+      let result = parseCategoryString "{#a::x | #a -> #b}"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Refined {base = Placeholder {name = Name "x", placeholder_kind = Variable, placeholder_category = Thing {name = Name "a"}}, predicate = Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]}}
@@ -144,91 +144,91 @@ spec = do
         Left e -> error e
         Right cat -> shouldBe cat $ Special{special_type=Any}
     it "(Reference) should parse Reference" $ do
-      let result = parseCategoryString "$Stuff" 
+      let result = parseCategoryString "$Stuff"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Reference (Name "Stuff")
-      let result = parseCategoryString "Stuff" 
+      let result = parseCategoryString "Stuff"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Reference (Name "Stuff")
     it "(Call) should parse call" $ do
-      let result = parseCategoryString "base_foo some_arg" 
+      let result = parseCategoryString "base_foo some_arg"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Call{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg")}
     it "(Call) should parse tuple call" $ do
-      let result = parseCategoryString "tail:(List list_type)" 
+      let result = parseCategoryString "tail:(List list_type)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Call {base = Reference {name = Name "List"}, argument = Reference {name = Name "list_type"}}]}}
     it "(Call) should call consecutiveness" $ do
-      let result = parseCategoryString "base_foo some_arg some_other" 
+      let result = parseCategoryString "base_foo some_arg some_other"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Call{base=Call{base=Reference (Name "base_foo"),argument=Reference (Name "some_arg")},argument=Reference (Name "some_other") }
     it "(Call) should call tuples" $ do
-      let result = parseCategoryString "(base_foo some_arg)" 
+      let result = parseCategoryString "(base_foo some_arg)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Tuple, inner_categories = [Call {base = Reference {name = Name "base_foo"}, argument = Reference {name = Name "some_arg"}}]}
     it "(Call) should call tuples 2" $ do
-      let result = parseCategoryString "base_foo (some_arg)" 
+      let result = parseCategoryString "base_foo (some_arg)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Call {base = Reference {name = Name "base_foo"}, argument = Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "some_arg"}]}}
     it "(Call) should handle infix" $ do
-      let result = parseCategoryStringWith pCall "a `plus b" 
+      let result = parseCategoryStringWith pCall "a `plus b"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Call {base = Call {base = Reference {name = Name "plus"}, argument = Reference {name = Name "a"}}, argument = Reference {name = Name "b"}}
     it "(Call) should handle chained infix" $ do
-      let result = parseCategoryStringWith pCall "a `plus b `plus c" 
+      let result = parseCategoryStringWith pCall "a `plus b `plus c"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Call {base = Call {base = Reference {name = Name "plus"}, argument = Call {base = Call {base = Reference {name = Name "plus"}, argument = Reference {name = Name "a"}}, argument = Reference {name = Name "b"}}}, argument = Reference {name = Name "c"}}
     it "(Call) should handle mixed infix" $ do
-      let result = parseCategoryStringWith pCall "a b c `plus d" 
+      let result = parseCategoryStringWith pCall "a b c `plus d"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Call {base = Call {base = Reference {name = Name "plus"}, argument = Call {base = Call {base = Reference {name = Name "a"}, argument = Reference {name = Name "b"}}, argument = Reference {name = Name "c"}}}, argument = Reference {name = Name "d"}}
     it "(Dereference) should parse dereferences" $ do
-      let result = parseCategoryString "$base_ref.name" 
+      let result = parseCategoryString "$base_ref.name"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name"]}
     it "(Access) should parse dot access" $ do
-      let result = parseCategoryString "base_ref.name" 
+      let result = parseCategoryString "base_ref.name"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name"]}
     it "(Access) should parse bracket" $ do
-      let result = parseCategoryString "base_ref.[name]" 
+      let result = parseCategoryString "base_ref.[name]"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name"]}
     it "(Access) should parse multiple bracket" $ do
-      let result = parseCategoryString "base_ref.[name, a , b]" 
+      let result = parseCategoryString "base_ref.[name, a , b]"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=ByLabelGroup [Name "name", Name "a", Name "b"]}
     it "(Access) should parse subtractive bracket" $ do
-      let result = parseCategoryString "base_ref.-[name, a , b]" 
+      let result = parseCategoryString "base_ref.-[name, a , b]"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Access{base=Reference{name=Name "base_ref"}, access_type=Subtractive [Name "name", Name "a", Name "b"]}
     it "(Recursive) should parse recursion" $ do
-      let result = parseCategoryString "self:(#a -> self #b)" 
+      let result = parseCategoryString "self:(#a -> self #b)"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Placeholder {name = Name "self", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Call {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
     it "(Import) should parse import" $ do
-      let result = parseCategoryString "import test.test1" 
+      let result = parseCategoryString "import test.test1"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Import {import_category = Access {base = Reference {name = Name "test"}, access_type =ByLabelGroup [Name "test1"]}}
     it "(Import) should not be greedy" $ do
-      let result = parseCategoryString "import test.test1 -> #a" 
+      let result = parseCategoryString "import test.test1 -> #a"
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Composite {composite_type = Function, inner_categories = [Import {import_category = Access {base = Reference {name = Name "test"}, access_type = ByLabelGroup [Name "test1"]}},Thing {name = Name "a"}]}
@@ -265,7 +265,7 @@ spec = do
         case result of
           Left err -> error err
           Right something -> something `shouldBe` Scope {statements = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "something"}},Reference {name = Name "x"}]}
-    describe "Example Parsing" $ do
+    describe "Example Loading" $ do
       it "should parse Hello World" $ do
         result <- getResultOfT $ loadTextual "Examples.HelloWorld"
         case result of
@@ -277,4 +277,35 @@ spec = do
           Left err -> error (show err)
           Right something -> do
             -- putStrLn $ prettyCategoryToString something
-            shouldBe something $ Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Composite {composite_type = Function, inner_categories = [Import {import_category = Reference {name = Name "Type"}},Placeholder {name = Name "ListType", placeholder_kind = Variable, placeholder_category = Reference {name = Name "Type"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Reference {name = Name "Type"}, small_category = Composite {composite_type = Either, inner_categories = [Placeholder {name = Name "empty", placeholder_kind = Label, placeholder_category = Set {elements = [Thing {name = Name "empty"}]}},Placeholder {name = Name "nonempty", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = Reference {name = Name "ListType"}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}}]}}]}}},Placeholder {name = Name "push", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"},Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"}]}]}]}}},Placeholder {name = Name "push", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"},Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"}]}]}]}}},Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Access {base = Reference {name = Name "LinkedList"}, access_type = ByLabelGroup [Name "nonempty"]},Reference {name = Name "LinkedList"}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Reference {name = Name "head"}]}]}}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Access {base = Composite {composite_type = Tuple, inner_categories = [Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}, access_type = ByLabelGroup [Name "nonempty"]},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Reference {name = Name "tail"}]}]}}},Placeholder {name = Name "map", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Reference {name = Name "ResultType"}]}]},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ResultType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "map_foo"},Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "empty"},Thing {name = Name "empty"}]},Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Composite {composite_type = Tuple, inner_categories = [Call {base = Reference {name = Name "map_foo"}, argument = Reference {name = Name "head"}},Call {base = Call {base = Reference {name = Name "map"}, argument = Reference {name = Name "map_foo"}}, argument = Reference {name = Name "tail"}}]}]}]}]}]}}},Placeholder {name = Name "forl2r", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "State_Type"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "State_Type"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Reference {name = Name "State_Type"}]}]},Reference {name = Name "State_Type"}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "state"},Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "empty"},Reference {name = Name "for_body"},Thing {name = Name "empty"}]},Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Reference {name = Name "for_body"},Scope {statements = [Binding {placeholder = Placeholder {name = Name "new_state", placeholder_kind = Variable, placeholder_category = Reference {name = Name "State_Type"}}, category_to_bind = Call {base = Call {base = Reference {name = Name "for_body"}, argument = Reference {name = Name "state"}}, argument = Reference {name = Name "head"}}},Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "new_state"},Call {base = Call {base = Call {base = Reference {name = Name "forl2r"}, argument = Reference {name = Name "state"}}, argument = Reference {name = Name "tail"}}, argument = Reference {name = Name "for_body"}}]}]}]}]}]}]}}}]}]}}
+            shouldBe something $ Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Placeholder {name = Name "empty", placeholder_kind = Label, placeholder_category = Set {elements = [Thing {name = Name "empty"}]}},Placeholder {name = Name "nonempty", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = Reference {name = Name "ListType"}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}}]}}]}},Placeholder {name = Name "push", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"},Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"}]}]}]}}},Placeholder {name = Name "push", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"},Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "new_head"},Reference {name = Name "old_list"}]}]}]}}},Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Access {base = Reference {name = Name "LinkedList"}, access_type = ByLabelGroup [Name "nonempty"]},Reference {name = Name "LinkedList"}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Reference {name = Name "head"}]}]}}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Access {base = Composite {composite_type = Tuple, inner_categories = [Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}, access_type = ByLabelGroup [Name "nonempty"]},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Reference {name = Name "tail"}]}]}}},Placeholder {name = Name "map", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "ListType"},Reference {name = Name "ResultType"}]}]},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ResultType"}}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "map_foo"},Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "empty"},Thing {name = Name "empty"}]},Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Composite {composite_type = Tuple, inner_categories = [Call {base = Reference {name = Name "map_foo"}, argument = Reference {name = Name "head"}},Call {base = Call {base = Reference {name = Name "map"}, argument = Reference {name = Name "map_foo"}}, argument = Reference {name = Name "tail"}}]}]}]}]}]}}},Placeholder {name = Name "forl2r", placeholder_kind = Label, placeholder_category = TypeAnnotation {big_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "State_Type"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "State_Type"},Call {base = Reference {name = Name "LinkedList"}, argument = Reference {name = Name "ListType"}},Reference {name = Name "State_Type"}]}]},Reference {name = Name "State_Type"}]}]}, small_category = Composite {composite_type = Either, inner_categories = [Composite {composite_type = Function, inner_categories = [Reference {name = Name "state"},Composite {composite_type = Match, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "empty"},Reference {name = Name "for_body"},Thing {name = Name "empty"}]},Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "head"},Reference {name = Name "tail"}]},Reference {name = Name "for_body"},Scope {statements = [Binding {placeholder = Placeholder {name = Name "new_state", placeholder_kind = Variable, placeholder_category = Reference {name = Name "State_Type"}}, category_to_bind = Call {base = Call {base = Reference {name = Name "for_body"}, argument = Reference {name = Name "state"}}, argument = Reference {name = Name "head"}}},Composite {composite_type = Tuple, inner_categories = [Reference {name = Name "new_state"},Call {base = Call {base = Call {base = Reference {name = Name "forl2r"}, argument = Reference {name = Name "state"}}, argument = Reference {name = Name "tail"}}, argument = Reference {name = Name "for_body"}}]}]}]}]}]}]}}}]}]}}
+    describe "Parse & Execute" $ do
+      let executePlain = execute (Options{reduce_composite=True, importer=loadTextual})
+      let parseAndExecute str = do {
+        let result = parseCategoryString str
+        ;(case result of
+          Left e -> error e
+          Right cat -> executePlain cat)
+      }
+      it "(Tuple) should parse and return simple tuple" $ do
+        result <- getResultOfT $ parseAndExecute "(#a, #b)"
+        print $ show result
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]})
+      it "(Import) should parse and return basic import" $ do
+        result <- getResultOfT $ parseAndExecute "import Base.Data.Basic.Bool -> Bool.Bool"
+        print $ show result
+        shouldBe result $ Right (Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}})
+      it "(Import) should parse and return labeled import" $ do
+        result <- getResultOfT $ parseAndExecute "import (b:Base.Data.Basic.Bool) -> b.Bool"
+        shouldBe result $ Right (Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}})
+      it "(Import) should parse and handle dirs" $ do
+        result <- getResultOfT $ parseAndExecute "import (b:Base.Data.Basic) -> b"
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "Atom", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Atom"}}},Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Bool"}}},Placeholder {name = Name "Char", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Char"}}},Placeholder {name = Name "Dict", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Dict"}}},Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.LinkedList"}}},Placeholder {name = Name "Maybe", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Maybe"}}},Placeholder {name = Name "Proof", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Proof"}}},Placeholder {name = Name "Property", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Property"}}},Placeholder {name = Name "Set", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Set"}}},Placeholder {name = Name "String", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.String"}}},Placeholder {name = Name "Structure", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Structure"}}},Placeholder {name = Name "Tuple", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Tuple"}}},Placeholder {name = Name "Type", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Type"}}},Placeholder {name = Name "Vector", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Base.Data.Basic.Vector"}}}]})
+      it "(Import) should handle stars" $ do
+        result <- getResultOfT $ parseAndExecute "import (*:Base.Data.Basic.Bool) -> Bool"
+        shouldBe result $ Right (Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]})
+      it "(Import) should handle multiple" $ do
+        result <- getResultOfT $ parseAndExecute "import (a:Base.Data.Basic.Bool, b: Base.Data.Basic.Maybe) -> (a.Bool, b)"
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}},Placeholder {name = Name "a", placeholder_kind = Label, placeholder_category = Composite {composite_type = Function, inner_categories = [Special {special_type = Any},Composite {composite_type = Either, inner_categories = [Thing {name = Name "Nothing"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "Something"},Reference {name = Name "a"}]}]}]}}]})
+      it "(Import) should handle multiple star" $ do
+        result <- getResultOfT $ parseAndExecute "import (*:Base.Data.Basic.Bool, *: Base.Data.Basic.Char) -> (Bool, Whitespace)"
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]},Placeholder {name = Name "ws", placeholder_kind = Variable, placeholder_category = Special {special_type = Flexible}}]})
