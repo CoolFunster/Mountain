@@ -261,8 +261,8 @@ pFlexible = withValidation $ do
     _ <- symbol (pack "?")
     id <- optional pCategoryName
     case id of
-      Nothing -> return $ Placeholder Unnamed Variable (Special Flexible)
-      Just id -> return $ Placeholder id Variable (Special Flexible)
+      Nothing -> return flex
+      Just id -> return $ Special $ Flexible id
 
 {- Parses composite types that have a beg & end character wrapping them -}
 pCompositeTemplate :: CompositeType -> ([Char], [Char], [Char]) -> Parser Category

@@ -37,7 +37,7 @@ categoryToString (Placeholder name Label ph_category) = idToString name ++ ":" +
 -- categoryToString (Placeholder name Resolved ph_category) = "<" ++ idToString name ++ ">"
 categoryToString (Placeholder name Resolved ph_category) = "<" ++ categoryToString ph_category ++ ">"
 categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ categoryToString _base_category ++ " | " ++ categoryToString _predicate ++ "}"
-categoryToString Special{special_type=Flexible} = "(%)"
+categoryToString Special{special_type=Flexible _id} = "?" ++ idToString _id
 categoryToString Special{special_type=Any} = "Any"
 categoryToString Reference{name=name} = "$" ++ idToString name
 categoryToString Call{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
@@ -196,7 +196,7 @@ prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
 prettyCategoryToStringInner indenter (Placeholder name Variable ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") [idToString name] -- prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
-prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["(%)"]
+prettyCategoryToStringInner indenter Special{special_type=Flexible _id} = ["?" ++ idToString _id]
 prettyCategoryToStringInner indenter Special{special_type=Any} = ["Any"]
 prettyCategoryToStringInner indenter Call{base=bm, argument=a} = do
   let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)

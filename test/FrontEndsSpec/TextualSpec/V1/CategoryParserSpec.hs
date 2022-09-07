@@ -137,7 +137,7 @@ spec = do
       let result = parseCategoryString "?test"
       case result of
         Left e -> error e
-        Right cat -> shouldBe cat $ Placeholder (Name "test") Variable Special{special_type=Flexible}
+        Right cat -> shouldBe cat $ Special {special_type = Flexible (Name "test")}
     it "(Special) should parse Any" $ do
       let result = parseCategoryString "Any"
       case result of
@@ -288,11 +288,9 @@ spec = do
       }
       it "(Tuple) should parse and return simple tuple" $ do
         result <- getResultOfT $ parseAndExecute "(#a, #b)"
-        print $ show result
         shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "a"},Thing {name = Name "b"}]})
       it "(Import) should parse and return basic import" $ do
         result <- getResultOfT $ parseAndExecute "import Base.Data.Basic.Bool -> Bool.Bool"
-        print $ show result
         shouldBe result $ Right (Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}})
       it "(Import) should parse and return labeled import" $ do
         result <- getResultOfT $ parseAndExecute "import (b:Base.Data.Basic.Bool) -> b.Bool"
@@ -304,8 +302,11 @@ spec = do
         result <- getResultOfT $ parseAndExecute "import (*:Base.Data.Basic.Bool) -> Bool"
         shouldBe result $ Right (Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]})
       it "(Import) should handle multiple" $ do
-        result <- getResultOfT $ parseAndExecute "import (a:Base.Data.Basic.Bool, b: Base.Data.Basic.Maybe) -> (a.Bool, b)"
-        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}},Placeholder {name = Name "a", placeholder_kind = Label, placeholder_category = Composite {composite_type = Function, inner_categories = [Special {special_type = Any},Composite {composite_type = Either, inner_categories = [Thing {name = Name "Nothing"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "Something"},Reference {name = Name "a"}]}]}]}}]})
+        result <- getResultOfT $ parseAndExecute "import (x:Base.Data.Basic.Bool, b: Base.Data.Basic.Maybe) -> (x.Bool, b #a)"
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}},Composite {composite_type = Either, inner_categories = [Thing {name = Name "Nothing"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "Something"},Thing {name = Name "a"}]}]}]})
       it "(Import) should handle multiple star" $ do
         result <- getResultOfT $ parseAndExecute "import (*:Base.Data.Basic.Bool, *: Base.Data.Basic.Char) -> (Bool, Whitespace)"
-        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]},Placeholder {name = Name "ws", placeholder_kind = Variable, placeholder_category = Special {special_type = Flexible}}]})
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]},Special {special_type = Flexible (Name "ws")}]})
+      it "(Import) should handle star with dup name" $ do
+        result <- getResultOfT $ parseAndExecute "import (a:Base.Data.Basic.Bool, b: Base.Data.Basic.Maybe) -> (a.Bool, b #a)"
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}},Composite {composite_type = Either, inner_categories = [Thing {name = Name "Nothing"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "Something"},Thing {name = Name "a"}]}]}]})

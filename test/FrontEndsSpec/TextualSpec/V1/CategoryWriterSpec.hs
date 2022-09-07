@@ -34,7 +34,9 @@ spec = do
         it "(Refinement) should write refinement" $ do
             categoryToString Refined{base=Placeholder{name=Name "x", placeholder_kind=Variable, placeholder_category=Thing (Name "a")}, predicate=Composite Function [Thing (Name "a"), Thing (Name "b")]} `shouldBe` "{x@`a | `a->`b}"
         it "(Special) should write flexible" $ do
-            categoryToString Special{special_type=Flexible} `shouldBe` "(%)"
+            categoryToString flex `shouldBe` "?"
+        it "(Special) should write named flexible" $ do
+            categoryToString (Special (Flexible (Name "hello"))) `shouldBe` "?hello"
         it "(Special) should write Any" $ do
             categoryToString Special{special_type=Any} `shouldBe` "Any"
         it "(Special) should write Reference" $ do

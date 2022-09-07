@@ -30,6 +30,7 @@ Backlog
     Files must have label
     Sets cannot be recursive
     Type annotations need rank 1
+    Double labeling is not allowed
   Refinements
   Rename Category to something else (Won't do)
   Rank of Category

@@ -33,7 +33,7 @@ data Id =
     deriving (Eq, Show, Read)
 
 data SpecialType =
-    Flexible |
+    Flexible Id |
     Any
     deriving (Eq, Show, Read)
 
@@ -241,7 +241,7 @@ universal :: Category
 universal = Special{special_type=Any}
 
 flex :: Category
-flex = Special{special_type=Flexible}
+flex = Special{special_type=Flexible Unnamed}
 
 -- checks for data constructor type
 isName :: Id -> Bool
@@ -333,6 +333,7 @@ isNamedCategory _ = False
 
 getName :: Category -> Maybe Id
 getName Import{import_category=c} = getName c
+getName Special{special_type=Flexible id} = Just id
 getName input_category
     | not $ isNamedCategory input_category = Nothing
     | otherwise = Just $ name input_category
@@ -393,10 +394,10 @@ isRecursiveCategory c = do
     Placeholder{name=ph_name, placeholder_kind=Label, placeholder_category=ph_c} -> return $ checkAST or (isReferenceOfName ph_name) ph_c
     _ -> return False
 
-replaceReferences :: Id -> Category -> Category -> Category
+replaceReferences :: Id -> Category -> Category -> CategoryContext Category
 replaceReferences ref_name new_cat base_cat =
     let
-        replaceRefTransformer :: Category -> TransformResult (Identity Category)
+        replaceRefTransformer :: Category -> TransformResult (CategoryContext Category)
         replaceRefTransformer p@Placeholder{name=ph_n, placeholder_kind=Label}
             | ph_n == ref_name = Result $ return p
             | otherwise = Recurse $ return p
@@ -404,9 +405,13 @@ replaceReferences ref_name new_cat base_cat =
           if n == ref_name
             then Result $ return (Placeholder n Resolved new_cat)
             else Recurse $ return r
+        replaceRefTransformer s@Special{special_type=Flexible n} =
+          if n == ref_name
+            then Result $ return (Placeholder n Resolved new_cat)
+            else Recurse $ return s
         replaceRefTransformer c = Recurse $ return c
     in
-      runIdentity $ transformAST replaceRefTransformer base_cat
+      transformAST replaceRefTransformer base_cat
 
 resolveReferences :: Category -> Category
 resolveReferences cat =
@@ -420,16 +425,16 @@ resolveReferences cat =
 relabel :: Id -> Category -> CategoryContext Category
 relabel new_name p2@(Placeholder n2 Label ph_c2) =
     let
-      relabelTransformer :: Category -> TransformResult (Identity Category)
+      relabelTransformer :: Category -> TransformResult (CategoryContext Category)
       relabelTransformer label1@(Placeholder k Label ph_ck) =
         if k == new_name
           then do
             let new_phck = replaceReferences k (Reference new_name) ph_ck
-            Result $ return $ Placeholder new_name Label new_phck
+            Result $ Placeholder new_name Label <$> new_phck
           else Recurse $ return label1
       relabelTransformer k = Recurse $ return k
     in
-      return $ runIdentity $ transformAST relabelTransformer p2
+      transformAST relabelTransformer p2
 relabel n c = throwError [Error BadRelabel [Reference n, c]]
 
 data UnrollType = Flat | Recursive
@@ -437,15 +442,15 @@ unroll :: UnrollType -> Category -> CategoryContext Category
 unroll t l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} = do
   isRecursive <- isRecursiveCategory l
   if isRecursive
-    then unroll_inner t <$> normalize l
+    then normalize l >>= unroll_inner t
     else return rec_cat
   where
-    unroll_inner :: UnrollType -> Category -> Category
+    unroll_inner :: UnrollType -> Category -> CategoryContext Category
     unroll_inner Flat l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} =
-        replaceReferences rec_name Special{special_type=Flexible} rec_cat
+        replaceReferences rec_name flex rec_cat
     unroll_inner Recursive l@Placeholder{name=rec_name, placeholder_kind=Label, placeholder_category=rec_cat} =
         replaceReferences rec_name l rec_cat
-    unroll_inner _ other = other
+    unroll_inner _ other = return other
 unroll _ something_else = return something_else
 
 getInnerBindings :: Category -> CategoryContext [(Category, Category)]
@@ -471,9 +476,7 @@ getBindings bind_term potential_bind = do
         else getBindings c c2 -- TODO make everything underneath const
     bind_inner c@(Composite Function (x:xs)) c2@(Composite Function (y:ys)) = do
       (res, bindings) <- getBindings x y
-
-      let apply_bindings = map (\(Reference n, binding) -> replaceReferences n binding) bindings
-      let bound_result = foldr map xs apply_bindings
+      bound_result <- applyBindings bindings xs
       (res2, new_bindings) <- getBindings (Composite Function xs) (Composite Function ys)
       return (res && res2, bindings ++ new_bindings)
     bind_inner r@(Reference (Name "*")) c2@(Composite Tuple inner2) = do
@@ -503,12 +506,15 @@ getBindings bind_term potential_bind = do
           result <- relabel a p
           return (True, [(Reference a, result)])
     bind_inner (Reference a) other = return (True, [(Reference a, other)])
+    bind_inner (Special _) other = return (True, [])
     bind_inner a b = return (a == b, [])
 
-applyBindings :: [(Category, Category)] -> [Category] -> [Category]
+applyBindings :: [(Category, Category)] -> [Category] -> CategoryContext [Category]
 applyBindings bindings categories = do
-  let apply_bindings = map (\(Reference n, binding) -> replaceReferences n binding) bindings
-  foldr map categories apply_bindings
+  let bind_replace_foos = map (\(Reference n, binding) -> replaceReferences n binding) bindings
+  -- on each category call bind_replace foos
+  let apply_all_bindings_on = foldr (>=>) return bind_replace_foos
+  mapM apply_all_bindings_on categories
 
 call :: Category -> Category -> CategoryContext Category
 call arg foo = do
@@ -525,7 +531,8 @@ call arg foo = do
       if not bind_result
         then throwError [Error{error_type=InvalidArgument, error_stack=[arg, c]}]
         else do
-          case applyBindings bindings tail of
+          applied_bindings <- applyBindings bindings tail
+          case applied_bindings of
               [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[arg, c]}]
               [something] -> return something
               other -> return c{inner_categories=other}
@@ -571,8 +578,9 @@ evaluateScope (Scope (b@(Binding big c):rest)) = do
   (valid, bindings) <- getBindings big c
   if not valid
     then throwError [Error{error_type=BadBinding, error_stack=[b]}]
-    else
-      case applyBindings bindings rest of
+    else do
+      applied_bindings <- applyBindings bindings rest
+      case applied_bindings of
         [] -> throwError [Error{error_type=NoReturnInScope, error_stack=[b]}]
         [something] -> return something
         many -> evaluateScope $ Scope many
@@ -605,7 +613,7 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
         Just n -> should_label_be_excluded n
         Nothing -> False
   return c{inner_categories=filter should_cat_be_excluded inner}
-evaluateAccess a@Access{base=Special{special_type=Flexible}, access_type=output} = return Special{special_type=Flexible}
+evaluateAccess a@Access{base=Special{special_type=Flexible (Name n)}, access_type=output} = return a
 evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Label, placeholder_category=ph_c}, access_type=id} = do
     new_base <- unroll Recursive p
     evaluateAccess a{base=new_base}
@@ -855,7 +863,7 @@ has big_category small_category = do
           has_inner Special{} _ = do
             debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return True
-          has_inner _ Special{special_type=Flexible} = do
+          has_inner _ Special{special_type=Flexible _} = do
             debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return True
           has_inner _ Special{special_type=Any} = do
@@ -1036,7 +1044,8 @@ step opts c@Composite{composite_type=Function, inner_categories=(i@(Import somet
     debugTell  [Step{msg=DeeperEval, input=[c]}]
     resolved_import <- step opts i
     bindings <- identityToIO $ getInnerBindings resolved_import
-    case applyBindings bindings rest of
+    bound_result <- identityToIO $ applyBindings bindings rest
+    case bound_result of
           [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
           [something] -> return something
           other -> return c{inner_categories=other}
