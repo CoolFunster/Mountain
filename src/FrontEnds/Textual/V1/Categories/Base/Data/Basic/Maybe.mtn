@@ -1,5 +1,5 @@
 Maybe: 
-  (a:Any) -> *|
+  (A:?) -> *|
     #Nothing,
-    (#Something, a)
+    (#Something, A)
   |*

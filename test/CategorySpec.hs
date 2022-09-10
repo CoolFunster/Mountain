@@ -127,8 +127,8 @@ spec = do
         let bindee = Composite Tuple [Placeholder (Name "x") Label a, Placeholder (Name "y") Label b]
         let result = getResultOf $ getBindings bindable bindee
         fromRight (error "bad") result `shouldBe` (True, [(Reference {name = Name "x"},Thing {name = Name "a"}),(Reference {name = Name "y"},Thing {name = Name "b"})])
-      it "should handle any" $ do
-        let bindable = universal 
+      it "should handle flex" $ do
+        let bindable = flex
         let bindee = Set [Thing (Name "1")]
         let result = getResultOf $ getBindings bindable bindee
         fromRight (error "bad") result `shouldBe` (True,[])
@@ -295,6 +295,15 @@ spec = do
             call' a case_function `shouldBe` Right b
             call' b case_function `shouldBe` Right c
             isLeft (call' c case_function) `shouldBe` True
+        it "(Flex) should call flexibles as a wildcard" $ do
+            let a = Thing (Name "a")
+            let b = Thing (Name "b")
+            let foo = Composite Function [flex, b]
+            call' a foo `shouldBe` Right b
+        it "(Flex) should call flexibles and replace" $ do
+            let a = Thing (Name "a")
+            let foo = Composite Function [Placeholder (Name "x") Label flex, Reference (Name "x")]
+            call' a foo `shouldBe` Right (Placeholder {name = Name "x", placeholder_kind = Resolved, placeholder_category = Thing {name = Name "a"}})
     describe "validateCategory" $ do
         it "(Placeholder) should not modify this placeholder" $ do
             let a = Thing (Name "a")
@@ -434,15 +443,15 @@ spec = do
             evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "d"]} `shouldBe` Right Reference{name=Name "d"}
         it "should handle access on group" $ do
             let composite_category = Composite Tuple [
-                  Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")}, 
-                  Placeholder{name=Name "y", placeholder_kind=Label, placeholder_category=Thing (Name "b")}, 
+                  Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")},
+                  Placeholder{name=Name "y", placeholder_kind=Label, placeholder_category=Thing (Name "b")},
                   Placeholder{name=Name "z", placeholder_kind=Label, placeholder_category=Thing (Name "c")}]
             evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "x", Name "y"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}}]})
             evaluateAccess' Access{base=composite_category, access_type=ByLabelGroup [Name "x", Name "y", Name "z"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Placeholder {name = Name "z", placeholder_kind = Label, placeholder_category = Thing {name = Name "c"}}]})
         it "should handle access on subtractive" $ do
             let composite_category = Composite Tuple [
-                  Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")}, 
-                  Placeholder{name=Name "y", placeholder_kind=Label, placeholder_category=Thing (Name "b")}, 
+                  Placeholder{name=Name "x", placeholder_kind=Label, placeholder_category=Thing (Name "a")},
+                  Placeholder{name=Name "y", placeholder_kind=Label, placeholder_category=Thing (Name "b")},
                   Placeholder{name=Name "z", placeholder_kind=Label, placeholder_category=Thing (Name "c")}]
             evaluateAccess' Access{base=composite_category, access_type=Subtractive [Name "x"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Placeholder {name = Name "z", placeholder_kind = Label, placeholder_category = Thing {name = Name "c"}}]})
             evaluateAccess' Access{base=composite_category, access_type=Subtractive [Name "x", Name "y"]} `shouldBe` Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "z", placeholder_kind = Label, placeholder_category = Thing {name = Name "c"}}]})
@@ -482,7 +491,7 @@ spec = do
         result `shouldBe` Right a
       it "(Scope) should handle multiple bindings" $ do
         let test_item = Scope{statements=[
-          Binding (Placeholder (Name "x") Variable universal) (a), 
+          Binding (Placeholder (Name "x") Variable universal) (a),
           Binding (Placeholder (Name "y") Variable universal) (b),
           Composite Tuple [Reference (Name "x"), Reference (Name "y")]
         ]}

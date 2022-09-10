@@ -13,6 +13,8 @@ dev tooling
 Current Job
 
 Backlog
+  Question mark for placeholder flex
+  Captialized Reference is Ref to Type
   Linked List testing
     linked list (in progress)
   StdLib Strings

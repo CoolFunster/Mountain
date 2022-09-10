@@ -33,7 +33,7 @@ data Id =
     deriving (Eq, Show, Read)
 
 data SpecialType =
-    Flexible Id |
+    Flexible |
     Any
     deriving (Eq, Show, Read)
 
@@ -112,15 +112,20 @@ data Category =
 -- Messages
 data StepMsgType =
     DeeperEval |
+    CaughtErrorDeeperEval |
     Simplifying |
     Returning |
     Calling |
     SingleCompositeUnwrap |
     SingleDefUnwrap |
     Importing |
+    CallingImporter |
+    ImporterReturn |
     ReducingComposite |
     TypeAnnotationCheck |
-    Accessing
+    Accessing |
+    MappingOver |
+    Relabeling
     deriving (Eq, Show, Read)
 
 data HasMsgType =
@@ -182,7 +187,8 @@ data ErrorType =
     BadBinding |
     BindingOutsideOfScope |
     IsNotLabeled |
-    BadRelabel
+    BadRelabel |
+    NestedImport
     deriving (Eq, Show, Read)
 
 data Error = Error {
@@ -241,7 +247,7 @@ universal :: Category
 universal = Special{special_type=Any}
 
 flex :: Category
-flex = Special{special_type=Flexible Unnamed}
+flex = Special{special_type=Flexible}
 
 -- checks for data constructor type
 isName :: Id -> Bool
@@ -333,7 +339,6 @@ isNamedCategory _ = False
 
 getName :: Category -> Maybe Id
 getName Import{import_category=c} = getName c
-getName Special{special_type=Flexible id} = Just id
 getName input_category
     | not $ isNamedCategory input_category = Nothing
     | otherwise = Just $ name input_category
@@ -405,10 +410,6 @@ replaceReferences ref_name new_cat base_cat =
           if n == ref_name
             then Result $ return (Placeholder n Resolved new_cat)
             else Recurse $ return r
-        replaceRefTransformer s@Special{special_type=Flexible n} =
-          if n == ref_name
-            then Result $ return (Placeholder n Resolved new_cat)
-            else Recurse $ return s
         replaceRefTransformer c = Recurse $ return c
     in
       transformAST replaceRefTransformer base_cat
@@ -506,7 +507,7 @@ getBindings bind_term potential_bind = do
           result <- relabel a p
           return (True, [(Reference a, result)])
     bind_inner (Reference a) other = return (True, [(Reference a, other)])
-    bind_inner (Special _) other = return (True, [])
+    bind_inner (Special Flexible) other = return (True, [])
     bind_inner a b = return (a == b, [])
 
 applyBindings :: [(Category, Category)] -> [Category] -> CategoryContext [Category]
@@ -608,12 +609,12 @@ evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories
       [something] -> return something
       _ -> return c{inner_categories = inner }
 evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=Subtractive bad_labels} = do
-  let should_label_be_excluded = (\label -> not $ label `elem` bad_labels)
+  let should_label_be_excluded = (`notElem` bad_labels)
   let should_cat_be_excluded cat = case getName cat of
         Just n -> should_label_be_excluded n
         Nothing -> False
   return c{inner_categories=filter should_cat_be_excluded inner}
-evaluateAccess a@Access{base=Special{special_type=Flexible (Name n)}, access_type=output} = return a
+evaluateAccess a@Access{base=Special{special_type=Flexible}, access_type=output} = return a
 evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Label, placeholder_category=ph_c}, access_type=id} = do
     new_base <- unroll Recursive p
     evaluateAccess a{base=new_base}
@@ -863,7 +864,7 @@ has big_category small_category = do
           has_inner Special{} _ = do
             debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return True
-          has_inner _ Special{special_type=Flexible _} = do
+          has_inner _ Special{special_type=Flexible} = do
             debugTell  [Has{has_msg=HasResult,on_which=Both,big=big_category,small=small_category}]
             return True
           has_inner _ Special{special_type=Any} = do
@@ -981,24 +982,38 @@ loadModule module_base_path file_ext importer fp =
         else throwError [Error BadImport [Reference (Name fp)]]
 
 evaluateImport :: CategoryImporter -> Category -> CategoryContextT IO Category
-evaluateImport importer (Import i@(Import _)) = evaluateImport importer i
-evaluateImport importer (Import (Reference (Name n))) = importer n
-evaluateImport importer (Import a@Access{base=bc, access_type=id}) =
+evaluateImport importer imp@(Import (Import _)) = do
+  throwError [Error NestedImport [imp]]
+evaluateImport importer (Import r@(Reference (Name n))) = do
+  debugTell [Step CallingImporter [r]]
+  res <- importer n
+  debugTell [Step ImporterReturn [res]]
+  return res
+evaluateImport importer i@(Import a@Access{base=bc, access_type=id}) =
     let
         extractFilePath :: Category -> FilePath
         extractFilePath (Reference (Name n)) = n
         extractFilePath (Access bc (ByLabelGroup [Name n])) = extractFilePath bc ++ "." ++ n
         extractFilePath _ = error "Something weird"
-    in
-        importer (extractFilePath a)
-evaluateImport importer (Import c@(Composite Tuple inner)) = do
-    result <- mapM (evaluateImport importer . Import) inner
-    return c{inner_categories=result}
-evaluateImport importer (Import p@Placeholder{name=n, placeholder_kind=Category.Label, placeholder_category=pc}) = do
+    in do
+      debugTell [Step CallingImporter [a]]
+      res <- importer (extractFilePath a)
+      debugTell [Step ImporterReturn [res]]
+      return res
+evaluateImport importer i@(Import c@(Composite Tuple inner)) = do
+  debugTell [Step MappingOver [i]]
+  result <- mapM (evaluateImport importer . Import) inner
+  return c{inner_categories=result}
+evaluateImport importer i@(Import p@Placeholder{name=n, placeholder_kind=Category.Label, placeholder_category=pc}) = do
+    debugTell [Step Importing [i]]
     result <- evaluateImport importer (Import pc)
     case result of
-        p@Placeholder{placeholder_kind=label, placeholder_category=ph_c} -> return $ p{name=n}
-        _ -> return $ p{placeholder_category=result}
+        p@Placeholder{placeholder_kind=label, placeholder_category=ph_c} -> do
+          debugTell [Step Relabeling [i]]
+          return $ p{name=n}
+        _ -> do
+          debugTell [Step Returning [i]]
+          return $ p{placeholder_category=result}
 evaluateImport importer something = error $ "what is this import case? " ++ show something
 
 step :: CategoryEvalOptions -> Category -> CategoryContextT IO Category
@@ -1010,7 +1025,7 @@ step opts f@Call{base=bc, argument=a} =
       debugTell  [Step{msg=Calling, input=[f]}]
       identityToIO $ call a bc
     `catchError` \error -> do
-      debugTell  [Step{msg=DeeperEval, input=[f]}]
+      debugTell  [Step{msg=CaughtErrorDeeperEval, input=[f]}]
       stepped_bc <- step opts bc
       stepped_a <- step opts{reduce_composite=True} a
       let step_result = Call stepped_bc stepped_a
@@ -1022,7 +1037,7 @@ step opts@Options{importer=importer} i@Import{import_category=ic} =
     debugTell  [Step{msg=Importing, input=[i]}]
     evaluateImport importer i
   `catchError` \error -> do
-    debugTell  [Step{msg=DeeperEval, input=[i]}]
+    debugTell  [Step{msg=CaughtErrorDeeperEval, input=[i]}]
     result_ic <- step opts ic
     if result_ic == ic
         then throwError error
@@ -1043,12 +1058,15 @@ step opts mem@TypeAnnotation{big_category=bc, small_category=sc} = do
 step opts c@Composite{composite_type=Function, inner_categories=(i@(Import something):rest)} = do
     debugTell  [Step{msg=DeeperEval, input=[c]}]
     resolved_import <- step opts i
-    bindings <- identityToIO $ getInnerBindings resolved_import
-    bound_result <- identityToIO $ applyBindings bindings rest
-    case bound_result of
-          [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
-          [something] -> return something
-          other -> return c{inner_categories=other}
+    case resolved_import of
+      Import _ -> return c{inner_categories=resolved_import:rest}
+      _ -> do
+        bindings <- identityToIO $ getInnerBindings resolved_import
+        bound_result <- identityToIO $ applyBindings bindings rest
+        case bound_result of
+              [] -> throwError [Error{error_type=InsufficientFunctionTerms, error_stack=[c]}]
+              [something] -> return something
+              other -> return c{inner_categories=other}
 step opts a@Access{base=b, access_type=a_id} = do
     debugTell  [Step{msg=Accessing, input=[a]}]
     identityToIO $ evaluateAccess a

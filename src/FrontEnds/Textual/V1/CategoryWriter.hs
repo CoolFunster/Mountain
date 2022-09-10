@@ -37,17 +37,20 @@ categoryToString (Placeholder name Label ph_category) = idToString name ++ ":" +
 -- categoryToString (Placeholder name Resolved ph_category) = "<" ++ idToString name ++ ">"
 categoryToString (Placeholder name Resolved ph_category) = "<" ++ categoryToString ph_category ++ ">"
 categoryToString Refined {base=_base_category, predicate=_predicate} = "{" ++ categoryToString _base_category ++ " | " ++ categoryToString _predicate ++ "}"
-categoryToString Special{special_type=Flexible _id} = "?" ++ idToString _id
+categoryToString Special{special_type=Flexible} = "?"
 categoryToString Special{special_type=Any} = "Any"
 categoryToString Reference{name=name} = "$" ++ idToString name
 categoryToString Call{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_type=ByLabelGroup [label]} = "(" ++ categoryToString bc ++ ")." ++ idToString label
-categoryToString Access{base=bc, access_type=ByLabelGroup labels} = "(" ++ categoryToString bc ++ ")[" ++ intercalate ", " (map idToString labels)  ++ "]"
-categoryToString Access{base=bc, access_type=ByIndex idx} = "(" ++ categoryToString bc ++ ")[" ++ show idx ++ "]"
+categoryToString Access{base=bc, access_type=ByLabelGroup labels} = "(" ++ categoryToString bc ++ ").[" ++ intercalate ", " (map idToString labels)  ++ "]"
+categoryToString Access{base=bc, access_type=ByIndex idx} = "(" ++ categoryToString bc ++ ").[" ++ show idx ++ "]"
+categoryToString Access{base=bc, access_type=Subtractive idx} = "(" ++ categoryToString bc ++ ").-[" ++ show idx ++ "]"
 categoryToString TypeAnnotation{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
 categoryToString Import{import_category=import_str} = "import " ++ categoryToString import_str
 categoryToString Set{elements=inner} = "{" ++ intercalate "," (map categoryToString inner) ++ "}"
 categoryToString Unique{inner_category=c} = "<" ++ categoryToString c ++ ">"
+categoryToString Scope{statements=s} = "*{" ++ intercalate ";" (map categoryToString s) ++ "}*"
+categoryToString Binding{placeholder=ph, category_to_bind=c} = categoryToString ph ++ ": " ++ categoryToString c
 
 
 errorToString :: Error -> String
@@ -93,17 +96,23 @@ errorToStringInner (Error CannotTypecheckRawDefinition _) = "This definition nee
 -- errorToStringInner (Error IndexAccessOnFunction _) = "Cannot index access a function call"
 -- errorToStringInner _ = error "unhandled"
 
+errorsToString :: [Error] -> String
+errorsToString = foldl (\cur new -> if cur == ""
+                                    then errorToString new
+                                    else cur ++ ";\n" ++ errorToString new) ""
+
 errorableToString :: Either [Error] Category -> String
 errorableToString (Right category) = categoryToString category
-errorableToString (Left errors) = foldl (\cur new -> if cur == ""
-                                                                then errorToString new
-                                                                else cur ++ ";\n" ++ errorToString new) "" errors
+errorableToString (Left errors) = errorsToString errors
 
 categoryLogToString :: CategoryLog -> String
-categoryLogToString Step{msg=msg, input=input} = 
+categoryLogToString Step{msg=msg, input=input} =
   show msg ++ "\n" ++ intercalate "\n" (map prettyCategoryToString input) ++ "\n ==== \n"
 categoryLogToString Has{ has_msg=hasmsg, on_which=which, big=bc, small=smc} = "HAS: " ++ show hasmsg ++ "," ++ show which ++ ": \n" ++ prettyCategoryToString bc ++ "\n--\n" ++ prettyCategoryToString smc
 categoryLogToString Output {} = "Output"
+
+categoryLogsToString :: [CategoryLog] -> String
+categoryLogsToString logs = intercalate "\n---\n" $ map categoryLogToString logs
 
 applyOnLast :: (a -> a) -> [a] -> [a]
 applyOnLast f [] = []
@@ -148,20 +157,20 @@ prepareForPrinting :: Category -> Category
 prepareForPrinting cat = runIdentity $ transformAST prepareForPrintingInner cat
 
 prettyCategoryToStringInner :: String -> Category -> [String]
-prettyCategoryToStringInner indenter (Thing name) = ["`" ++ idToString name]
+prettyCategoryToStringInner indenter (Thing name) = ["#" ++ idToString name]
 prettyCategoryToStringInner indenter (Composite c_type []) = do
   case c_type of
       Tuple -> ["()"]
-      Either -> ["||"]
-      Composition -> ["*()*"]
+      Either -> ["*||*"]
+      Composition -> ["()"]
       Match -> ["*||*"]
       Function -> ["<EMPTY FUNCTION>"]
 prettyCategoryToStringInner indenter (Composite c_type [something]) = do
   case c_type of
       Tuple -> wrapAround ("(", ")") $ prettyCategoryToStringInner indenter something
-      Either -> wrapAround ("|", "|") $ prettyCategoryToStringInner indenter something
-      Composition -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
-      Match -> wrapAround ("*(", ")*") $ prettyCategoryToStringInner indenter something
+      Either -> wrapAround ("*|", "|*") $ prettyCategoryToStringInner indenter something
+      Composition -> wrapAround ("(", ")") $ prettyCategoryToStringInner indenter something
+      Match -> wrapAround ("*|", "|*") $ prettyCategoryToStringInner indenter something
       Function -> prettyCategoryToStringInner indenter something
 prettyCategoryToStringInner indenter (Composite Function inner) =
   let
@@ -196,17 +205,17 @@ prettyCategoryToStringInner indenter (Placeholder name Label ph_category) = do
 prettyCategoryToStringInner indenter (Placeholder name Variable ph_category) = incrementIndentButFirst $ applyOnFirst ((idToString name ++ "@") ++) $ prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter (Placeholder name Resolved ph_category) = wrapAround ("<", ">") [idToString name] -- prettyCategoryToStringInner indenter ph_category
 prettyCategoryToStringInner indenter r@Refined {base=_base_category, predicate=_predicate} = [categoryToString r]
-prettyCategoryToStringInner indenter Special{special_type=Flexible _id} = ["?" ++ idToString _id]
+prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["?"]
 prettyCategoryToStringInner indenter Special{special_type=Any} = ["Any"]
 prettyCategoryToStringInner indenter Call{base=bm, argument=a} = do
   let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)
   let pretty_a = wrapAround ("[", "]") (prettyCategoryToStringInner indenter a)
   joinLastFirst pretty_bm pretty_a
-prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup [_id]} = 
+prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup [_id]} =
   applyOnLast (++ "." ++ idToString _id) (prettyCategoryToStringInner indenter bc)
-prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup many_ids} = 
+prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup many_ids} =
   applyOnLast (++ "[" ++ intercalate "," (map idToString many_ids) ++ "]") (prettyCategoryToStringInner indenter bc)
-prettyCategoryToStringInner indenter Access{base=bc, access_type=ByIndex idx} = 
+prettyCategoryToStringInner indenter Access{base=bc, access_type=ByIndex idx} =
   applyOnLast (++ "[" ++ show idx ++ "]") (prettyCategoryToStringInner indenter bc)
 prettyCategoryToStringInner indenter TypeAnnotation{big_category=bc, small_category=sc} = do
   let pretty_bc = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bc)
