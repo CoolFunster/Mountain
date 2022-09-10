@@ -4,6 +4,7 @@ module FrontEndsSpec.TextualSpec.V1.CategoryParserSpec (spec) where
 import Test.Hspec
 
 import Category
+import FrontEnds.Textual.V1.Mountain
 import FrontEnds.Textual.V1.CategoryParser
 import FrontEnds.Textual.V1.CategoryWriter
 
@@ -222,6 +223,15 @@ spec = do
       case result of
         Left e -> error e
         Right cat -> shouldBe cat $ Placeholder {name = Name "self", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Composite {composite_type = Function, inner_categories = [Thing {name = Name "a"},Call {base = Reference {name = Name "self"}, argument = Thing {name = Name "b"}}]}]}}
+    it "(Open Scope) shoud parse multiple statements" $ do
+      let example = "x: #a; y: #b; return (first: x,second: y)"
+      let result = parseCategoryStringWith pOpenScope example
+      case result of
+        Left e -> error e
+        Right cat -> do
+          cat `shouldBe` Scope {statements = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "first", placeholder_kind = Label, placeholder_category = Reference {name = Name "x"}},Placeholder {name = Name "second", placeholder_kind = Label, placeholder_category = Reference {name = Name "y"}}]}]}
+          res <- getResultOfT $ execute strict cat
+          fromRight (error "404") res `shouldBe` Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "first", placeholder_kind = Label, placeholder_category = Placeholder {name = Name "x", placeholder_kind = Resolved, placeholder_category = Thing {name = Name "a"}}},Placeholder {name = Name "second", placeholder_kind = Label, placeholder_category = Placeholder {name = Name "y", placeholder_kind = Resolved, placeholder_category = Thing {name = Name "b"}}}]}
     it "(Import) should parse import" $ do
       let result = parseCategoryString "import test.test1"
       case result of
@@ -265,6 +275,13 @@ spec = do
         case result of
           Left err -> error err
           Right something -> something `shouldBe` Scope {statements = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "something"}},Reference {name = Name "x"}]}
+    describe "Parse Category File" $ do
+      it "should parse test 3" $ do
+        result <- parseCategoryFile (textualBasePath ++ "Tests/test3.mtn")
+        -- print result
+        case result of
+          Left err -> error err
+          Right something -> something `shouldBe` Scope {statements = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "first", placeholder_kind = Label, placeholder_category = Reference {name = Name "x"}},Placeholder {name = Name "second", placeholder_kind = Label, placeholder_category = Reference {name = Name "y"}}]}]}
     describe "Example Loading" $ do
       it "should parse Hello World" $ do
         result <- getResultOfT $ loadTextual "Examples.HelloWorld"
@@ -294,12 +311,16 @@ spec = do
       it "(Import) should parse and return basic import" $ do
         result <- getResultOfT $ parseAndExecute "import Base.Data.Basic.Bool -> Bool.Bool"
         shouldBe result $ Right (Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}})
+      it "(Import) should parse and return statement sequence" $ do
+        result <- getResultOfT $ evaluateImport loadTextual (Import $ Access{base=(Reference (Name "Tests")), access_type=(ByLabelGroup [Name "test3"])})
+        -- result <- getResultOfT $ parseAndExecute "import (t:Tests.test3) -> t"
+        shouldBe result $ Right (Scope {statements = [Placeholder {name = Name "x", placeholder_kind = Label, placeholder_category = Thing {name = Name "a"}},Placeholder {name = Name "y", placeholder_kind = Label, placeholder_category = Thing {name = Name "b"}},Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "first", placeholder_kind = Label, placeholder_category = Reference {name = Name "x"}},Placeholder {name = Name "second", placeholder_kind = Label, placeholder_category = Reference {name = Name "y"}}]}]})
       it "(Import) should parse and return labeled import" $ do
         result <- getResultOfT $ parseAndExecute "import (b:Base.Data.Basic.Bool) -> b.Bool"
         shouldBe result $ Right (Placeholder {name = Name "Bool", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]}})
       it "(Import) should parse and handle dirs" $ do
         result <- getResultOfT $ parseAndExecute "import (b:Tests) -> b"
-        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Tests.test1"}}},Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Tests.test2"}}}]})
+        shouldBe result $ Right (Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "test1", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Tests.test1"}}},Placeholder {name = Name "test2", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Tests.test2"}}},Placeholder {name = Name "test3", placeholder_kind = Label, placeholder_category = Import {import_category = Reference {name = Name "Tests.test3"}}}]})
       it "(Import) should handle stars" $ do
         result <- getResultOfT $ parseAndExecute "import (*:Base.Data.Basic.Bool) -> Bool"
         shouldBe result $ Right (Composite {composite_type = Either, inner_categories = [Thing {name = Name "True"},Thing {name = Name "False"}]})

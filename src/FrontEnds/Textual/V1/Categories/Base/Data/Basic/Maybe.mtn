@@ -1,5 +1,11 @@
-Maybe: 
+x: #something;
+
+MaybeDef: 
   (A:?) -> *|
     #Nothing,
     (#Something, A)
-  |*
+  |*;
+
+return (
+  Maybe: MaybeDef
+);

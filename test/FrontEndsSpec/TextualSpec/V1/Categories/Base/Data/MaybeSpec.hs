@@ -4,6 +4,7 @@ module FrontEndsSpec.TextualSpec.V1.Categories.Base.Data.MaybeSpec (spec) where
 import Test.Hspec
 
 import Category
+import FrontEnds.Textual.V1.Mountain
 import FrontEnds.Textual.V1.CategoryParser
 import FrontEnds.Textual.V1.CategoryWriter
 
@@ -18,22 +19,9 @@ import Data.List (intercalate)
 spec :: Spec
 spec = do
     describe "Maybe" $ do
-      -- it "TMP" $ do
-      --   1 `shouldBe` 1
-      let executePlain = execute (Options{reduce_composite=True, importer=loadTextual})
-      let executeTextual = getResultOfT . executePlain
-      let parseAndExecute str = do {
-        let result = parseCategoryString str
-        ;(case result of
-          Left e -> error e
-          Right cat -> getResultOfT $ executePlain cat)
-      }
-      describe "Maybe a" $ do
-        it "should substitute type correctly on evaluate" $ do
-            parsed_category <- parseAndExecute "import Base.Data.Basic.Maybe -> Maybe {#1}"
-            case parsed_category of
-                  Left s -> error (show s)
-                  Right cat -> shouldBe cat $ Composite {composite_type = Either, inner_categories = [Thing {name = Name "Nothing"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "Something"},Set {elements = [Thing {name = Name "1"}]}]}]}
+      it "should substitute type correctly on evaluate" $ do
+          parsed_category <- runMountainString strict "import (*:Base.Data.Basic.Maybe) -> Maybe {#1}"
+          parsed_category `shouldBe` Composite {composite_type = Either, inner_categories = [Thing {name = Name "Nothing"},Composite {composite_type = Tuple, inner_categories = [Thing {name = Name "Something"},Set {elements = [Thing {name = Name "1"}]}]}]}
             -- categoryToString execute_result `shouldBe` "list_def:|empty:{`empty},nonempty:({`1},$list_def)|"
 
             -- execute_result <- executeToCategory (parseCategoryString "(import $base.linkedlist)[{`1}].list")

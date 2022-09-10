@@ -585,6 +585,8 @@ evaluateScope (Scope (b@(Binding big c):rest)) = do
         [] -> throwError [Error{error_type=NoReturnInScope, error_stack=[b]}]
         [something] -> return something
         many -> evaluateScope $ Scope many
+evaluateScope (Scope (l@(Placeholder n Label phc):rest)) =
+  evaluateScope $ Scope $ Binding (Reference n) phc:rest
 evaluateScope (Scope (_:rest)) = evaluateScope $ Scope rest
 evaluateScope other = error $ "bad use for reduce Statement with " ++ show other
 

@@ -40,19 +40,19 @@ parseCategoryFileWith parser path_to_file = do
     return category
 
 parseCategoryFile :: FilePath -> IO (Either String Category)
-parseCategoryFile = parseCategoryFileWith pCategory
+parseCategoryFile = parseCategoryFileWith pOpenScope
 
 parseCategoryStringWith :: Parser a -> [Char] -> Either String a
 parseCategoryStringWith cat_parser input_str = _baseParseCategory cat_parser "String" (pack input_str)
 
 parseCategoryString :: [Char] -> Either String Category
-parseCategoryString = parseCategoryStringWith pCategory
+parseCategoryString = parseCategoryStringWith pOpenScope
 
 parseCategoryTextWith :: Parser a -> Text -> Either String a
 parseCategoryTextWith cat_parser = _baseParseCategory cat_parser "String"
 
 parseCategoryText :: Text -> Either String Category
-parseCategoryText = parseCategoryTextWith pCategory
+parseCategoryText = parseCategoryTextWith pOpenScope
 
 type Parser = Parsec Void Text
 
@@ -110,6 +110,17 @@ pCategoryName = do
     where
       asterisk =
         char '*' <* notFollowedBy (choice [char '{', char '|'])
+
+pOpenScope :: Parser Category
+pOpenScope = withValidation $ do
+  categories <- pInnerScope
+  case categories of
+    [] -> fail "This file is empty!"
+    [c] -> return c
+    other -> return $ Scope other
+
+pInnerScope :: Parser [Category]
+pInnerScope = sepEndBy (try pCategory) (pStringBetweenWS ";")
 
 pCategory :: Parser Category
 pCategory = pBinding
@@ -297,8 +308,7 @@ pRefinement = pWrapBetween "{" "}" pRefinementInner
 
 pScope :: Parser Category
 pScope = withValidation $ do
-  let parseInnerScope = sepEndBy (try pCategory) (pStringBetweenWS ";")
-  stuff <- pWrapBetween "*{" "}*" parseInnerScope
+  stuff <- pWrapBetween "*{" "}*" pInnerScope
   return $ Scope stuff
 
 -- Pretty loader
@@ -311,7 +321,7 @@ textualFileExt = ".mtn"
 
 pTextualFile :: FilePath -> CategoryContextT IO Category
 pTextualFile fp = do
-  result <- lift $ parseCategoryFileWith pCategory fp
+  result <- lift $ parseCategoryFileWith pOpenScope fp
   case result of
     Left err_str -> error err_str
     Right cat -> return cat
