@@ -7,6 +7,8 @@ import Category
 import FrontEnds.Textual.V1.Mountain
 import FrontEnds.Textual.V1.CategoryWriter
 
+import Data.Either 
+
 spec :: Spec
 spec = do
     describe "Category List" $ do
@@ -14,7 +16,7 @@ spec = do
         let has' a b = getResultOf $ has a b
         it "(list) should substitute type correctly on evaluate" $ do
             result <- runMountainString strict "import (l:Base.Data.Basic.linkedList) -> (l.LinkedList) {#1}"
-            putStrLn $ prettyCategoryToString result
+            -- putStrLn $ prettyCategoryToString result
             shouldBe result $ Composite {composite_type = Either, inner_categories = [Placeholder {name = Name "empty", placeholder_kind = Label, placeholder_category = Set {elements = [Thing {name = Name "empty"}]}},Placeholder {name = Name "nonempty", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Call {base = Placeholder {name = Name "LinkedList", placeholder_kind = Resolved, placeholder_category = Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Composite {composite_type = Function, inner_categories = [Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "ListType", placeholder_kind = Label, placeholder_category = Special {special_type = Flexible}}]},Composite {composite_type = Either, inner_categories = [Placeholder {name = Name "empty", placeholder_kind = Label, placeholder_category = Set {elements = [Thing {name = Name "empty"}]}},Placeholder {name = Name "nonempty", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Call {base = Reference {name = Name "LinkedList"}, argument = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}}}]}}]}]}}}, argument = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}}}]}}]}
         it "(list) should have the empty" $ do
             empty_test <- runMountainString strict "#empty"
@@ -38,10 +40,12 @@ spec = do
             let has_res = execute_result `has` test1
             -- putStrLn $ categoryLogsToString $ getLogOf has_res
             getResultOf has_res `shouldBe` Right True
-    -- describe "push" $ do
-    --     it "(push) should properly access push" $ do
-    --       result <- runMountainString strict "import (l:Base.Data.Basic.linkedList) -> (l.push)"
-    --       shouldBe result $ Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Placeholder {name = Name "empty", placeholder_kind = Label, placeholder_category = Set {elements = [Thing {name = Name "empty"}]}},Placeholder {name = Name "nonempty", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Call {base = Reference {name = Name "LinkedList"}, argument = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}}}]}}]}}
+    describe "push" $ do
+        it "(push) should properly access push" $ do
+          result <- runMountainString strict "import (l:Base.Data.Basic.linkedList) -> (l.push)"
+          -- putStrLn $ prettyCategoryToString result
+          -- shouldBe result $ Placeholder {name = Name "LinkedList", placeholder_kind = Label, placeholder_category = Composite {composite_type = Either, inner_categories = [Placeholder {name = Name "empty", placeholder_kind = Label, placeholder_category = Set {elements = [Thing {name = Name "empty"}]}},Placeholder {name = Name "nonempty", placeholder_kind = Label, placeholder_category = Composite {composite_type = Tuple, inner_categories = [Placeholder {name = Name "head", placeholder_kind = Label, placeholder_category = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}},Placeholder {name = Name "tail", placeholder_kind = Label, placeholder_category = Call {base = Reference {name = Name "LinkedList"}, argument = Placeholder {name = Name "ListType", placeholder_kind = Resolved, placeholder_category = Set {elements = [Thing {name = Name "1"}]}}}}]}}]}}
+          result `shouldBe` result
     --             let list_on_1_join = parseCategoryString "(import $base.linkedlist)[`1].join"
     --             -- dbg_result <- executeTextual list_on_1_join
     --             -- putStrLn (intercalate "\n====\n" $ map tracedToString dbg_result)

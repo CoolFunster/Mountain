@@ -188,11 +188,12 @@ prettyCategoryToStringInner indenter (Composite c_type inner) = do
     let raw_result = map (prettyCategoryToStringInner indenter) inner
     let tabbed = map incrementIndent raw_result
     let comma = mapButLast (applyOnLast (++ ",")) tabbed
+    let semicolon = mapButLast (applyOnLast (++ ";")) tabbed
     case c_type of
       Tuple -> ["("] ++ concat comma ++ [")"]
-      Either -> ["|"] ++ concat comma ++ ["|"]
-      Composition -> ["*("] ++ concat comma ++ [")*"]
-      Match -> ["*|"] ++ concat comma ++ ["|*"]
+      Either -> ["*|"] ++ concat comma ++ ["*|"]
+      Composition -> ["("] ++ concat semicolon ++ [")"]
+      Match -> ["*|"] ++ concat semicolon ++ ["|*"]
       Function -> error "Functions should not be handled here"
 prettyCategoryToStringInner indenter Import{import_category=cat} = incrementIndentButFirst $ applyOnFirst ("import " ++) $ prettyCategoryToStringInner indenter cat
 prettyCategoryToStringInner indenter Reference{name=name} = ["$" ++ idToString name]
@@ -209,7 +210,7 @@ prettyCategoryToStringInner indenter Special{special_type=Flexible} = ["?"]
 prettyCategoryToStringInner indenter Special{special_type=Any} = ["Any"]
 prettyCategoryToStringInner indenter Call{base=bm, argument=a} = do
   let pretty_bm = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bm)
-  let pretty_a = wrapAround ("[", "]") (prettyCategoryToStringInner indenter a)
+  let pretty_a = wrapAround (" (", ")") (prettyCategoryToStringInner indenter a)
   joinLastFirst pretty_bm pretty_a
 prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup [_id]} =
   applyOnLast (++ "." ++ idToString _id) (prettyCategoryToStringInner indenter bc)

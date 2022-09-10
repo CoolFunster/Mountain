@@ -4,7 +4,7 @@ linkedList:
       empty:{#empty},
       nonempty:(head:ListType, tail:LinkedList ListType)
     |*,
-    push: ((Vt:?) -> LinkedList (Lt:?) -> LinkedList (Vt union Lt))::*|
+    push: ((Vt:?) -> LinkedList (Lt:?) -> LinkedList *|Vt, Lt|*)::*|
       (new_head:?) -> (old_list:?) -> (new_head, old_list)
     |*,
     pop: ((LinkedList ?).nonempty -> LinkedList ?)::*|

@@ -13,7 +13,7 @@ dev tooling
 Current Job
 
 Backlog
-  Question mark for placeholder flex
+  Dependent Access
   Captialized Reference is Ref to Type
   Linked List testing
     linked list (in progress)
@@ -90,3 +90,4 @@ Completed:
     import imports a single reference & access
   Subtractive Access
     access with dot operator
+  Question mark for placeholder flex

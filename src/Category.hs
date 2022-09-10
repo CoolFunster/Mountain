@@ -593,27 +593,40 @@ evaluateAccess :: Category -> CategoryContext Category
 evaluateAccess a@Access{base=Composite{inner_categories=[]}} =
     throwError [Error{error_type=EmptyAccessBase,error_stack=[a]}]
 evaluateAccess a@Access{base=Composite{inner_categories=[something]}} = evaluateAccess a{base=something}
-evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=ByLabelGroup labels} =
-  let
-    getSubCategory ::  Id -> CategoryContext Category
-    getSubCategory id =
-      case id of
-          Name str_name -> do
-              case filter (\x -> getName x == Just (Name str_name))  inner of
-                  [] -> throwError [Error{error_type=BadAccess,error_stack=[a]}]
-                  stuff -> return $ head stuff
-          Unnamed -> throwError [Error{error_type=EmptyAccessID,error_stack=[a]}]
-  in do
-    inner <- mapM getSubCategory labels
-    case inner of
-      [something] -> return something
-      _ -> return c{inner_categories = inner }
-evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=Subtractive bad_labels} = do
-  let should_label_be_excluded = (`notElem` bad_labels)
-  let should_cat_be_excluded cat = case getName cat of
-        Just n -> should_label_be_excluded n
-        Nothing -> False
-  return c{inner_categories=filter should_cat_be_excluded inner}
+evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=ByLabelGroup labels} = do
+  result <- Composite c_type <$> dependentAccess labels inner
+  case result of
+    Composite _ [s] -> return s
+    k -> return k
+  where
+    dependentAccess :: [Id] -> [Category] -> CategoryContext [Category]
+    dependentAccess [] c = return []
+    dependentAccess ids [] = throwError [Error BadAccess (map Reference ids)]
+    dependentAccess ids (head:rest) = do
+      bindings <- getInnerBindings head
+      applied <- applyBindings bindings rest
+      case getName head of
+        Just n -> do
+          if n `elem` ids
+            then do
+              (head :) <$> dependentAccess (filter (/= n) ids) applied
+            else dependentAccess ids applied
+        Nothing -> dependentAccess ids applied
+evaluateAccess a@Access{base=c@Composite{composite_type=c_type, inner_categories=inner}, access_type=Subtractive bad_labels} =
+  Composite c_type <$> minusDependentAccess bad_labels inner
+  where
+    minusDependentAccess :: [Id] -> [Category] -> CategoryContext [Category]
+    minusDependentAccess [] c = return c
+    minusDependentAccess ids [] = return []
+    minusDependentAccess ids (head:rest) = do
+      bindings <- getInnerBindings head
+      applied <- applyBindings bindings rest
+      case getName head of
+        Just n -> do
+          if n `elem` ids
+            then minusDependentAccess ids applied
+            else (head :) <$> minusDependentAccess ids applied
+        Nothing -> minusDependentAccess ids applied
 evaluateAccess a@Access{base=Special{special_type=Flexible}, access_type=output} = return a
 evaluateAccess a@Access{base=p@Placeholder{placeholder_kind=Label, placeholder_category=ph_c}, access_type=id} = do
     new_base <- unroll Recursive p
