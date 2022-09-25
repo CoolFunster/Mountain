@@ -36,6 +36,10 @@ dependencies:
 - filepath
 - array
 - mtl
+- uuid
+- bytestring
+- cryptonite
+- memory
 
 library:
   source-dirs: src

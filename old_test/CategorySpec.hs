@@ -486,13 +486,13 @@ spec = do
         let result = getResultOf (evaluateScope test_item)
         result `shouldBe` Right a
       it "(Scope) should handle bindings" $ do
-        let test_item = Scope{statements=[Binding (Placeholder (Name "x") Variable universal) (a), Reference (Name "x")]}
+        let test_item = Scope{statements=[Binding (Placeholder (Name "x") Variable universal) a, Reference (Name "x")]}
         let result = getResultOf (evaluateScope test_item >>= fullNormalize)
         result `shouldBe` Right a
       it "(Scope) should handle multiple bindings" $ do
         let test_item = Scope{statements=[
-          Binding (Placeholder (Name "x") Variable universal) (a),
-          Binding (Placeholder (Name "y") Variable universal) (b),
+          Binding (Placeholder (Name "x") Variable universal) a,
+          Binding (Placeholder (Name "y") Variable universal) b,
           Composite Tuple [Reference (Name "x"), Reference (Name "y")]
         ]}
         let result = getResultOf (evaluateScope test_item >>= fullNormalize)

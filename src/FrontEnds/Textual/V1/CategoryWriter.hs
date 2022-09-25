@@ -43,7 +43,6 @@ categoryToString Reference{name=name} = "$" ++ idToString name
 categoryToString Call{base=bm, argument=a} = categoryToString bm ++ "[" ++ categoryToString a ++ "]"
 categoryToString Access{base=bc, access_type=ByLabelGroup [label]} = "(" ++ categoryToString bc ++ ")." ++ idToString label
 categoryToString Access{base=bc, access_type=ByLabelGroup labels} = "(" ++ categoryToString bc ++ ").[" ++ intercalate ", " (map idToString labels)  ++ "]"
-categoryToString Access{base=bc, access_type=ByIndex idx} = "(" ++ categoryToString bc ++ ").[" ++ show idx ++ "]"
 categoryToString Access{base=bc, access_type=Subtractive idx} = "(" ++ categoryToString bc ++ ").-[" ++ show idx ++ "]"
 categoryToString TypeAnnotation{big_category=bc, small_category=sc} = "(" ++ categoryToString bc ++ ")::(" ++ categoryToString sc ++ ")"
 categoryToString Import{import_category=import_str} = "import " ++ categoryToString import_str
@@ -216,8 +215,6 @@ prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup [_
   applyOnLast (++ "." ++ idToString _id) (prettyCategoryToStringInner indenter bc)
 prettyCategoryToStringInner indenter Access{base=bc, access_type=ByLabelGroup many_ids} =
   applyOnLast (++ "[" ++ intercalate "," (map idToString many_ids) ++ "]") (prettyCategoryToStringInner indenter bc)
-prettyCategoryToStringInner indenter Access{base=bc, access_type=ByIndex idx} =
-  applyOnLast (++ "[" ++ show idx ++ "]") (prettyCategoryToStringInner indenter bc)
 prettyCategoryToStringInner indenter TypeAnnotation{big_category=bc, small_category=sc} = do
   let pretty_bc = wrapAround ("(", ")") (prettyCategoryToStringInner indenter bc)
   let pretty_sm = wrapAround ("::(", ")") (prettyCategoryToStringInner indenter sc)

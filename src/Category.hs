@@ -52,7 +52,6 @@ data PlaceholderType =
     deriving (Eq, Show, Read)
 
 data AccessType =
-  ByIndex Int |
   ByLabelGroup [Id] |
   Subtractive [Id]
   deriving (Eq, Show, Read)
@@ -188,7 +187,8 @@ data ErrorType =
     BindingOutsideOfScope |
     IsNotLabeled |
     BadRelabel |
-    NestedImport
+    NestedImport |
+    TypeNotFound
     deriving (Eq, Show, Read)
 
 data Error = Error {
@@ -248,6 +248,9 @@ universal = Special{special_type=Any}
 
 flex :: Category
 flex = Special{special_type=Flexible}
+
+bool :: Category
+bool = Composite Either [Thing $ Name "True", Thing $ Name "False"]
 
 -- checks for data constructor type
 isName :: Id -> Bool
