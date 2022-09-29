@@ -271,40 +271,41 @@ dotImportFile fp = do
 runMountain :: MountainContextT IO MountainTerm -> IO (Either MountainError (MountainTerm, MountainEnv), [MountainLog])
 runMountain = runMountainContextT defaultEnv
 
-newtype PrettyStructure a = PrettyStructure (Structure a)
-newtype PrettyMountainLiteral = PrettyLiteral MountainLiteral
 
-type PrettyMountainTerm = PrettyStructure PrettyMountainLiteral
+prettyLiteral :: MountainLiteral -> String
+prettyLiteral (Thing id) = "#" ++ id
+prettyLiteral All = "All"
 
-toPretty :: MountainTerm -> PrettyMountainTerm
-toPretty t = PrettyStructure $ fmap PrettyLiteral t
+prettyTerm :: MountainTerm -> String
+prettyTerm ((Literal a)) = prettyLiteral a
+prettyTerm Wildcard = "?"
+prettyTerm ((Reference id)) = id
+prettyTerm ((Import a)) = "import " ++ prettyTerm a
+prettyTerm ((Set as)) = "{" ++ intercalate "," (map prettyTerm as) ++ "}"
+prettyTerm ((Tuple as)) = "(" ++ intercalate "," (map prettyTerm as) ++ ")"
+prettyTerm ((Function as)) = "(" ++ intercalate "->" (map prettyTerm as) ++ ")"
+prettyTerm ((Either as)) = "(" ++ intercalate "|" (map prettyTerm as) ++ ")"
+prettyTerm ((Each as)) = "(" ++ intercalate "&" (map prettyTerm as) ++ ")"
+prettyTerm ((Scope as)) = "\\{" ++ intercalate ";" (map prettyTerm as) ++ "}"
+prettyTerm ((Unique _ as)) = "$" ++ prettyTerm as
+prettyTerm ((Call a b)) = "(" ++ prettyTerm a ++ " " ++ prettyTerm b ++ ")"
+prettyTerm ((Has a b)) = "(" ++ prettyTerm a ++ "@" ++ prettyTerm b ++ ")"
+prettyTerm ((Bind a b)) = "(" ++ prettyTerm a ++ ":" ++ prettyTerm b ++ ")"
+prettyTerm ((Refine a b)) = "(" ++ prettyTerm a ++ " % " ++ prettyTerm b ++ ")"
+prettyTerm ((Select a [id])) = prettyTerm a ++ "." ++ id
+prettyTerm ((Select a ids)) = prettyTerm a ++ "." ++ "[" ++ intercalate "," ids ++ "]"
+prettyTerm ((Context env a)) = do
+  let env_as_list = M.toList env
+  let terms = map (\(a,b) -> show a ++ ":" ++ prettyTerm b) env_as_list
+  "(<" ++ intercalate "," terms ++ ">  => " ++ prettyTerm a ++ ")"
 
-fromPretty :: PrettyMountainTerm -> MountainTerm
-fromPretty (PrettyStructure t) = fmap (\(PrettyLiteral a) -> a) t
+prettyEnv :: MountainEnv -> String
+prettyEnv (MountainEnv _ e v) = do
+    let new_e = map (M.map prettyTerm) e
+    show v ++ "/" ++ show (map M.toList new_e)
 
-instance Show PrettyMountainLiteral where
-  show (PrettyLiteral (Thing id)) = "#" ++ show id
-  show (PrettyLiteral All) = "All"
-
-instance (Show a) => Show (PrettyStructure a) where
-  show (PrettyStructure (Literal a)) = show a
-  show (PrettyStructure Wildcard) = "?"
-  show (PrettyStructure (Reference id)) = show id
-  show (PrettyStructure (Import a)) = "import " ++ show a
-  show (PrettyStructure (Set as)) = "{" ++ intercalate "," (map show as) ++ "}"
-  show (PrettyStructure (Tuple as)) = "(" ++ intercalate "," (map show as) ++ ")"
-  show (PrettyStructure (Function as)) = "(" ++ intercalate "->" (map show as) ++ ")"
-  show (PrettyStructure (Either as)) = "(" ++ intercalate "|" (map show as) ++ ")"
-  show (PrettyStructure (Each as)) = "(" ++ intercalate "&" (map show as) ++ ")"
-  show (PrettyStructure (Scope as)) = "\\{" ++ intercalate ";" (map show as) ++ "}"
-  show (PrettyStructure (Unique _ as)) = "$" ++ show as
-  show (PrettyStructure (Call a b)) = "(" ++ show a ++ " " ++ show b ++ ")"
-  show (PrettyStructure (Has a b)) = "(" ++ show a ++ "@" ++ show b ++ ")"
-  show (PrettyStructure (Bind a b)) = "(" ++ show a ++ ":" ++ show b ++ ")"
-  show (PrettyStructure (Refine a b)) = "(" ++ show a ++ " % " ++ show b ++ ")"
-  show (PrettyStructure (Select a [id])) = show a ++ "." ++ id
-  show (PrettyStructure (Select a ids)) = show a ++ "." ++ "[" ++ intercalate "," ids ++ "]"
-  show (PrettyStructure (Context env a)) = do
-    let env_as_list = M.toList env
-    let terms = map (\(a,b) -> show a ++ ":" ++ show b) env_as_list
-    "(<" ++ intercalate "," terms ++ ">  => " ++ show a ++ ")"
+instance Show MountainLog where
+  show (Step term env) = do
+    let pterm = prettyTerm term
+    "Step " ++ prettyEnv env ++ " => " ++ pterm
+  show UnknownLog = "???"

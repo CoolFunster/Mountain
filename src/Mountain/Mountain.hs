@@ -281,7 +281,7 @@ data MountainLog =
   -- ResolvedRef MountainTerm MountainTerm |
   Step MountainTerm MountainEnv
   | UnknownLog
-  deriving (Show, Eq)
+  deriving (Eq)
 
 -- This just lets me throw errors, write to a log, and manage bindings without explicitly writing all the boilerplate. 
 newtype MountainContextT m a = MountainContextT { getContext :: StateT MountainEnv (ExceptT MountainError (WriterT [MountainLog] m)) a}
@@ -541,7 +541,7 @@ step t = normalize <$> step' t
       if isRecursive b
         then do
           let Reference n = x
-          pushEnv (M.singleton n x) 
+          pushEnv (M.singleton n x)
           res <- _stepSeqNoError [x,y]
           popEnv
           let [x',y'] = res
@@ -582,16 +582,12 @@ _stepSeqFilterError (x:xs) = do
     else return (res:xs)
   `catchError` (\e -> return xs)
 
-debugTell :: (Show w, MonadWriter w m) => w -> m ()
--- debugTell x = trace (show x) (tell x)
-debugTell x = tell x
-
 stepMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
 stepMany 0 t = return t
 stepMany i t = do
   res <- step t
   env <- get
-  debugTell [Step res env]
+  tell [Step res env]
   if res == t
     then return res
     else stepMany (i-1) res
@@ -601,7 +597,7 @@ stepBindMany 0 t = return t
 stepBindMany i t = do
   res <- stepBind t
   env <- get
-  debugTell [Step res env]
+  tell [Step res env]
   if res == t
     then return res
     else stepBindMany (i-1) res
@@ -610,7 +606,7 @@ evaluate :: MountainTerm -> MountainContextT IO MountainTerm
 evaluate t = do
   res <- step t
   env <- get
-  debugTell [Step res env]
+  tell [Step res env]
   if res == t
     then return res
     else evaluate res
@@ -657,40 +653,54 @@ bind a@(Set elems) b@(Set elems2) =
     else throwError $ BadBind a b
 bind a@(Set elems) b = throwError $ BadBind a b
 bind a@(Function []) b@(Function []) = return b
-bind a@(Function (x:xs)) b@(Function (y:ys)) = do
+bind a@(Function _) b@(Function ((Bind ya yb):ys)) = do
   pushEnv M.empty
-  res <- normalize <$> stepBind y
-  newEnv <- popEnv
-  if res /= y
-    then return $ Bind a (Context newEnv (Function (res:ys)))
-    else case x of
-      Wildcard -> do
-        res <- bind (Function xs) (Function ys)
-        case res of
-          Bind a _ -> return $ Bind a b
-          Function _ -> return b
-          other -> error "what is this case?"
-      other -> do
-        _ <- bind x y
-        return $ Bind (Function (Wildcard:xs)) b
+  res <- bind ya yb
+  env' <- popEnv
+  return $ Bind a (Context env' (Function (res:ys)))
+bind a@(Function (x:xs)) b@(Function (y:ys)) = do
+  case x of
+    Wildcard -> do
+      res <- bind (normalize $ Function xs) (normalize $ Function ys)
+      case res of
+        Bind xs' ys' -> 
+          if isRecursive res
+            then return (Function [y,res])
+            else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
+        other -> return (Function [y,res])
+    _ -> do
+      res <- bind x y
+      case res of
+        Bind x' y' -> 
+          if isRecursive res
+            then return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
+            else return $ Bind (Function (x':xs)) (Function (y':ys))
+        other -> return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
 bind a@(Function _) b = throwError $ BadBind a b
 bind a@(Tuple []) b@(Tuple []) = return b
-bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
+bind a@(Tuple _) b@(Tuple ((Bind ya yb):ys)) = do
   pushEnv M.empty
-  res <- normalize <$> stepBind y
-  newEnv <- popEnv
-  if res /= y
-    then return $ Bind a (Context newEnv (Tuple (res:ys)))
-    else case x of
-      Wildcard -> do
-        res <- bind (Tuple xs) (Tuple ys)
-        case res of
-          Bind a _ -> return $ Bind a b
-          Tuple _ -> return b
-          other -> error "what is this case?"
-      other -> do
-        _ <- bind x y
-        return $ Bind (Tuple (Wildcard:xs)) b
+  res <- bind ya yb
+  env' <- popEnv
+  return $ Bind a (Context env' (Tuple (res:ys)))
+bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
+  case x of
+    Wildcard -> do
+      res <- bind (normalize $ Tuple xs) (normalize $ Tuple ys)
+      case res of
+        Bind xs' ys' -> 
+          if isRecursive res
+            then return (Tuple [y,res])
+            else return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
+        other -> return (Tuple [y,res])
+    _ -> do
+      res <- bind x y
+      case res of
+        Bind x' y' -> 
+          if isRecursive res
+            then return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
+            else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
+        other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
 bind a@(Tuple _) b = throwError $ BadBind a b
 bind a@(Either inner) b = return $ Either $ map (`Bind` b) inner
 bind a@(Each inner) b = return $ Each $ map (`Bind` b) inner
@@ -833,9 +843,13 @@ select s@(Either ((Bind a b):xs)) ids = do
   return $ Tuple $ found_vals ++ [Select (Either xs) res_ids]
 select (Either (x:xs)) ids = return $ Select (Either xs) ids
 select (Unique h xs) ids = Unique h <$> select xs ids
-select (Reference n) b = do
+select r@(Reference n) b = do
   d <- getDef n
   return $ Select d b
+  `catchError` (\case
+    UnboundId _ -> return $ Select r b
+    other -> throwError other
+  )
 select a b = throwError $ BadSelect a b
 
 stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm

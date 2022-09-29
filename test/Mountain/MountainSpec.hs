@@ -40,22 +40,19 @@ spec = do
           res <- runMountain $ stepMany 10 simple_rec
           let (Right (val, env), log) = res
           val `shouldBe` Bind (Reference "Self") (Either [Reference "Self",Tuple [Literal (Thing "b"),Reference "Self"]])
-    -- describe "Import" $ do
-    --   it "Should import nats" $ do
-    --     res <- runMountain $ dotImportFile "Tests.Import.1_import_nat"
-    --     let (res', log) = res
-    --     case res' of
-    --       Left e -> error (show e)
-    --       Right (val, env) -> do
-    --         val `shouldBe` Scope [Import (Bind (Reference "Nat") (Select (Reference "Tests") ["Import","test_nat"])),Reference "Nat"]
-    --         result <- runMountain $ stepMany (20) val
-    --         let (res', log) = result
-    --         case res' of
-    --           Left e ->
-    --             error (show e ++ "\n" ++ show log)
-    --           Right (val, env) -> do
-    --             print log
-    --             val `shouldBe` Scope [Bind (Reference "Nat") (Import (Select (Reference "Base") ["Data","Numeric","Natural","Nat"])),Reference "Nat"]
+    describe "Import" $ do
+      it "Should import nats" $ do
+        res <- runMountain $ dotImportFile "Tests.Import.1_import_nat"
+        let (res', log) = res
+        case res' of
+          Left e -> error (show e)
+          Right (val, env) -> do
+            val `shouldBe` Scope [Import (Bind (Reference "Nat") (Select (Reference "Tests") ["Import","test_nat"])),Reference "Nat"]
+            res <- runMountain $ stepMany 20 val
+            print res
+            let (Right (val, MountainEnv _ env _), log) = res
+            val `shouldBe` Bind (Reference "Nat") (Set [Either [Bind (Reference "zero") (Literal (Thing "Z")),Bind (Reference "succ") (Tuple [Literal (Thing "S"),Reference "Nat"])]])
+            map M.toList env `shouldBe` [[("Nat",Bind (Reference "Nat") (Set [Either [Bind (Reference "zero") (Literal (Thing "Z")),Bind (Reference "succ") (Tuple [Literal (Thing "S"),Reference "Nat"])]]))]]
     describe "Step" $ do
       it "should keep sets in a context" $ do
         let nat = fromRight (error "bad nat parsing") $ parseString "Nat = {zero:#Z | succ:(#S, Nat)}"
@@ -98,14 +95,20 @@ spec = do
         let (Right (val, MountainEnv _ env _), log) = res
         val `shouldBe` Tuple [Reference "k", Reference "b"]
         map M.toList env `shouldBe` [[("x", Reference "k"), ("y", Reference "b")]]
+      it "should directly bind to recursive functions" $ do
+        let bindable = Reference "x"
+        let bindee = Bind (Reference "Self") $ Function [a, Reference "Self"]
+        res <- runMountain $ stepBind $ Bind bindable bindee
+        let (Right (val, MountainEnv _ env _), log) = res
+        val `shouldBe` bindee
+        map M.toList env `shouldBe` [[("x", bindee)]]
       it "should handle recursion" $ do
         let bindable = Function [a, a, Reference "y"]
         let bindee = Bind (Reference "Self") $ Function [a, Reference "Self"]
-        res <- runMountain $ stepBindMany 10 $ Bind bindable bindee
+        res <- runMountain $ stepBindMany 20 $ Bind bindable bindee
         let (Right (val, MountainEnv _ env _), log) = res
-        let unrolled = Function [Literal (Thing "a"),Bind (Reference "Self") (Function [Literal (Thing "a"),Reference "Self"])]
-        val `shouldBe` unrolled
-        map M.toList env `shouldBe` [[("y", unrolled)]]
+        val `shouldBe` Function [a, a, bindee]
+        map M.toList env `shouldBe` [[("y", bindee)]]
       it "should handle left binds" $ do
         let bindable = Bind (Reference "x") Wildcard
         let bindee = Literal (Thing "a")
