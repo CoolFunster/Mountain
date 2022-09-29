@@ -1,0 +1,35 @@
+linkedList:
+  (
+    LinkedList: (ListType:?) -> *|
+      empty:{#empty},
+      nonempty:(head:ListType, tail:LinkedList ListType)
+    |*,
+    push: ((Vt:?) -> LinkedList (Lt:?) -> LinkedList *|Vt, Lt|*)::*|
+      (new_head:?) -> (old_list:?) -> (new_head, old_list)
+    |*,
+    pop: ((LinkedList ?).nonempty -> LinkedList ?)::*|
+      (?, tail:?) -> tail
+    |*,
+    head: (LinkedList ? -> LinkedList ?)::*|
+      #empty -> #empty;
+      (head:?, ?) -> head
+    |*,
+    tail: ((LinkedList ?).nonempty -> LinkedList ?)::*|
+      (?, tail:?) -> tail
+    |*,
+    map: (((A:?) -> (B:?)) -> LinkedList A -> LinkedList B)::*|
+      (map_foo:?) -> *|
+        #empty -> #empty;
+        (head:?, tail:?) -> (map_foo head, map map_foo tail);
+      |*
+    |*,
+    forl2r: ((StateType:?) -> LinkedList (Lt:?) -> (StateType -> LinkedList Lt -> StateType) -> StateType)::*|
+      (state:?) -> *|
+        #empty            -> ?            -> #empty;
+        (head:?, tail:?)  -> (for_body:?) -> *{
+          new_state: for_body state head;
+          return (new_state, forl2r state tail for_body);
+        }*;
+      |*
+    |*
+  )

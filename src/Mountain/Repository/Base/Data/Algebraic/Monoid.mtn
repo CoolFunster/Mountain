@@ -2,5 +2,5 @@
 Monoid:
   import Base.Data.Algebraic.Semigroup ->
   s:(Semigroup t) -> { (id: t,<>: s.<>) | 
-    x `<> id == x
+    x `<> id == x &&
     id `<> x == x }

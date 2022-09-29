@@ -7,6 +7,7 @@ module Mountain.Mountain where
 
 import Mountain.Hash
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Control.Monad.State.Strict
 import Control.Monad.Except
 import Control.Monad.Writer.Strict hiding (Any, All)
@@ -18,6 +19,7 @@ import Data.Bifunctor
 import qualified Data.Set as S
 import Data.Either
 import Data.Maybe
+import Debug.Trace (trace)
 
 
 type Id = [Char]
@@ -26,9 +28,10 @@ type Env a = M.Map Id a
 
 data Structure a =
     Literal a
+  | Wildcard
   | Reference Id
   | Import (Structure a)
-  | Set [Structure a]
+  | Set [Structure a] -- TODO MAKE THIS AN ACTUAL SET
   | Tuple [Structure a]
   | Function [Structure a]
   | Either [Structure a]
@@ -78,6 +81,7 @@ bool = Set [nothing, unit]
 -- ################## --
 instance Functor Structure where
   fmap f (Literal x) = Literal (f x)
+  fmap f Wildcard = Wildcard
   fmap f (Reference id) = Reference id
   fmap f (Import x) = Import (fmap f x)
   fmap f (Set x) = Set $ map (fmap f) x
@@ -94,19 +98,20 @@ instance Functor Structure where
   fmap f (Unique h x) = Unique h (fmap f x)
   fmap f (Context env x) = Context (M.map (fmap f) env) (fmap f x)
 
-data TransformResult a =
+data ShouldRecurse a =
   Result a |
-  Recurse a
+  Recurse
   deriving (Eq, Show)
 
-transform :: (Structure a -> TransformResult (Structure a)) -> Structure a -> Structure a
+transform :: (Structure a -> ShouldRecurse (Structure a)) -> Structure a -> Structure a
 transform transformer input_structure = do
   case transformer input_structure of
     Result s -> s
-    Recurse s -> do
+    Recurse -> do
       let recurse = transform transformer
-      case s of
+      case input_structure of
         (Literal x) -> Literal x
+        Wildcard -> Wildcard
         (Set ic) -> Set $ map recurse ic
         (Unique h ic) -> Unique h $ recurse ic
         (Function xs) -> Function $ map recurse xs
@@ -124,43 +129,60 @@ transform transformer input_structure = do
         -- (Hide a ids) -> Hide (recurse a) ids
         (Context env a) -> Context (M.map recurse env) (recurse a)
 
-check' :: ([Bool] -> Bool) -> (Structure a -> Bool) -> Structure a -> Bool
-check' aggregator checker l@(Literal _) = checker l
-check' aggregator checker r@(Reference _) = checker r
-check' aggregator checker u@(Unique h ic) = aggregator [checker u, check' aggregator checker ic]
-check' aggregator checker i@(Import ic) = aggregator [checker i,  check' aggregator checker ic]
-check' aggregator checker s@(Set xs) = aggregator $ checker s : map (check' aggregator checker) xs
-check' aggregator checker s@(Function xs) = aggregator $ checker s : map (check' aggregator checker) xs
-check' aggregator checker s@(Each xs) = aggregator $ checker s : map (check' aggregator checker) xs
-check' aggregator checker s@(Tuple xs) = aggregator $ checker s : map (check' aggregator checker) xs
-check' aggregator checker s@(Either xs) = aggregator $ checker s : map (check' aggregator checker) xs
-check' aggregator checker s@(Scope xs) = aggregator $ checker s : map (check' aggregator checker) xs
-check' aggregator checker s@(Call a b) = aggregator [checker s, check' aggregator checker a, check' aggregator checker b]
-check' aggregator checker s@(Refine a b) = aggregator [checker s, check' aggregator checker a, check' aggregator checker b]
-check' aggregator checker s@(Has a b) = aggregator [checker s, check' aggregator checker a, check' aggregator checker b]
-check' aggregator checker s@(Bind a b) = aggregator [checker s, check' aggregator checker a, check' aggregator checker b]
-check' aggregator checker s@(Select a ids) = aggregator [checker s, check' aggregator checker a]
--- check' aggregator checker s@(Hide a ids) = aggregator [checker s, checker a]
-check' aggregator checker s@(Context env a) = do
-  let env_vals = M.foldr (:) [] env
-  aggregator $ checker s : check' aggregator checker a : map (check' aggregator checker) env_vals
+check :: ([Bool] -> Bool) -> (Structure a -> (Bool, ShouldRecurse (Structure a))) -> Structure a -> Bool
+check f c s = do
+  case c s of
+    (b, Result _) -> b
+    (b, Recurse) -> do
+      let recurse = check f c
+      case s of
+        (Literal x) -> b
+        Wildcard -> b
+        (Set ic) -> f (b:map recurse ic)
+        (Unique h ic) -> f [b,recurse ic]
+        (Function xs) -> f (b:map recurse xs)
+        (Each xs) -> f (b:map recurse xs)
+        (Tuple xs) -> f (b:map recurse xs)
+        (Either xs) -> f (b:map recurse xs)
+        (Refine x y) -> f [b,recurse x,recurse y]
+        (Call x y) -> f [b,recurse x,recurse y]
+        (Import i_c) -> f [b, recurse i_c]
+        (Has x y) -> f [b,recurse x,recurse y]
+        (Scope xs) -> f (b:map recurse xs)
+        (Bind x y) -> f [b,recurse x,recurse y]
+        (Reference id) -> b
+        (Select a ids) -> f [b,recurse a]
+        (Context env a) -> f (b:recurse a:M.elems (M.map recurse env))
 
-checkAll :: (Structure a -> Bool) -> Structure a -> Bool
-checkAll = check' and
-
-checkAny :: (Structure a -> Bool) -> Structure a -> Bool
-checkAny = check' or
+checkAny :: (Structure a -> (Bool, ShouldRecurse (Structure a))) -> Structure a -> Bool
+checkAny = check or
 
 replace :: (Eq a) => Structure a -> Structure a -> Structure a -> Structure a
 replace old new input_s =
   let
-    replaceOldWithNew :: (Eq a) => Structure a -> Structure a -> TransformResult (Structure a)
+    replaceOldWithNew :: (Eq a) => Structure a -> Structure a -> ShouldRecurse (Structure a)
     replaceOldWithNew old_c new_c =
       if new_c == old_c
         then Result new_c
-        else Recurse old_c
+        else Recurse
   in
     transform (replaceOldWithNew old) input_s
+
+-- TODO handle tuples and functions in a dep context with subtle binds
+-- probably via star
+isRecursive :: Structure a -> Bool
+isRecursive (Bind (Reference n) s) =
+  let
+    hasRefOfn :: Structure a -> (Bool, ShouldRecurse (Structure a))
+    hasRefOfn r@(Reference k) = (n == k, Result r)
+    hasRefOfn b@(Bind (Reference k) v) =
+      if n == k
+        then (False, Result b)
+        else (False, Recurse)
+    hasRefOfn k = (False, Recurse)
+  in
+    checkAny hasRefOfn s
+isRecursive _ = False
 
 -- ############################# --
 -- Basic Structure functionality --
@@ -168,6 +190,7 @@ replace old new input_s =
 
 instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Literal x)= hash x
+  hash Wildcard = hashStr "?"
   hash (Reference id) = seqHash [hashStr "Reference", hashStr id]
   hash (Unique h x) = seqHash [hashStr "Unique", h, hash x]
   hash (Import a) = seqHash [hashStr "Import", hash a]
@@ -188,16 +211,6 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
     let hashed_env = hashStr $ show hash_env
     seqHash [hashStr "Context",  hashed_env, hash a]
 
-isRecursive :: Structure a -> Bool
-isRecursive (Bind (Reference n) s) =
-  let
-    hasRefOfn :: Structure a -> Bool
-    hasRefOfn (Reference n) = True
-    hasRefOfn _ = False
-  in
-    checkAny hasRefOfn s
-isRecursive _ = False
-
 -- ############################# --
 --    Mountain  Stuff            --
 -- ############################# --
@@ -207,30 +220,37 @@ isRecursive _ = False
 data MountainLiteral =
     Thing String
   | All
-  | Wildcard
-  | Star
   deriving (Eq, Show)
 
 instance Hashable MountainLiteral where
   hash (Thing name) = hashStr name
   hash All = hashStr "All"
-  hash Wildcard = hashStr "?"
-  hash Star = hashStr "*"
 
 type MountainTerm = Structure MountainLiteral
-newtype MountainEnv = MountainEnv (MountainImporter, [Env MountainTerm])
+
+data MountainOptions = Options {
+  parser :: FilePath -> IO MountainTerm,
+  repository :: FilePath,
+  file_ext :: String
+}
+
+instance Eq MountainOptions where
+  (==) a b = repository a == repository b && file_ext a == file_ext b
+
+instance Show MountainOptions where
+  show (Options _ r f) = show (r,f)
+
+data MountainEnv = MountainEnv {
+    options :: MountainOptions,
+    environment :: [Env MountainTerm],
+    var_name_counter :: Int
+  } deriving (Eq, Show)
 
 toList :: MountainEnv -> [[(Id, MountainTerm)]]
-toList (MountainEnv (_, env)) = map M.toList env
-
-instance Show MountainEnv where
-  show (MountainEnv (_,e)) = show (map M.toList e)
-
-instance Eq MountainEnv where
-  (==) (MountainEnv (_,a)) (MountainEnv (_,b)) = a == b
+toList (MountainEnv _ env _) = map M.toList env
 
 dummyEnv :: MountainEnv
-dummyEnv = MountainEnv (dummyImporter, [])
+dummyEnv = MountainEnv (Options (const $ return empty) "" "") [] 0
 
 data MountainError =
   UnknownError |
@@ -247,16 +267,20 @@ data MountainError =
   DirNotExist MountainTerm |
   NestedImport MountainTerm |
   EmptyScope |
-  BadCall MountainTerm |
+  BadCall MountainTerm MountainTerm |
   BadHas MountainTerm MountainTerm |
   BadSelect MountainTerm [Id] |
+  BadImport MountainTerm |
   EmptySelect MountainTerm |
-  InvalidTerm MountainTerm
+  InvalidTerm MountainTerm |
+  BadType MountainTerm |
+  NeedEvaluationBeforeCall MountainTerm
   deriving (Show, Eq)
 
 data MountainLog =
   -- ResolvedRef MountainTerm MountainTerm |
-  UnknownLog
+  Step MountainTerm MountainEnv
+  | UnknownLog
   deriving (Show, Eq)
 
 -- This just lets me throw errors, write to a log, and manage bindings without explicitly writing all the boilerplate. 
@@ -278,19 +302,19 @@ isValid c = do
   )
 
 pushEnv :: (Monad m) => Env MountainTerm -> MountainContextT m ()
-pushEnv env = do
+pushEnv new_env = do
   (env :: MountainEnv) <- get
-  let MountainEnv (imp, rmap) = env
-  put $ MountainEnv (imp, M.empty : rmap)
+  let MountainEnv a b c = env
+  put $ MountainEnv a (new_env : b) c
 
 popEnv :: (Monad m) => MountainContextT m (Env MountainTerm)
 popEnv = do
   (env :: MountainEnv) <- get
-  let MountainEnv (imp, rmap) = env
-  case rmap of
-    [] -> throwError PopEmptyEnvStack
+  let MountainEnv a b c = env
+  case b of
+    [] -> return M.empty
     (x:xs) -> do
-      put $ MountainEnv (imp, xs)
+      put $ MountainEnv a xs c
       return x
 
 hasDef :: (Monad m) => Id -> MountainContextT m Bool
@@ -302,11 +326,16 @@ hasDef id = do
     other -> throwError other
   )
 
+maybeGetDef :: (Monad m) => Id -> MountainContextT m (Maybe MountainTerm)
+maybeGetDef id = do
+  Just <$> getDef id
+  `catchError` (\e -> return Nothing)
+
 getDef :: (Monad m) => Id -> MountainContextT m MountainTerm
 getDef id = do
   (env :: MountainEnv) <- get
-  let MountainEnv (imp, rmap) = env
-  case rmap of
+  let MountainEnv a b c = env
+  case b of
     [] -> throwError $ UnboundId id
     (x:_) -> do
       case M.lookup id x of
@@ -317,22 +346,41 @@ getDef id = do
           return res
         Just val -> return val
 
+getFreshRef :: (Monad m) => MountainContextT m MountainTerm
+getFreshRef = do
+  (env :: MountainEnv) <- get
+  let MountainEnv a b c = env
+  let new_name = "v" ++ show c
+  put $ MountainEnv a b (c + 1)
+  return $ Reference new_name
+
 putDef :: (Monad m) => Id -> MountainTerm -> MountainContextT m ()
 putDef id v = do
   (env :: MountainEnv) <- get
-  let MountainEnv (imp, rmap) = env
-  case rmap of
-    [] -> put $ MountainEnv (imp, [M.singleton id v])
-    (m:ms) -> put $ MountainEnv (imp, M.insert id v m:ms)
+  let MountainEnv a b c = env
+  case b of
+    [] -> put $ MountainEnv a [M.singleton id v] c
+    (m:ms) -> put $ MountainEnv a (M.insert id v m:ms) c
 
-getImporter :: (Monad m) => MountainContextT m MountainImporter
-getImporter = do
+unionEnv :: (Monad m) => Env MountainTerm -> MountainContextT m ()
+unionEnv new_env = do
   (env :: MountainEnv) <- get
-  let MountainEnv (imp, rmap) = env
-  return imp
+  let MountainEnv a b c = env
+  case b of
+    [] -> put $ MountainEnv a [new_env] c
+    (m:ms) -> put $ MountainEnv a (M.union new_env m:ms) c
 
-getEnv :: (Monad m) => MountainContextT m MountainEnv
-getEnv = get
+getOptions :: (Monad m) => MountainContextT m MountainOptions
+getOptions = do
+  (env :: MountainEnv) <- get
+  let MountainEnv opt _ _ = env
+  return opt
+
+getEnv :: (Monad m) => MountainContextT m ([Env MountainTerm])
+getEnv = do
+  (env :: MountainEnv) <- get
+  let MountainEnv _ e _ = env
+  return e
 
 getBoundIds :: [Id] -> MountainContextT IO ([MountainTerm], [Id])
 getBoundIds = foldr get_bound_ids (return ([],[]))
@@ -350,6 +398,7 @@ getBoundIds = foldr get_bound_ids (return ([],[]))
 
 normalize :: MountainTerm -> MountainTerm
 normalize l@(Literal _) = l
+normalize Wildcard = Wildcard
 normalize r@(Reference _) = r
 normalize i@(Import (Import a)) = normalize $ Import a
 normalize i@(Import a) = Import (normalize a)
@@ -416,47 +465,105 @@ normalize c@(Context env c2@(Context env2 a)) = do
   case normalize c2 of
     Context new_env new_a -> Context (M.union new_env env) new_a
     other -> Context env other
-normalize c@(Context env a) = Context (M.map normalize env) (normalize a)
+normalize c@(Context env a) =
+  if M.null env
+    then normalize a
+    else Context (M.map normalize env) (normalize a)
 
-stepRec :: MountainTerm -> MountainContextT IO MountainTerm
-stepRec b@(Bind x y) = bind x y
-stepRec other = step other
+chain :: MountainTerm -> MountainContextT IO MountainTerm
+chain (Context env t) = do
+  pushEnv env
+  res <- chain t
+  new_env <- popEnv
+  return $ Context new_env t
+chain f@(Function (x:xs)) = do
+  res <- evaluate x >>= stepBind
+  return $ Function xs
+chain f@(Tuple (x:xs)) = do
+  res <- evaluate x >>= stepBind
+  return $ Tuple xs
+chain other = return other
+
+
+stepBind :: MountainTerm -> MountainContextT IO MountainTerm
+stepBind b@(Bind x y) = normalize <$> bind x y
+stepBind other = step other
 
 step :: MountainTerm -> MountainContextT IO MountainTerm
 step t = normalize <$> step' t
   where
     step' :: MountainTerm -> MountainContextT IO MountainTerm
     step' l@(Literal _) = return l
-    step' (Reference n) = getDef n
-    step' i@(Import _) = do
-      importer <- getImporter
-      evaluateImport importer i
-    step' (Set xs) = Set <$> _stepSeqNoError xs
+    step' Wildcard = return Wildcard
+    step' r@(Reference n) = getDef n `catchError` const (return r)
+    step' (Import n) = do
+      res <- step' n
+      if res == n
+        then stepImport n
+        else return $ Import res
+    step' (Set xs) = do
+      res <- _stepSeqNoError xs
+      return $ Set res
     step' (Either []) = throwError EmptyEither
     step' (Either xs) = Either <$> _stepSeqFilterError xs
-    step' (Function xs) = Function <$> _stepSeqNoError xs
+    step' (Function xs) = do
+      res <- _stepSeqNoError xs
+      return $ Function res
     step' (Each []) = throwError EmptyEach
-    step' (Each xs) = Function <$> _stepSeqNoError xs
-    step' (Tuple xs) = Tuple <$> _stepSeqNoError xs
-    step' (Scope inner) = stepScope inner
-    step' (Call x y) = stepCall x y
-    step' r@(Refine a b) = do
-      res <- _stepSeqNoError [a,b]
-      let [new_a, new_b] = res
-      return $ Refine new_a new_b
-    step' c@(Has x y) = stepHas x y
-    step' b@(Bind lhs rhs) =
+    step' (Each xs) = do
+      res <- _stepSeqNoError xs
+      return $ Each res
+    step' (Tuple xs) = do
+      res <- _stepSeqNoError xs
+      return $ Tuple res
+    step' (Scope inner) = do
+      res <- _stepSeqNoError inner
+      if res == inner
+        then stepScope inner
+        else return $ Scope res
+    step' c@(Call x y) = do
+      res <- _stepSeqNoError [x,y]
+      let [x', y'] = res
+      if x' == x && y' == y
+        then stepCall x y
+        else return $ Call x' y'
+    step' r@(Refine x y) = do
+      res <- _stepSeqNoError [x,y]
+      let [x',y'] = res
+      return $ Refine x' y'
+    step' c@(Has x y) = do
+      res <- _stepSeqNoError [x,y]
+      let [x', y'] = res
+      if x' == x && y' == y
+        then stepHas x y
+        else return $ Has x' y'
+    step' b@(Bind x y) = do
       if isRecursive b
-        then return b
-        else bind lhs rhs
-    step' (Select a ids) = stepSelect a ids
+        then do
+          let Reference n = x
+          pushEnv (M.singleton n x) 
+          res <- _stepSeqNoError [x,y]
+          popEnv
+          let [x',y'] = res
+          return $ Bind x' y'
+        else do
+          res <- _stepSeqNoError [x,y]
+          let [x',y'] = res
+          return $ Bind x' y'
+    step' (Select a ids) = do
+      res <- step a
+      if res == a
+        then stepSelect a ids
+        else return $ Select res ids
     -- step' (Hide a ids) = stepHide a ids
     step' (Unique h a) = Unique h <$> step a
-    step' (Context env s) = do
+    step' c@(Context env s) = do
       pushEnv env
-      step' s
+      res <- step s
       newEnv <- popEnv
-      return (Context newEnv s)
+      if res == s
+        then return s
+        else return (Context newEnv res)
 
 _stepSeqNoError :: [MountainTerm] -> MountainContextT IO [MountainTerm]
 _stepSeqNoError [] = return []
@@ -475,46 +582,117 @@ _stepSeqFilterError (x:xs) = do
     else return (res:xs)
   `catchError` (\e -> return xs)
 
+debugTell :: (Show w, MonadWriter w m) => w -> m ()
+-- debugTell x = trace (show x) (tell x)
+debugTell x = tell x
+
+stepMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
+stepMany 0 t = return t
+stepMany i t = do
+  res <- step t
+  env <- get
+  debugTell [Step res env]
+  if res == t
+    then return res
+    else stepMany (i-1) res
+
+stepBindMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
+stepBindMany 0 t = return t
+stepBindMany i t = do
+  res <- stepBind t
+  env <- get
+  debugTell [Step res env]
+  if res == t
+    then return res
+    else stepBindMany (i-1) res
+
 evaluate :: MountainTerm -> MountainContextT IO MountainTerm
 evaluate t = do
   res <- step t
+  env <- get
+  debugTell [Step res env]
   if res == t
     then return res
     else evaluate res
 
 -- Terms must be normalized
 bind :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-bind r@(Reference n) b = do
-  putDef n b
-  return b
-bind (Literal Wildcard) b = return b
-bind a@(Literal Star) b = throwError $ NotImplemented $ Bind a b
+bind a@(Bind x y) b = return $ Bind x (Bind y b)
+bind a b@(Bind x y) = do
+  if isRecursive b
+    then case a of
+      Reference n -> do
+        putDef n b
+        return b
+      other -> do
+        pushEnv M.empty
+        res <- stepBind b
+        new_env <- popEnv
+        return $ Bind a (Context new_env res)
+    else do
+      res <- bind x y
+      return $ Bind a res
+bind a b@(Context _ _) = Bind a <$> step b
+bind r@(Reference n) b =
+  if isRecursive $ Bind r b
+    then do
+      putDef n (Bind r b)
+      return b
+    else do
+      putDef n b
+      return b
+bind a (Import b) = return $ Import (Bind a b) -- TODO change to make imports bind afterwards
+bind a@(Import _) b = throwError $ NeedEvaluationBeforeCall (Bind a b)
+bind Wildcard b = return b
 bind a@(Literal x) b@(Literal y) =
   if x == y
     then return a
     else throwError $ BadBind a b
-bind a@(Literal All) b = throwError $ BadBind a b
-bind a@(Literal (Thing n)) b =
-  if a == b
-    then return b
-    else throwError $ BadBind a b
-bind a@(Import _) b = throwError $ BadBind a b
-bind a b@(Import _) = throwError $ BadBind a b
+bind a@(Literal _) b = throwError $ BadBind a b
+bind a@(Set [r@(Reference n)]) b@(Set elems2) =
+  return $ Bind r (Either elems2)
 bind a@(Set elems) b@(Set elems2) =
-  if a == b
+  if elems == elems2
     then return b
     else throwError $ BadBind a b
 bind a@(Set elems) b = throwError $ BadBind a b
 bind a@(Function []) b@(Function []) = return b
-bind a@(Function (x:xs)) b@(Function (y:ys)) =
-  return $ Function [Bind x y, Bind (Function xs) (Function ys)]
+bind a@(Function (x:xs)) b@(Function (y:ys)) = do
+  pushEnv M.empty
+  res <- normalize <$> stepBind y
+  newEnv <- popEnv
+  if res /= y
+    then return $ Bind a (Context newEnv (Function (res:ys)))
+    else case x of
+      Wildcard -> do
+        res <- bind (Function xs) (Function ys)
+        case res of
+          Bind a _ -> return $ Bind a b
+          Function _ -> return b
+          other -> error "what is this case?"
+      other -> do
+        _ <- bind x y
+        return $ Bind (Function (Wildcard:xs)) b
 bind a@(Function _) b = throwError $ BadBind a b
-bind a@(Tuple xs) b@(Tuple ys) =
-  return $ Tuple $ zipWith Bind xs ys
+bind a@(Tuple []) b@(Tuple []) = return b
+bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
+  pushEnv M.empty
+  res <- normalize <$> stepBind y
+  newEnv <- popEnv
+  if res /= y
+    then return $ Bind a (Context newEnv (Tuple (res:ys)))
+    else case x of
+      Wildcard -> do
+        res <- bind (Tuple xs) (Tuple ys)
+        case res of
+          Bind a _ -> return $ Bind a b
+          Tuple _ -> return b
+          other -> error "what is this case?"
+      other -> do
+        _ <- bind x y
+        return $ Bind (Tuple (Wildcard:xs)) b
 bind a@(Tuple _) b = throwError $ BadBind a b
-bind a@(Either []) b = throwError $ BadBind a b
 bind a@(Either inner) b = return $ Either $ map (`Bind` b) inner
-bind a@(Each []) b = throwError $ BadBind a b
 bind a@(Each inner) b = return $ Each $ map (`Bind` b) inner
 bind a@(Scope _) b = throwError $ BadBind a b
 bind a@(Call x y) b@(Call x2 y2) = do
@@ -528,12 +706,6 @@ bind a@(Refine x y) b@(Refine x2 y2) = do
   return $ Call resx resy
 bind a@(Refine _ _) b = throwError $ BadBind a b
 bind a@(Has typ x) b = bind x (Has typ b)
-bind a@(Bind x y) b = do
-  bind x y
-  bind x b
-bind a b@(Bind x y) = do
-  res <- bind x y
-  bind a res
 bind a@(Select x ids) b = throwError $ BadBind a b
 -- bind a@(Hide x ids) b = throwError $ BindHide a b
 -- bind a b@(Hide y ids) = throwError $ BindHide a b
@@ -544,6 +716,9 @@ bind a@(Unique h c) b@(Unique h2 c2) = do
     else throwError $ BadBind a b
 bind a@(Unique _ _) b = throwError $ BadBind a b
 bind a@(Context _ _) b = throwError $ BadBind a b
+
+getBindings :: Structure MountainLiteral -> MountainContextT IO (Env (Structure MountainLiteral))
+getBindings = error "not implemented"
 
 stepHas :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
 stepHas x y = do
@@ -562,17 +737,30 @@ has :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
 -- right associative rules come first
 has a (Either ys) = return $ Either (map (Has a) ys)
 has a (Each ys) = return $ Each (map (Has a) ys)
-has  a (Reference n) = do
-  d <- getDef n
-  return $ Has a d
+has t@(Reference n) v@(Reference k) = do
+  def <- getDef n
+  return $ Has def v
+  `catchError` (\e -> do {
+      def <- getDef k
+    ; return $ Has t def
+    } `catchError` const (return $ Has t v))
+has t@(Reference n) a = do
+  def <- getDef n
+  return $ Has def a
+  `catchError` (\e -> do
+    putDef n (Set [a])
+    return a)
+has (Set [x]) y@(Reference n) = do
+  putDef n x
+  return x
+has a r@(Reference n) = do
+  def <- getDef n
+  return $ Has a def
+  `catchError` const (return (Has a r))
 -- left associative rules
 has a@(Literal All) b = return b
-has a@(Literal Wildcard) b = return b
+has Wildcard b = return b
 has a@(Literal (Thing _)) b = throwError $ BadHas a b
-has a@(Literal Star) b = throwError $ InvalidTerm $ Has a b
-has (Reference n) b = do
-  d <- getDef n
-  return $ Has d b
 has a@(Import x) b = throwError $ BadHas a b
 has a b@(Import x) = throwError $ BadHas a b
 has a@(Set []) b = throwError $ BadHas a b
@@ -614,7 +802,7 @@ stepSelect a ids = do
   select a ids
   `catchError` (\case
     b@(BadSelect x idx) -> do
-      stepa <- stepRec a
+      stepa <- step a
       if stepa == a
         then throwError b
         else return $ Select stepa ids
@@ -645,91 +833,73 @@ select s@(Either ((Bind a b):xs)) ids = do
   return $ Tuple $ found_vals ++ [Select (Either xs) res_ids]
 select (Either (x:xs)) ids = return $ Select (Either xs) ids
 select (Unique h xs) ids = Unique h <$> select xs ids
+select (Reference n) b = do
+  d <- getDef n
+  return $ Select d b
 select a b = throwError $ BadSelect a b
 
-call :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-call a@(Function []) b = throwError $ BadCall $ Call a b
-call a@(Function [_]) b = throwError $ BadCall $ Call a b
-call a@(Function (x:xs)) b = do
+stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
+stepCall a@(Function []) b = throwError $ BadCall a b
+stepCall a@(Function (x:xs)) b = do
   pushEnv M.empty
   res <- bind x b
   new_env <- popEnv
   return $ Context new_env $ Function xs
-call a@(Either []) b = throwError EmptyEither
-call a@(Either xs) b = return $ Either $ map (`Call` b) xs
-call a@(Each []) b = throwError $ BadCall $ Call a b
-call a@(Each xs) b = return $ Each $ map (`Call` b) xs
-call a b = error "bad evaluate call"
-
-stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-stepCall x y = do
-  call x y
   `catchError` (\case
-      BadCall _ -> do
-        step_x <- step x
-        step_y <- step y
-        if step_x == x && step_y == y
-          then throwError $ BadCall $ Call x y
-          else return $ Call step_x step_y
-      other -> throwError other
-    )
+    BadBind _ _ -> throwError $ BadCall a b
+    other -> throwError other)
+stepCall a@(Either []) b = throwError EmptyEither
+stepCall a@(Either xs) b = return $ Either $ map (`Call` b) xs
+stepCall a@(Each []) b = throwError $ BadCall a b
+stepCall a@(Each xs) b = return $ Each $ map (`Call` b) xs
+stepCall a b = error "bad evaluate call"
 
 stepScope :: [MountainTerm] -> MountainContextT IO MountainTerm
 stepScope [] = throwError EmptyScope
 stepScope [x] = return x
 stepScope (x:xs) = do
-  res <- step x
+  res <- stepBind x
   if res == x
     then return $ Scope xs
     else return $ Scope (res:xs)
 
--- Basic Interpreter makers
-type MountainImporter = FilePath -> MountainContextT IO MountainTerm
+dotPathAsDir :: String -> FilePath
+dotPathAsDir [] = []
+dotPathAsDir ('.':xs) = '/':dotPathAsDir xs
+dotPathAsDir (x:xs) = x:dotPathAsDir xs
 
-dummyImporter :: MountainImporter
-dummyImporter c = return empty
+stepImport :: MountainTerm -> MountainContextT IO MountainTerm
+stepImport r@(Reference n) = do
+  opt <- getOptions
+  let Options parser repo file_ext = opt
+  let full_path = repo ++ dotPathAsDir n ++ file_ext
+  file_exist <- lift $ doesFileExist full_path
+  if not file_exist
+    then throwError $ BadImport r
+    else lift $ parser full_path
+stepImport (Bind n@(Reference _) i) = do
+  res <- stepImport i
+  return $ case res of
+    Bind _ b -> Bind n b
+    Import x -> Import (Bind n x)
+    other -> Bind n other
+stepImport s@(Select r@(Reference n) l@(id:ids)) = do
+  opt <- getOptions
+  let Options _ repo file_ext = opt
+  let dir_path = repo ++ dotPathAsDir n
+  dirExist <- lift $ doesDirectoryExist dir_path
+  fileExist <- lift $ doesFileExist (dir_path ++ file_ext)
+  if dirExist
+    then return $ Import $ Select (Reference (n ++ "." ++ id)) ids
+  else if fileExist
+    then return $ Select (Import r) l
+  else throwError $ BadImport s
+stepImport i@(Import _) = throwError $ NotNormalized i
+stepImport something = error $ "what is this import case? " ++ show something
 
-dotImportFile :: FilePath -> String -> MountainImporter -> FilePath -> MountainContextT IO MountainTerm
-dotImportFile base_path file_ext importer fp =
-    let
-        repl '.' = '/'
-        repl c = c
-        file_name = base_path ++ map repl fp
 
-        removeFileExt :: FilePath -> FilePath
-        removeFileExt str = if str == file_ext then "" else  head str:removeFileExt (tail str)
-    in do
-        file_exist <- lift $ doesFileExist (file_name ++ file_ext)
-        dir_exist <- lift $ doesDirectoryExist file_name
-        if file_exist
-            then importer (file_name ++ file_ext)
-        else if dir_exist
-            then do
-                dirContents <- lift $ listDirectory file_name
-                let baseDirContents = sort $ map removeFileExt dirContents
-                let loadedDir = map ((fp ++ ".") ++) baseDirContents
-                let zipped_dir = zip baseDirContents loadedDir
-                return $ Tuple $ map (\(ref, path) -> Bind (Reference ref) ((Import . Reference) path)) zipped_dir
-        else
-          if not file_exist
-            then throwError $ FileNotExist $ Reference fp
-          else if not dir_exist
-            then throwError $ DirNotExist $ Reference file_name
-          else error "should not reach here"
-
-evaluateImport :: MountainImporter -> MountainTerm -> MountainContextT IO MountainTerm
-evaluateImport importer (Import i@(Import _)) = evaluateImport importer i
-evaluateImport importer (Import r@(Reference n)) = importer n
-evaluateImport importer i@(Import a@(Select bc ids)) = do
-  res <- evaluateImport importer bc
-  return $ Select res ids
--- evaluateImport importer i@(Import a@(Hide bc ids)) = do
---   res <- evaluateImport importer bc
---   return $ Select res ids
-evaluateImport importer i@(Import c@(Tuple inner)) = do
-  result <- mapM (evaluateImport importer . Import) inner
-  return $ Tuple result
-evaluateImport importer i@(Import (Bind n pc)) = do
-  result <- evaluateImport importer (Import pc)
-  return $ Bind n result
-evaluateImport importer something = error $ "what is this import case? " ++ show something
+validate :: MountainTerm -> Bool
+validate _ = True
+-- LHS of Bindings must be structures of references.
+-- LHS of Bindings must not contain sub bindings
+-- Structural bindings are not allowed within tuples and functions

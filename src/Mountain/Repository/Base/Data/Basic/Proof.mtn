@@ -1,0 +1,3 @@
+Proof:
+  import Base.Data.Basic.Property -> (
+    Proof: p:Property

@@ -1,0 +1,22 @@
+Nat = {
+    zero:#Z 
+  | succ:(#S, Nat)
+};
+
+incrementDef = (Nat -> Nat)@
+  x -> (#S, x);
+
+decrementDef = (Nat.S -> Nat)@
+  (#S, x) -> x;
+
+addDef = (Nat -> Nat -> Nat)@(
+    #Z      -> y  -> y 
+  | (#S, x) -> y  -> (#S, add(x)(y))
+);
+
+(
+  Natural: Nat,
+  increment: incrementDef,
+  decrement: decrementDef,
+  add: addDef
+)

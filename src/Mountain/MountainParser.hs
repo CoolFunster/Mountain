@@ -17,7 +17,7 @@ import Data.Text ( Text, pack, unpack, unpack, replace)
 import Data.Void
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Char ( isSpace )
-import Data.List ( intercalate )
+import Data.List ( intercalate, foldl' )
 
 import Debug.Trace (trace)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
@@ -32,7 +32,7 @@ import Mountain.Hash
 
 _baseParse :: Parser a -> FilePath -> Text -> Either String a
 _baseParse parser file_path file_contents = do
-    let result = runParser parser file_path file_contents
+    let result = runParser (parser <* spaceConsumer <* eof) file_path file_contents
     case result of
         Left parse_error -> Left (errorBundlePretty parse_error)
         Right result -> Right result
@@ -43,11 +43,18 @@ parseFileWith parser path_to_file = do
     let category = _baseParse parser path_to_file contents
     return category
 
+parseFile :: FilePath -> IO MountainTerm
+parseFile fp = do
+  result <- parseFileWith (pInnerScope pMountainLiteral) fp
+  case result of
+    Left err_str -> error err_str
+    Right term -> return $ normalize (Scope term)
+
 parseStringWith :: Parser a -> [Char] -> Either String a
 parseStringWith cat_parser input_str = _baseParse cat_parser "String" (pack input_str)
 
 parseString :: [Char] -> Either String MountainTerm
-parseString = parseStringWith (pScope pMountainLiteral)
+parseString = parseStringWith (normalize <$> Scope <$> pInnerScope pMountainLiteral)
 
 parseTextWith :: Parser a -> Text -> Either String a
 parseTextWith cat_parser = _baseParse cat_parser "String"
@@ -112,19 +119,15 @@ pId = do
 -- ########################
 
 pMountainLiteral :: Parser MountainLiteral
-pMountainLiteral = pThing <|> pAll <|> pWildcard <|> pStar
+pMountainLiteral = choice [
+  pThing,
+  pAll]
 
 pThing :: Parser MountainLiteral
 pThing = symbol "#" *> (Thing <$> pId)
 
 pAll :: Parser MountainLiteral
 pAll = try (symbol "All") *> return All
-
-pWildcard :: Parser MountainLiteral
-pWildcard = (symbol "?") *> return Wildcard
-
-pStar :: Parser MountainLiteral
-pStar = symbol "*" *> return Star
 
 -- ######################
 -- ### StructureData  ###
@@ -134,6 +137,7 @@ pStructureData :: Parser a -> Parser (Structure a)
 pStructureData pa = choice [
     pImport pa,
     pLiteral pa,
+    pWildcard,
     pSet pa,
     pTuple pa,
     pScope pa,
@@ -144,6 +148,9 @@ pStructureData pa = choice [
 
 pLiteral :: Parser a -> Parser (Structure a)
 pLiteral pa = Literal <$> pa
+
+pWildcard :: Parser (Structure a)
+pWildcard = (symbol "?") *> return Wildcard
 
 pReference :: Parser (Structure a)
 pReference = Reference <$> pId
@@ -205,10 +212,10 @@ pStructureOp pa = makeExprParser (pCall pa) [
 pCall :: Parser a -> Parser (Structure a)
 pCall pa = do
   struct1 <- pSelect pa
-  struct2 <- optional $ try (spaceConsumer *> pSelect pa)
+  struct2 <- many $ try (spaceConsumer *> pSelect pa)
   case struct2 of
-    Nothing -> return struct1
-    Just s2 -> return $ Call struct1 s2
+    [] -> return struct1
+    (x:xs) -> return $ foldl' Call (Call struct1 x) xs
 
 pSelectExt :: Parser [Id]
 pSelectExt = do
@@ -244,22 +251,22 @@ basePath = "/home/mpriam/git/mtpl_language/src/Mountain/Repository/"
 fileExt :: String
 fileExt = ".mtn"
 
-pFile :: FilePath -> IO MountainTerm
-pFile fp = do
-  result <- parseFileWith (pInnerScope pMountainLiteral) fp
-  case result of
-    Left err_str -> error err_str
-    Right term -> return (Scope term)
-
-
-importer :: MountainImporter
-importer dot_import = do
-  parsed_terms <- dotImportFile basePath fileExt (lift . pFile) dot_import
-  let norm_terms = normalize parsed_terms
-  return norm_terms
-
 defaultEnv :: MountainEnv
-defaultEnv = MountainEnv (importer, [])
+defaultEnv = MountainEnv {
+    options=Options{
+      parser=parseFile,
+      repository=basePath,
+      file_ext=fileExt},
+    environment=[],
+    var_name_counter=0
+  }
+
+dotImportFile :: String -> MountainContextT IO MountainTerm
+dotImportFile fp = do
+  opt <- getOptions
+  let Options importer bp ext = opt
+  let file_path = bp ++ dotPathAsDir fp ++ ext
+  lift $ importer file_path
 
 runMountain :: MountainContextT IO MountainTerm -> IO (Either MountainError (MountainTerm, MountainEnv), [MountainLog])
 runMountain = runMountainContextT defaultEnv
@@ -278,11 +285,10 @@ fromPretty (PrettyStructure t) = fmap (\(PrettyLiteral a) -> a) t
 instance Show PrettyMountainLiteral where
   show (PrettyLiteral (Thing id)) = "#" ++ show id
   show (PrettyLiteral All) = "All"
-  show (PrettyLiteral Wildcard) = "?"
-  show (PrettyLiteral Star) = "*"
 
 instance (Show a) => Show (PrettyStructure a) where
   show (PrettyStructure (Literal a)) = show a
+  show (PrettyStructure Wildcard) = "?"
   show (PrettyStructure (Reference id)) = show id
   show (PrettyStructure (Import a)) = "import " ++ show a
   show (PrettyStructure (Set as)) = "{" ++ intercalate "," (map show as) ++ "}"

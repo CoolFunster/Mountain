@@ -1,0 +1,3 @@
+import Nat = Tests.Import.test_nat;
+
+Nat
