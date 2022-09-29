@@ -16,7 +16,6 @@ import GHC.Base (returnIO)
 import System.Directory
 import Data.List
 import Data.Bifunctor
-import qualified Data.Set as S
 import Data.Either
 import Data.Maybe
 import Debug.Trace (trace)
@@ -30,22 +29,41 @@ data Structure a =
     Literal a
   | Wildcard
   | Reference Id
-  | Import (Structure a)
   | Set [Structure a] -- TODO MAKE THIS AN ACTUAL SET
   | Tuple [Structure a]
   | Function [Structure a]
   | Either [Structure a]
   | Each [Structure a]
   | Scope [Structure a]
+  | Import (Structure a)
+  | Refine (Structure a) (Structure a)
   | Unique Hash (Structure a)
   | Call (Structure a) (Structure a)
   | Has (Structure a) (Structure a)
   | Bind (Structure a) (Structure a)
-  | Refine (Structure a) (Structure a)
   | Select (Structure a) [Id]
-  | Context (Env (Structure a)) (Structure a)
   -- | Hide (Structure a) [Id] TODO ADD HIDE BACK
+  | Context (Env (Structure a)) (Structure a)
   deriving (Eq, Show)
+
+data Error a =
+  NotImplemented (Structure a) |
+  NotNormalized (Structure a) |
+  EmptyEither |
+  EmptyEach |
+  UnboundId Id |
+  EmptyScope |
+  BadImport (Structure a) |
+  BadCall (Structure a) (Structure a) |
+  BadHas (Structure a) (Structure a) |
+  BadBind (Structure a) (Structure a) |
+  BadSelect (Structure a) [Id]
+  deriving (Show, Eq)
+
+data Log a =
+    -- ResolvedRef MountainTerm MountainTerm |
+  Step (Structure a) [Env (Structure a)]
+  deriving (Eq)
 
 -- ################## --
 -- HELPER FUNCTIONS   --
@@ -242,46 +260,18 @@ instance Show MountainOptions where
 
 data MountainEnv = MountainEnv {
     options :: MountainOptions,
-    environment :: [Env MountainTerm],
-    var_name_counter :: Int
+    environment :: [Env MountainTerm]
   } deriving (Eq, Show)
 
 toList :: MountainEnv -> [[(Id, MountainTerm)]]
-toList (MountainEnv _ env _) = map M.toList env
+toList (MountainEnv _ env) = map M.toList env
 
 dummyEnv :: MountainEnv
-dummyEnv = MountainEnv (Options (const $ return empty) "" "") [] 0
+dummyEnv = MountainEnv (Options (const $ return empty) "" "") []
 
-data MountainError =
-  UnknownError |
-  NotImplemented MountainTerm |
-  NotNormalized MountainTerm |
-  EmptyEither |
-  EmptyEach |
-  BadBind MountainTerm MountainTerm |
-  BindingDiffUniques MountainTerm MountainTerm |
-  UnboundReference MountainTerm |
-  UnboundId Id |
-  PopEmptyEnvStack |
-  FileNotExist MountainTerm |
-  DirNotExist MountainTerm |
-  NestedImport MountainTerm |
-  EmptyScope |
-  BadCall MountainTerm MountainTerm |
-  BadHas MountainTerm MountainTerm |
-  BadSelect MountainTerm [Id] |
-  BadImport MountainTerm |
-  EmptySelect MountainTerm |
-  InvalidTerm MountainTerm |
-  BadType MountainTerm |
-  NeedEvaluationBeforeCall MountainTerm
-  deriving (Show, Eq)
+type MountainError = Error MountainLiteral
 
-data MountainLog =
-  -- ResolvedRef MountainTerm MountainTerm |
-  Step MountainTerm MountainEnv
-  | UnknownLog
-  deriving (Eq)
+type MountainLog = Log MountainLiteral
 
 -- This just lets me throw errors, write to a log, and manage bindings without explicitly writing all the boilerplate. 
 newtype MountainContextT m a = MountainContextT { getContext :: StateT MountainEnv (ExceptT MountainError (WriterT [MountainLog] m)) a}
@@ -304,17 +294,17 @@ isValid c = do
 pushEnv :: (Monad m) => Env MountainTerm -> MountainContextT m ()
 pushEnv new_env = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b c = env
-  put $ MountainEnv a (new_env : b) c
+  let MountainEnv a b = env
+  put $ MountainEnv a (new_env : b)
 
 popEnv :: (Monad m) => MountainContextT m (Env MountainTerm)
 popEnv = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b c = env
+  let MountainEnv a b = env
   case b of
     [] -> return M.empty
     (x:xs) -> do
-      put $ MountainEnv a xs c
+      put $ MountainEnv a xs
       return x
 
 hasDef :: (Monad m) => Id -> MountainContextT m Bool
@@ -334,7 +324,7 @@ maybeGetDef id = do
 getDef :: (Monad m) => Id -> MountainContextT m MountainTerm
 getDef id = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b c = env
+  let MountainEnv a b = env
   case b of
     [] -> throwError $ UnboundId id
     (x:_) -> do
@@ -346,40 +336,32 @@ getDef id = do
           return res
         Just val -> return val
 
-getFreshRef :: (Monad m) => MountainContextT m MountainTerm
-getFreshRef = do
-  (env :: MountainEnv) <- get
-  let MountainEnv a b c = env
-  let new_name = "v" ++ show c
-  put $ MountainEnv a b (c + 1)
-  return $ Reference new_name
-
 putDef :: (Monad m) => Id -> MountainTerm -> MountainContextT m ()
 putDef id v = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b c = env
+  let MountainEnv a b = env
   case b of
-    [] -> put $ MountainEnv a [M.singleton id v] c
-    (m:ms) -> put $ MountainEnv a (M.insert id v m:ms) c
+    [] -> put $ MountainEnv a [M.singleton id v]
+    (m:ms) -> put $ MountainEnv a (M.insert id v m:ms)
 
 unionEnv :: (Monad m) => Env MountainTerm -> MountainContextT m ()
 unionEnv new_env = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b c = env
+  let MountainEnv a b = env
   case b of
-    [] -> put $ MountainEnv a [new_env] c
-    (m:ms) -> put $ MountainEnv a (M.union new_env m:ms) c
+    [] -> put $ MountainEnv a [new_env]
+    (m:ms) -> put $ MountainEnv a (M.union new_env m:ms)
 
 getOptions :: (Monad m) => MountainContextT m MountainOptions
 getOptions = do
   (env :: MountainEnv) <- get
-  let MountainEnv opt _ _ = env
+  let MountainEnv opt _ = env
   return opt
 
-getEnv :: (Monad m) => MountainContextT m ([Env MountainTerm])
+getEnv :: (Monad m) => MountainContextT m [Env MountainTerm]
 getEnv = do
   (env :: MountainEnv) <- get
-  let MountainEnv _ e _ = env
+  let MountainEnv _ e = env
   return e
 
 getBoundIds :: [Id] -> MountainContextT IO ([MountainTerm], [Id])
@@ -586,7 +568,7 @@ stepMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
 stepMany 0 t = return t
 stepMany i t = do
   res <- step t
-  env <- get
+  env <- getEnv
   tell [Step res env]
   if res == t
     then return res
@@ -596,7 +578,7 @@ stepBindMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
 stepBindMany 0 t = return t
 stepBindMany i t = do
   res <- stepBind t
-  env <- get
+  env <- getEnv
   tell [Step res env]
   if res == t
     then return res
@@ -605,7 +587,7 @@ stepBindMany i t = do
 evaluate :: MountainTerm -> MountainContextT IO MountainTerm
 evaluate t = do
   res <- step t
-  env <- get
+  env <- getEnv
   tell [Step res env]
   if res == t
     then return res
@@ -638,7 +620,7 @@ bind r@(Reference n) b =
       putDef n b
       return b
 bind a (Import b) = return $ Import (Bind a b) -- TODO change to make imports bind afterwards
-bind a@(Import _) b = throwError $ NeedEvaluationBeforeCall (Bind a b)
+bind a@(Import _) b = throwError $ BadBind a b
 bind Wildcard b = return b
 bind a@(Literal x) b@(Literal y) =
   if x == y
@@ -663,7 +645,7 @@ bind a@(Function (x:xs)) b@(Function (y:ys)) = do
     Wildcard -> do
       res <- bind (normalize $ Function xs) (normalize $ Function ys)
       case res of
-        Bind xs' ys' -> 
+        Bind xs' ys' ->
           if isRecursive res
             then return (Function [y,res])
             else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
@@ -671,7 +653,7 @@ bind a@(Function (x:xs)) b@(Function (y:ys)) = do
     _ -> do
       res <- bind x y
       case res of
-        Bind x' y' -> 
+        Bind x' y' ->
           if isRecursive res
             then return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
             else return $ Bind (Function (x':xs)) (Function (y':ys))
@@ -688,7 +670,7 @@ bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
     Wildcard -> do
       res <- bind (normalize $ Tuple xs) (normalize $ Tuple ys)
       case res of
-        Bind xs' ys' -> 
+        Bind xs' ys' ->
           if isRecursive res
             then return (Tuple [y,res])
             else return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
@@ -696,7 +678,7 @@ bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
     _ -> do
       res <- bind x y
       case res of
-        Bind x' y' -> 
+        Bind x' y' ->
           if isRecursive res
             then return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
             else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))

@@ -17,14 +17,13 @@ import Data.Text ( Text, pack, unpack, unpack, replace)
 import Data.Void
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Char ( isSpace )
-import Data.List ( intercalate, foldl' )
+import Data.List ( intercalate, foldl', sort )
 
 import Debug.Trace (trace)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
 import System.FilePath.Posix
 
 import qualified Data.Text.IO as TextIO
-import Data.List (sort)
 import qualified Data.Set as Set
 import Control.Monad.Trans
 import Mountain.Hash
@@ -54,7 +53,7 @@ parseStringWith :: Parser a -> [Char] -> Either String a
 parseStringWith cat_parser input_str = _baseParse cat_parser "String" (pack input_str)
 
 parseString :: [Char] -> Either String MountainTerm
-parseString = parseStringWith (normalize <$> Scope <$> pInnerScope pMountainLiteral)
+parseString = parseStringWith (normalize . Scope <$> pInnerScope pMountainLiteral)
 
 parseTextWith :: Parser a -> Text -> Either String a
 parseTextWith cat_parser = _baseParse cat_parser "String"
@@ -112,7 +111,7 @@ pId = do
       else return name
     where
       isValidChar :: Char -> Bool
-      isValidChar c = (not $ c `elem` restrictedIdChars) && (not $ isSpace c)
+      isValidChar c = not (c `elem` restrictedIdChars || isSpace c)
 
 -- ########################
 -- ### MountainLiterals ###
@@ -150,7 +149,7 @@ pLiteral :: Parser a -> Parser (Structure a)
 pLiteral pa = Literal <$> pa
 
 pWildcard :: Parser (Structure a)
-pWildcard = (symbol "?") *> return Wildcard
+pWildcard = symbol "?" *> return Wildcard
 
 pReference :: Parser (Structure a)
 pReference = Reference <$> pId
@@ -257,8 +256,7 @@ defaultEnv = MountainEnv {
       parser=parseFile,
       repository=basePath,
       file_ext=fileExt},
-    environment=[],
-    var_name_counter=0
+    environment=[]
   }
 
 dotImportFile :: String -> MountainContextT IO MountainTerm
@@ -276,8 +274,8 @@ prettyLiteral :: MountainLiteral -> String
 prettyLiteral (Thing id) = "#" ++ id
 prettyLiteral All = "All"
 
-prettyTerm :: MountainTerm -> String
-prettyTerm ((Literal a)) = prettyLiteral a
+prettyTerm :: (Show a) => Structure a -> String
+prettyTerm ((Literal a)) = show a
 prettyTerm Wildcard = "?"
 prettyTerm ((Reference id)) = id
 prettyTerm ((Import a)) = "import " ++ prettyTerm a
@@ -299,13 +297,14 @@ prettyTerm ((Context env a)) = do
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyTerm b) env_as_list
   "(<" ++ intercalate "," terms ++ ">  => " ++ prettyTerm a ++ ")"
 
-prettyEnv :: MountainEnv -> String
-prettyEnv (MountainEnv _ e v) = do
-    let new_e = map (M.map prettyTerm) e
-    show v ++ "/" ++ show (map M.toList new_e)
+prettyMountainEnv :: MountainEnv -> String
+prettyMountainEnv (MountainEnv _ e) = prettyEnv e
 
-instance Show MountainLog where
+prettyEnv :: (Show a) => [Env a] -> String
+prettyEnv xs =
+    show (map (M.toList . M.map show) xs)
+
+instance (Show a) => Show (Log a) where
   show (Step term env) = do
     let pterm = prettyTerm term
     "Step " ++ prettyEnv env ++ " => " ++ pterm
-  show UnknownLog = "???"
