@@ -34,6 +34,7 @@ data Structure a =
   | Function [Structure a]
   | Either [Structure a]
   | Each [Structure a]
+  | Except [Structure a]
   | Scope [Structure a]
   | Import (Structure a)
   | Refine (Structure a) (Structure a)
@@ -42,12 +43,12 @@ data Structure a =
   | Has (Structure a) (Structure a)
   | Bind (Structure a) (Structure a)
   | Select (Structure a) [Id]
-  -- | Hide (Structure a) [Id] TODO ADD HIDE BACK
+  | Hide (Structure a) [Id] 
   | Context (Env (Structure a)) (Structure a)
   deriving (Eq, Show)
 
 data Error a =
-  NotImplemented (Structure a) |
+  NotImplemented String (Structure a) |
   NotNormalized (Structure a) |
   EmptyEither |
   EmptyEach |
@@ -107,6 +108,7 @@ instance Functor Structure where
   fmap f (Tuple x) = Tuple $ map (fmap f) x
   fmap f (Function x) = Function $ map (fmap f) x
   fmap f (Each x) = Each $ map (fmap f) x
+  fmap f (Except x) = Each $ map (fmap f) x
   fmap f (Scope x) = Scope $ map (fmap f) x
   fmap f (Call x y) = Call (fmap f x) (fmap f y)
   fmap f (Refine x y) = Refine (fmap f x) (fmap f y)
@@ -136,6 +138,7 @@ transform transformer input_structure = do
         (Each xs) -> Each $ map recurse xs
         (Tuple xs) -> Tuple $ map recurse xs
         (Either xs) -> Either $ map recurse xs
+        (Except xs) -> Either $ map recurse xs
         (Refine b p) -> Refine (recurse b) (recurse p)
         (Call b a) -> Call (recurse b) (recurse a)
         (Import i_c) -> Import (recurse i_c)
@@ -162,6 +165,7 @@ check f c s = do
         (Each xs) -> f (b:map recurse xs)
         (Tuple xs) -> f (b:map recurse xs)
         (Either xs) -> f (b:map recurse xs)
+        (Except xs) -> f (b:map recurse xs)
         (Refine x y) -> f [b,recurse x,recurse y]
         (Call x y) -> f [b,recurse x,recurse y]
         (Import i_c) -> f [b, recurse i_c]
@@ -214,6 +218,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Import a) = seqHash [hashStr "Import", hash a]
   hash (Set xs) = seqHash [hashStr "Set", sumHash (map hash xs)]
   hash (Either xs) = seqHash [hashStr "Either", sumHash (map hash xs)]
+  hash (Except xs) = seqHash [hashStr "Except", sumHash (map hash xs)]
   hash (Call a b) = seqHash [hashStr "Call", hash a, hash b]
   hash (Refine a b) = seqHash [hashStr "Refine", hash a, hash b]
   hash (Has a b) = seqHash [hashStr "Has", hash a, hash b]
@@ -400,24 +405,34 @@ normalize e@(Function (x:xs)) = do
     other -> Function [normalize x, other]
 normalize e@(Either []) = e
 normalize e@(Either [a]) = normalize a
-normalize e@(Either (a@(Either x):b)) = do
-  normalize $ case normalize a of
-    Either new_a -> Either $ new_a ++ b
-    other -> Either (other:b)
 normalize e@(Either (x:xs)) = do
-  case normalize (Either xs) of
-    Either new_xs -> Either (normalize x:new_xs)
-    other -> Either [normalize x, other]
+  let x' = normalize x
+  case x' of
+    Either i -> normalize $ Either (i ++ xs)
+    other ->
+      case normalize (Either xs) of
+        Either new_xs -> Either (x':new_xs)
+        other -> Either [x', other]
+normalize e@(Except []) = e
+normalize e@(Except [a]) = normalize a
+normalize e@(Except (x:xs)) = do
+  let x' = normalize x
+  case x' of
+    Except i -> normalize $ Except (i ++ xs)
+    other ->
+      case normalize (Except xs) of
+        Except new_xs -> Except (x':new_xs)
+        other -> Except [x', other]
 normalize e@(Each []) = e
 normalize e@(Each [a]) = normalize a
-normalize e@(Each (a@(Each x):b)) = do
-  normalize $ case normalize a of
-    Each new_a -> Each $ new_a ++ b
-    other -> Each (other:b)
 normalize e@(Each (x:xs)) = do
-  case normalize (Each xs) of
-    Each new_xs -> Each (normalize x:new_xs)
-    other -> Each [normalize x, other]
+  let x' = normalize x
+  case x' of
+    Each i -> normalize $ Each (i ++ xs)
+    other ->
+      case normalize (Each xs) of
+        Each new_xs -> Each (x':new_xs)
+        other -> Each [x', other]
 normalize e@(Scope []) = e
 normalize e@(Scope [a]) = normalize a
 normalize e@(Scope (x:xs)) = do
@@ -432,16 +447,16 @@ normalize h@(Has a b) = Has (normalize a) (normalize b)
 normalize b@(Bind x y) = Bind (normalize x) (normalize y)
 normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
-    Select new_a ids -> Select new_a (id1 ++ ids)
+    Select new_a ids -> Select new_a (ids ++ id1)
     other -> Select other id1
 normalize s@(Select a []) = normalize a
 normalize s@(Select a ids) = Select (normalize a) ids
--- normalize s@(Hide s2@(Hide _ _) id1) = do
---   case normalize s2 of
---     Hide new_a ids -> Hide new_a (id1 ++ ids)
---     other -> Hide other id1
--- normalize s@(Hide a []) = normalize a
--- normalize s@(Hide a ids) = Hide (normalize a) ids
+normalize s@(Hide s2@(Hide _ _) id1) = do
+  case normalize s2 of
+    Hide new_a ids -> Hide new_a (id1 ++ ids)
+    other -> Hide other id1
+normalize s@(Hide a []) = normalize a
+normalize s@(Hide a ids) = Hide (normalize a) ids
 normalize u@(Unique h x) = Unique h (normalize x)
 normalize c@(Context env c2@(Context env2 a)) = do
   case normalize c2 of
@@ -452,23 +467,13 @@ normalize c@(Context env a) =
     then normalize a
     else Context (M.map normalize env) (normalize a)
 
-chain :: MountainTerm -> MountainContextT IO MountainTerm
-chain (Context env t) = do
-  pushEnv env
-  res <- chain t
-  new_env <- popEnv
-  return $ Context new_env t
-chain f@(Function (x:xs)) = do
-  res <- evaluate x >>= stepBind
-  return $ Function xs
-chain f@(Tuple (x:xs)) = do
-  res <- evaluate x >>= stepBind
-  return $ Tuple xs
-chain other = return other
-
-
 stepBind :: MountainTerm -> MountainContextT IO MountainTerm
-stepBind b@(Bind x y) = normalize <$> bind x y
+stepBind b@(Bind x y) = normalize <$> do
+  res <- _stepSeqNoError [x,y]
+  let [x',y'] = res
+  if x == x' && y == y'
+    then bind x y
+    else return $ Bind x' y'
 stepBind other = step other
 
 step :: MountainTerm -> MountainContextT IO MountainTerm
@@ -487,7 +492,9 @@ step t = normalize <$> step' t
       res <- _stepSeqNoError xs
       return $ Set res
     step' (Either []) = throwError EmptyEither
-    step' (Either xs) = Either <$> _stepSeqFilterError xs
+    step' (Either xs) = do
+      Either <$> _stepEither xs
+    step' d@(Except _) = throwError $ NotImplemented "Excepterence" d
     step' (Function xs) = do
       res <- _stepSeqNoError xs
       return $ Function res
@@ -532,6 +539,7 @@ step t = normalize <$> step' t
           res <- _stepSeqNoError [x,y]
           let [x',y'] = res
           return $ Bind x' y'
+    step' h@(Hide _ _) = throwError $ NotImplemented "hides" h
     step' (Select a ids) = do
       res <- step a
       if res == a
@@ -555,13 +563,15 @@ _stepSeqNoError (x:xs) = do
     then (res :) <$> _stepSeqNoError xs
     else return (res:xs)
 
-_stepSeqFilterError :: [MountainTerm] -> MountainContextT IO [MountainTerm]
-_stepSeqFilterError [] = return []
-_stepSeqFilterError (x:xs) = do
+_stepEither :: [MountainTerm] -> MountainContextT IO [MountainTerm]
+_stepEither [] = return []
+_stepEither (x:xs) = do
+  pushEnv M.empty
   res <- step x
+  new_env <- popEnv
   if res == x
-    then (res :) <$> _stepSeqFilterError xs
-    else return (res:xs)
+    then (res :) <$> _stepEither xs
+    else return (Context new_env res:xs)
   `catchError` (\e -> return xs)
 
 stepMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
@@ -593,7 +603,9 @@ evaluate t = do
     then return res
     else evaluate res
 
--- Terms must be normalized
+-- Terms must be normalized, 
+-- and fully stepped without binding new terms into context
+-- That means contexts have been already replaced in terms
 bind :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
 bind a@(Bind x y) b = return $ Bind x (Bind y b)
 bind a b@(Bind x y) = do
@@ -610,7 +622,16 @@ bind a b@(Bind x y) = do
     else do
       res <- bind x y
       return $ Bind a res
-bind a b@(Context _ _) = Bind a <$> step b
+bind a b@(Either inner) = return $ Either $ map (a `Bind`) inner
+bind a b@(Each inner) = return $ Each $ map (a `Bind`) inner
+bind a@(Except inner) b = throwError $ NotImplemented "Excepts" $ Bind a b
+bind a b@(Except inner) = throwError $ NotImplemented "Excepts" $ Bind a b
+bind a@(Context _ _) b = throwError $ NotImplemented "Context lhs bind" $ Bind a b
+bind a b@(Context env x) = do
+  res <- bind a x
+  case res of
+    Bind a' b' -> return $ Bind a' (Context env b')
+    other -> return $ Context env other
 bind r@(Reference n) b =
   if isRecursive $ Bind r b
     then do
@@ -684,8 +705,8 @@ bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
             else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
         other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
 bind a@(Tuple _) b = throwError $ BadBind a b
-bind a@(Either inner) b = return $ Either $ map (`Bind` b) inner
 bind a@(Each inner) b = return $ Each $ map (`Bind` b) inner
+bind a@(Either inner) b = return $ Either $ map (`Bind` b) inner
 bind a@(Scope _) b = throwError $ BadBind a b
 bind a@(Call x y) b@(Call x2 y2) = do
   resx <- bind x x2
@@ -707,7 +728,6 @@ bind a@(Unique h c) b@(Unique h2 c2) = do
     then return $ Unique h2 res
     else throwError $ BadBind a b
 bind a@(Unique _ _) b = throwError $ BadBind a b
-bind a@(Context _ _) b = throwError $ BadBind a b
 
 getBindings :: Structure MountainLiteral -> MountainContextT IO (Env (Structure MountainLiteral))
 getBindings = error "not implemented"
@@ -727,6 +747,8 @@ stepHas x y = do
 has :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
     -- TODO: maybe a scope for the big has and small has so they don't overlap
 -- right associative rules come first
+has a@(Except inner) b = throwError $ NotImplemented "Excepts" $ Bind a b
+has a b@(Except inner) = throwError $ NotImplemented "Excepts" $ Bind a b
 has a (Either ys) = return $ Either (map (Has a) ys)
 has a (Each ys) = return $ Each (map (Has a) ys)
 has t@(Reference n) v@(Reference k) = do
@@ -778,7 +800,7 @@ has a@(Function _) b = throwError $ BadHas a b
 has (Each xs) b = return $ Each $ map (`Has` b) xs
 has a@(Scope _) b = throwError $ BadHas a b -- should be stepped
 has a@(Call _ _) b = throwError $ BadHas a b -- should be stepped
-has a@(Refine _ _) b = throwError $ NotImplemented $ Has a b
+has a@(Refine _ _) b = throwError $ NotImplemented "Refined Has" $ Has a b
 has a@(Has _ _) b = throwError $ NotNormalized $ Has a b
 has a@(Bind x y) b = throwError $ BadHas a b -- should be stepped
 has a@(Select x ids) b = throwError $ BadHas a b -- should be stepped
@@ -899,3 +921,4 @@ validate _ = True
 -- LHS of Bindings must be structures of references.
 -- LHS of Bindings must not contain sub bindings
 -- Structural bindings are not allowed within tuples and functions
+-- Refinements are not allowed to be recursive

@@ -1,0 +1,3 @@
+import nat: Base.Data.Numeric.Natural;
+
+nat.increment

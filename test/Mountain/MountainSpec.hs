@@ -107,6 +107,7 @@ spec = do
         let bindable = Function [a, a, Reference "y"]
         let bindee = Bind (Reference "Self") $ Function [a, Reference "Self"]
         res <- runMountain $ stepBindMany 20 $ Bind bindable bindee
+        print res
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Function [a, a, bindee]
         map M.toList env `shouldBe` [[("y", bindee)]]
@@ -317,3 +318,15 @@ spec = do
         let (Right (val, env), _) = res
         val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]
         map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]
+    -- describe "Select" $ do
+      -- it "Should "
+    -- describe "Base.Data.Numeric.Natural" $ do
+    --   it "should import and select correctly" $ do
+    --     res <- runMountain $ dotImportFile "Tests.Base.Data.Numeric.testNatural"
+    --     let (Right (val, env), _) = res
+    --     val `shouldBe` Scope [Import (Bind (Reference "nat") (Select (Reference "Base") ["Data","Numeric","Natural"])),Select (Reference "nat") ["increment"]]
+    --     res <- runMountain $ stepMany 10 val
+    --     print res
+    --     let (Right (val, env), _) = res
+    --     val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]
+    --     map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]

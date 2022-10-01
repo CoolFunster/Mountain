@@ -132,7 +132,7 @@ pAll = try (symbol "All") *> return All
 -- ### StructureData  ###
 -- ######################
 
-pStructureData :: Parser a -> Parser (Structure a)
+pStructureData :: (Show a) => Parser a -> Parser (Structure a)
 pStructureData pa = choice [
     pImport pa,
     pLiteral pa,
@@ -154,38 +154,38 @@ pWildcard = symbol "?" *> return Wildcard
 pReference :: Parser (Structure a)
 pReference = Reference <$> pId
 
-pImport :: Parser a -> Parser (Structure a)
+pImport :: (Show a) => Parser a -> Parser (Structure a)
 pImport pa = symbol "import" *> spaceConsumer *> (Import <$> pStructure pa)
 
-pSet :: Parser a -> Parser (Structure a)
+pSet :: (Show a) => Parser a -> Parser (Structure a)
 pSet pa = Set <$> pWrapBetween "{" "}" (sepEndBy (pStructure pa) (pWrapWS ","))
 
-pTuple :: Parser a -> Parser (Structure a)
+pTuple :: (Show a) => Parser a -> Parser (Structure a)
 pTuple pa = Tuple <$> pWrapBetween "(" ")" (sepEndBy (pStructure pa) (pWrapWS ","))
 
-pInnerScope :: Parser a -> Parser [Structure a]
+pInnerScope :: (Show a) => Parser a -> Parser [Structure a]
 pInnerScope pa = sepEndBy (pStructure pa) (pWrapWS ";")
 
-pScope :: Parser a -> Parser (Structure a)
+pScope :: (Show a) => Parser a -> Parser (Structure a)
 pScope pa = Scope <$> pWrapBetween "\\{" "}" (pInnerScope pa)
 
 emptyHash :: Hash
 emptyHash = Hash B.empty
 
-pUnique :: Parser a -> Parser (Structure a)
+pUnique :: (Show a) => Parser a -> Parser (Structure a)
 pUnique pa = Unique (Hash B.empty) <$> (symbol "$" *> pStructure pa)
 
-pEnvDecl :: Parser a -> Parser (M.Map Id (Structure a))
+pEnvDecl :: (Show a) => Parser a -> Parser (M.Map Id (Structure a))
 pEnvDecl pa = do
   id_ <- pId
   _ <- symbol ":"
   struct <- pStructure pa
   return $ M.singleton id_ struct
 
-pEnv :: Parser a -> Parser (Env (Structure a))
+pEnv :: (Show a) => Parser a -> Parser (Env (Structure a))
 pEnv pa = M.unions <$> pWrapBetween "<" ">" (sepEndBy (pEnvDecl pa) (pWrapWS ";"))
 
-pContext :: Parser a -> Parser (Structure a)
+pContext :: (Show a) => Parser a -> Parser (Structure a)
 pContext pa = do
   env <- pEnv pa
   _ <- pWrapWS "=>"
@@ -197,39 +197,49 @@ pContext pa = do
 -- ######################
 
 
-pStructureOp :: Parser a -> Parser (Structure a)
+pStructureOp :: (Show a) => Parser a -> Parser (Structure a)
 pStructureOp pa = makeExprParser (pCall pa) [
     [binaryR (pWrapWS ":") Bind],
     [binaryR (pWrapWS "@") Has],
     [binaryR (pWrapWS "&") (\lhs rhs -> Each [lhs,rhs])],
     [binaryR (pWrapWS "|") (\lhs rhs -> Either [lhs,rhs])],
+    [binaryR (pWrapWS "~") (\lhs rhs -> Except [lhs,rhs])],
     [binaryR (pWrapWS "->") (\lhs rhs -> Function [lhs,rhs])],
     [binaryL (pWrapWS "%") Refine],
     [binaryR (pWrapWS "=") Bind]
   ]
 
-pCall :: Parser a -> Parser (Structure a)
+pCall :: (Show a) => Parser a -> Parser (Structure a)
 pCall pa = do
-  struct1 <- pSelect pa
-  struct2 <- many $ try (spaceConsumer *> pSelect pa)
+  struct1 <- pSelectHide pa
+  struct2 <- many $ try (spaceConsumer *> pSelectHide pa)
   case struct2 of
     [] -> return struct1
     (x:xs) -> return $ foldl' Call (Call struct1 x) xs
 
-pSelectExt :: Parser [Id]
-pSelectExt = do
-  s <- symbol "."
-  choice [
+pSelectHideExt :: (Show a) => Structure a -> Parser (Structure a)
+pSelectHideExt base = do
+  s <- symbol ".-" <|> symbol "." 
+  ids <- choice [
     (: []) <$> try pId,
     pWrapBetween "[" "]" (sepEndBy pId (pWrapWS ","))]
+  let res = 
+        case s of
+          ".-" -> Hide base ids
+          "." -> Select base ids
+          other -> error "404"
+  followup <- optional $ pSelectHideExt res
+  case followup of
+    Nothing -> return res
+    Just x -> trace (show x) return x
 
-pSelect :: Parser a -> Parser (Structure a)
-pSelect pa = do
+pSelectHide :: (Show a) => Parser a -> Parser (Structure a)
+pSelectHide pa = do
   struct1 <- pStructureData pa
-  s <- many pSelectExt
-  case concat s of
-    [] -> return struct1
-    res -> return $ Select struct1 res
+  res <- optional $ pSelectHideExt struct1
+  case res of
+    Nothing -> return struct1
+    Just x -> return x
 
 
 
@@ -237,7 +247,7 @@ pSelect pa = do
 -- ### Structure  ###
 -- ##################
 
-pStructure :: Parser a -> Parser (Structure a)
+pStructure :: (Show a) => Parser a -> Parser (Structure a)
 pStructure = pStructureOp
 
 -- ######################
@@ -284,6 +294,7 @@ prettyTerm ((Tuple as)) = "(" ++ intercalate "," (map prettyTerm as) ++ ")"
 prettyTerm ((Function as)) = "(" ++ intercalate "->" (map prettyTerm as) ++ ")"
 prettyTerm ((Either as)) = "(" ++ intercalate "|" (map prettyTerm as) ++ ")"
 prettyTerm ((Each as)) = "(" ++ intercalate "&" (map prettyTerm as) ++ ")"
+prettyTerm ((Except as)) = "(" ++ intercalate "~" (map prettyTerm as) ++ ")"
 prettyTerm ((Scope as)) = "\\{" ++ intercalate ";" (map prettyTerm as) ++ "}"
 prettyTerm ((Unique _ as)) = "$" ++ prettyTerm as
 prettyTerm ((Call a b)) = "(" ++ prettyTerm a ++ " " ++ prettyTerm b ++ ")"
@@ -292,6 +303,8 @@ prettyTerm ((Bind a b)) = "(" ++ prettyTerm a ++ ":" ++ prettyTerm b ++ ")"
 prettyTerm ((Refine a b)) = "(" ++ prettyTerm a ++ " % " ++ prettyTerm b ++ ")"
 prettyTerm ((Select a [id])) = prettyTerm a ++ "." ++ id
 prettyTerm ((Select a ids)) = prettyTerm a ++ "." ++ "[" ++ intercalate "," ids ++ "]"
+prettyTerm ((Hide a [id])) = prettyTerm a ++ ".-" ++ id
+prettyTerm ((Hide a ids)) = prettyTerm a ++ ".-" ++ "[" ++ intercalate "," ids ++ "]"
 prettyTerm ((Context env a)) = do
   let env_as_list = M.toList env
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyTerm b) env_as_list

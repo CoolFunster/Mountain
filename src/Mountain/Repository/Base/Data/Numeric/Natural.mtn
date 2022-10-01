@@ -6,7 +6,7 @@ Nat = {
 incrementDef = (Nat -> Nat)@
   x -> (#S, x);
 
-decrementDef = (Nat.S -> Nat)@
+decrementDef = (Nat.succ -> Nat)@
   (#S, x) -> x;
 
 addDef = (Nat -> Nat -> Nat)@(
