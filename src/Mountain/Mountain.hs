@@ -43,7 +43,7 @@ data Structure a =
   | Has (Structure a) (Structure a)
   | Bind (Structure a) (Structure a)
   | Select (Structure a) [Id]
-  | Hide (Structure a) [Id] 
+  | Hide (Structure a) [Id]
   | Context (Env (Structure a)) (Structure a)
   deriving (Eq, Show)
 
@@ -115,6 +115,7 @@ instance Functor Structure where
   fmap f (Has x y) = Has (fmap f x) (fmap f y)
   fmap f (Bind x y) = Bind (fmap f x) (fmap f y)
   fmap f (Select x ids) = Select (fmap f x) ids
+  fmap f (Hide x ids) = Select (fmap f x) ids
   fmap f (Unique h x) = Unique h (fmap f x)
   fmap f (Context env x) = Context (M.map (fmap f) env) (fmap f x)
 
@@ -147,7 +148,7 @@ transform transformer input_structure = do
         (Bind a b) -> Bind (recurse a) (recurse b)
         (Reference id) -> Reference id
         (Select a ids) -> Select (recurse a) ids
-        -- (Hide a ids) -> Hide (recurse a) ids
+        (Hide a ids) -> Hide (recurse a) ids
         (Context env a) -> Context (M.map recurse env) (recurse a)
 
 check :: ([Bool] -> Bool) -> (Structure a -> (Bool, ShouldRecurse (Structure a))) -> Structure a -> Bool
@@ -174,6 +175,7 @@ check f c s = do
         (Bind x y) -> f [b,recurse x,recurse y]
         (Reference id) -> b
         (Select a ids) -> f [b,recurse a]
+        (Hide a ids) -> f [b,recurse a]
         (Context env a) -> f (b:recurse a:M.elems (M.map recurse env))
 
 checkAny :: (Structure a -> (Bool, ShouldRecurse (Structure a))) -> Structure a -> Bool
@@ -224,7 +226,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Has a b) = seqHash [hashStr "Has", hash a, hash b]
   hash (Bind a b) = seqHash [hashStr "Bind", hash a, hash b]
   hash (Select a ids) = seqHash [hashStr "Select", hash a, seqHash $ map hashStr ids]
-  -- hash (Hide a ids) = seqHash [hashStr "Hide", hash a, seqHash $ map hashStr ids]
+  hash (Hide a ids) = seqHash [hashStr "Hide", hash a, seqHash $ map hashStr ids]
   hash (Function xs) = seqHash $ hashStr "Function" : map hash xs
   hash (Each xs) = seqHash $ hashStr "Each" : map hash xs
   hash (Tuple xs) = seqHash $ hashStr "Tuple" : map hash xs
@@ -434,11 +436,14 @@ normalize e@(Each (x:xs)) = do
         Each new_xs -> Each (x':new_xs)
         other -> Each [x', other]
 normalize e@(Scope []) = e
-normalize e@(Scope [a]) = normalize a
 normalize e@(Scope (x:xs)) = do
-  case normalize (Scope xs) of
-    Scope new_xs -> Scope (normalize x:new_xs)
-    other -> Scope [normalize x, other]
+  let x' = normalize x
+  case x' of
+    Scope i -> normalize $ Scope (i ++ xs)
+    other ->
+      case normalize (Scope xs) of
+        Scope new_xs -> Scope (x':new_xs)
+        other -> Scope [x', other]
 normalize c@(Call a b) = Call (normalize a) (normalize b)
 normalize r@(Refine (Refine x y) b) = normalize $ Refine x (Each [y,b])
 normalize r@(Refine a b) = Refine (normalize a) (normalize b)
@@ -467,15 +472,6 @@ normalize c@(Context env a) =
     then normalize a
     else Context (M.map normalize env) (normalize a)
 
-stepBind :: MountainTerm -> MountainContextT IO MountainTerm
-stepBind b@(Bind x y) = normalize <$> do
-  res <- _stepSeqNoError [x,y]
-  let [x',y'] = res
-  if x == x' && y == y'
-    then bind x y
-    else return $ Bind x' y'
-stepBind other = step other
-
 step :: MountainTerm -> MountainContextT IO MountainTerm
 step t = normalize <$> step' t
   where
@@ -492,8 +488,11 @@ step t = normalize <$> step' t
       res <- _stepSeqNoError xs
       return $ Set res
     step' (Either []) = throwError EmptyEither
-    step' (Either xs) = do
-      Either <$> _stepEither xs
+    step' a@(Either xs) = do
+      res <- Either <$> _stepEither xs
+      if res /= a
+        then return res
+        else return $ _joinContexts Either xs
     step' d@(Except _) = throwError $ NotImplemented "Excepterence" d
     step' (Function xs) = do
       res <- _stepSeqNoError xs
@@ -551,7 +550,7 @@ step t = normalize <$> step' t
       pushEnv env
       res <- step s
       newEnv <- popEnv
-      if res == s
+      if res == s && newEnv == env
         then return s
         else return (Context newEnv res)
 
@@ -565,14 +564,46 @@ _stepSeqNoError (x:xs) = do
 
 _stepEither :: [MountainTerm] -> MountainContextT IO [MountainTerm]
 _stepEither [] = return []
-_stepEither (x:xs) = do
-  pushEnv M.empty
+_stepEither (c@(Context env x):xs) = do
+  pushEnv env
   res <- step x
-  new_env <- popEnv
-  if res == x
-    then (res :) <$> _stepEither xs
-    else return (Context new_env res:xs)
+  newEnv <- popEnv
+  if res == x && env == newEnv
+    then do
+      res <- _stepEither xs
+      return $ c:res
+    else return $ Context newEnv res:xs
   `catchError` (\e -> return xs)
+_stepEither (x:xs) = _stepEither (Context M.empty x:xs)
+
+_stepEach :: [MountainTerm] -> MountainContextT IO [MountainTerm]
+_stepEach [] = return []
+_stepEach (c@(Context env x):xs) = do
+  pushEnv env
+  res <- step x
+  newEnv <- popEnv
+  if res == x && env == newEnv
+    then do
+      res <- _stepEither xs
+      return $ c:res
+    else return $ Context newEnv res:xs
+  `catchError` (\e -> return xs)
+_stepEach (x:xs) = _stepEither (Context M.empty x:xs)
+
+_joinContexts :: ([MountainTerm] -> MountainTerm) -> [MountainTerm] -> MountainTerm
+_joinContexts joiner inner = do
+  let (envs, terms) = collect inner
+  let new_env = M.unionsWith (\a b -> joiner [a,b]) envs
+  Context new_env (joiner terms)
+  where
+    collect :: [MountainTerm] -> ([Env MountainTerm], [MountainTerm])
+    collect [] = ([],[])
+    collect (Context e t:xs) = do
+      let (es, ts) = collect xs
+      (e:es, t:ts)
+    collect (other:xs) = do
+      let (es,ts) = collect xs
+      (es, other:ts)
 
 stepMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
 stepMany 0 t = return t
@@ -583,16 +614,6 @@ stepMany i t = do
   if res == t
     then return res
     else stepMany (i-1) res
-
-stepBindMany :: Int -> MountainTerm -> MountainContextT IO MountainTerm
-stepBindMany 0 t = return t
-stepBindMany i t = do
-  res <- stepBind t
-  env <- getEnv
-  tell [Step res env]
-  if res == t
-    then return res
-    else stepBindMany (i-1) res
 
 evaluate :: MountainTerm -> MountainContextT IO MountainTerm
 evaluate t = do
@@ -616,7 +637,7 @@ bind a b@(Bind x y) = do
         return b
       other -> do
         pushEnv M.empty
-        res <- stepBind b
+        res <- bind x y
         new_env <- popEnv
         return $ Bind a (Context new_env res)
     else do
@@ -720,8 +741,8 @@ bind a@(Refine x y) b@(Refine x2 y2) = do
 bind a@(Refine _ _) b = throwError $ BadBind a b
 bind a@(Has typ x) b = bind x (Has typ b)
 bind a@(Select x ids) b = throwError $ BadBind a b
--- bind a@(Hide x ids) b = throwError $ BindHide a b
--- bind a b@(Hide y ids) = throwError $ BindHide a b
+bind a@(Hide x ids) b = throwError $ NotImplemented "hide" $ Bind a b
+bind a b@(Hide y ids) = throwError $ NotImplemented "hide" $ Bind a b
 bind a@(Unique h c) b@(Unique h2 c2) = do
   res <- bind c c2
   if h == h2
@@ -771,7 +792,6 @@ has a r@(Reference n) = do
   def <- getDef n
   return $ Has a def
   `catchError` const (return (Has a r))
--- left associative rules
 has a@(Literal All) b = return b
 has Wildcard b = return b
 has a@(Literal (Thing _)) b = throwError $ BadHas a b
@@ -804,6 +824,7 @@ has a@(Refine _ _) b = throwError $ NotImplemented "Refined Has" $ Has a b
 has a@(Has _ _) b = throwError $ NotNormalized $ Has a b
 has a@(Bind x y) b = throwError $ BadHas a b -- should be stepped
 has a@(Select x ids) b = throwError $ BadHas a b -- should be stepped
+has a@(Hide x ids) b = throwError $ BadHas a b -- should be stepped
 has a@(Unique h1 x) b@(Unique h2 y) =
   if h1 == h2
     then return $ Unique h1 $ Has x y
@@ -874,11 +895,28 @@ stepCall a b = error "bad evaluate call"
 
 stepScope :: [MountainTerm] -> MountainContextT IO MountainTerm
 stepScope [] = throwError EmptyScope
-stepScope [x] = return x
+stepScope (b@(Bind x y):xs) = do
+  if isRecursive b
+    then do
+      pushEnv M.empty
+      _ <- bind x y
+      new_env <- popEnv 
+      case xs of
+        [] -> return b
+        _ -> return $ Context new_env $ Scope xs
+    else do
+      pushEnv M.empty
+      res <- bind x y
+      new_env <- popEnv 
+      case xs of
+        [] -> return res
+        _ -> return $ Context new_env $ Scope (res : xs)
 stepScope (x:xs) = do
-  res <- stepBind x
+  res <- step x
   if res == x
-    then return $ Scope xs
+    then return $ case xs of
+      [] -> res
+      other -> Scope xs
     else return $ Scope (res:xs)
 
 dotPathAsDir :: String -> FilePath

@@ -3,6 +3,7 @@ module Mountain.MountainSpec (spec) where
 
 import Data.Either
 import qualified Data.Map.Strict as M
+import Data.Map.Strict (fromList)
 import Debug.Trace
 
 import Test.Hspec
@@ -26,20 +27,19 @@ spec = do
     let a_c = Function [a, c]
     let a_d = Function [a, d]
     describe "Recursive" $ do
-        let simple_rec = fromRight (error "bad simple_rec parsing") $ parseString "Self = ( Self | ((#a -> #b)#a, Self))"
-        let nat = fromRight (error "bad nat parsing") $ parseString "Nat = {#Z | (#S, Nat)}"
         it "Simple recursion should be identified" $ do
+          let simple_rec = Bind (Reference "x") (Function [Literal $ Thing "a", Reference "x"])
           isRecursive simple_rec `shouldBe` True
-        it "Nats are recursive" $ do
-          isRecursive nat `shouldBe` True
-        it "should not step recursive nats" $ do
-          res <- runMountain $ stepMany 10 nat
-          let (Right (val, env), log) = res
-          val `shouldBe` nat
-        it "should step other parts of rec cat" $ do
+        it "should not remove binding on finished rec" $ do
+          let simple_rec = Scope [Bind (Reference "x") (Function [Literal $ Thing "a", Reference "x"])]
           res <- runMountain $ stepMany 10 simple_rec
           let (Right (val, env), log) = res
-          val `shouldBe` Bind (Reference "Self") (Either [Reference "Self",Tuple [Literal (Thing "b"),Reference "Self"]])
+          val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "a"),Reference "x"])
+        it "should step other parts of rec cat" $ do
+          let need_eval_rec = Bind (Reference "x") (Function [Call (Function [a,b]) a, Reference "x"])
+          res <- runMountain $ stepMany 10 need_eval_rec
+          let (Right (val, env), log) = res
+          val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "b"),Reference "x"])
     describe "Import" $ do
       it "Should import nats" $ do
         res <- runMountain $ dotImportFile "Tests.Import.1_import_nat"
@@ -52,8 +52,8 @@ spec = do
             val `shouldBe` Scope [Import (Bind (Reference "Nat") (Select (Reference "Tests") ["Import","1_test_nat"])),Reference "Nat"]
             res <- runMountain $ stepMany 20 val
             let (Right (val, MountainEnv _ env), log) = res
-            val `shouldBe` nat_import'
-            map M.toList env `shouldBe` [[("Nat",nat_import')]]
+            let (Scope [x]) = nat_import'
+            val `shouldBe` x
     describe "Step" $ do
       it "should keep sets in a context" $ do
         let nat = fromRight (error "bad nat parsing") $ parseString "Nat = {zero:#Z | succ:(#S, Nat)}"
@@ -65,13 +65,22 @@ spec = do
             val `shouldBe` Bind (Reference "Nat") (Set [Either [Bind (Reference "zero") (Literal (Thing "Z")),Bind (Reference "succ") (Tuple [Literal (Thing "S"),Reference "Nat"])]])
       it "should resolve contexts" $ do
         let term = fromRight (error "404") $ parseString "<x:#1> => x"
-        term `shouldBe` Context (M.fromList [("x",Literal (Thing "1"))]) (Reference "x")
+        term `shouldBe` Scope [Context (M.fromList [("x",Literal (Thing "1"))]) (Reference "x")]
         res <- runMountain $ stepMany 10 term
         let (res', log) = res
         case res' of
           Left e -> error (show e ++ "\n\n" ++ show log)
           Right (val, env) -> do
             val `shouldBe` Literal (Thing "1")
+      it "should join contexts in eithers" $ do
+        let term = fromRight (error "404") $ parseString "(<x:#1> => x) | (<x:#2> => x)"
+        term `shouldBe` Scope [Either [Context (fromList [("x",Literal (Thing "1"))]) (Reference "x"),Context (fromList [("x",Literal (Thing "2"))]) (Reference "x")]]
+        res <- runMountain $ stepMany 10 term
+        let (res', log) = res
+        case res' of
+          Left e -> error (show e ++ "\n\n" ++ show log)
+          Right (val, MountainEnv _ env) -> do
+            val `shouldBe` Either [Literal (Thing "1"),Literal (Thing "2")]
     describe "Bind" $ do
       it "should bind things and create a scope" $ do
         res <- runMountain $ bind (Reference "x") a
@@ -83,63 +92,47 @@ spec = do
         let (Right (val, env), _) = res
         val `shouldBe` a
       it "should handle dependent tuples" $ do
-        let bindable = Tuple [Reference "x", Reference "y"]
-        let bindee = Tuple [a, b]
-        res <- runMountain $ stepBindMany 5 $ Bind bindable bindee
+        let parse_str = "\\{ (x,y) = (#a,#b); (x,y)}"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 10 res
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Tuple [Literal (Thing "a"),Literal (Thing "b")]
-        map M.toList env `shouldBe` [[("x", a), ("y", b)]]
       it "should handle unbound references in tuples" $ do
-        let bindable = Tuple [Reference "x", Reference "y"]
-        let bindee = Tuple [Reference "k", Reference "b"]
-        res <- runMountain $ stepBindMany 5 $ Bind bindable bindee
+        let parse_str = "\\{ (x,y) = (k,b); (x,y)}"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 10 $ res
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Tuple [Reference "k", Reference "b"]
-        map M.toList env `shouldBe` [[("x", Reference "k"), ("y", Reference "b")]]
       it "should directly bind to recursive functions" $ do
-        let bindable = Reference "x"
-        let bindee = Bind (Reference "Self") $ Function [a, Reference "Self"]
-        res <- runMountain $ stepBind $ Bind bindable bindee
+        let parse_str = "\\{ x = #a -> x; x}"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 5 res
         let (Right (val, MountainEnv _ env), log) = res
-        val `shouldBe` bindee
-        map M.toList env `shouldBe` [[("x", bindee)]]
+        val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "a"),Reference "x"])
       it "should handle recursion" $ do
-        let bindable = Function [a, a, Reference "y"]
-        let bindee = Bind (Reference "Self") $ Function [a, Reference "Self"]
-        res <- runMountain $ stepBindMany 20 $ Bind bindable bindee
-        print res
+        let parse_str = "#a -> #a -> y = (x = #a -> x); y"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
         let (Right (val, MountainEnv _ env), log) = res
-        val `shouldBe` Function [a, a, bindee]
-        map M.toList env `shouldBe` [[("y", bindee)]]
+        val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "a"),Reference "x"])
       it "should handle left binds" $ do
-        let bindable = Bind (Reference "x") Wildcard
-        let bindee = Literal (Thing "a")
-        res <- runMountain $ bind bindable bindee
-        let (Right (val, MountainEnv _ env), _) = res
-        val `shouldBe` Bind (Reference "x") (Bind Wildcard (Literal (Thing "a")))
-        map M.toList env `shouldBe` []
-        res <- runMountain $ stepBind val
-        let (Right (val, MountainEnv _ env), _) = res
-        val `shouldBe` Bind (Reference "x") (Literal (Thing "a"))
-        map M.toList env `shouldBe` []
-        res <- runMountain $ stepBind val
+        let parse_str = "(x = ?) = #a; x"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
         let (Right (val, MountainEnv _ env), _) = res
         val `shouldBe` Literal (Thing "a")
-        map M.toList env `shouldBe` [[("x", Literal $ Thing "a")]]
       it "should bind placeholder functions" $ do
-        let bindable = Function [Reference "x", Reference "y"]
-        let bindee = Function [a, b]
-        res <- runMountain $ stepBindMany 5 (Bind bindable bindee)
+        let parse_str = "z = x -> y = #a -> #b; z"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
         let (Right (val, MountainEnv _ env), _) = res
         val `shouldBe` Function [Literal (Thing "a"),Literal (Thing "b")]
-        map M.toList env `shouldBe` [[("x", Literal $ Thing "a"),("y", Literal $ Thing "b")]]
       it "should bind placeholder functions and not their internal scope" $ do
-        let bindable = Function [Reference "x", Reference "y"]
-        let bindee = Function [Bind (Reference "z") a, Reference "z"]
-        res <- runMountain $ stepBindMany 10 (Bind bindable bindee)
+        let parse_str = "z = x -> y = (a:#a -> a); z"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
         let (Right (val, MountainEnv _ env), _) = res
         val `shouldBe` Function [Literal (Thing "a"),Literal (Thing "a")]
-        map M.toList env `shouldBe` [[("x", a), ("y", a)]]
     describe "has" $ do
       it "(things) equal things don't have each other" $ do
           let env = defaultEnv
@@ -264,45 +257,34 @@ spec = do
       it "(references) should handle simple function" $ do
         res <- runMountain $ dotImportFile "Tests.Has.1_simple_function"
         let (Right (val, env), _) = res
-        val `shouldBe` Has (Function [Reference "a",Reference "a"]) (Function [Literal (Thing "1"),Literal (Thing "2")])
+        val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Literal (Thing "1"),Literal (Thing "2")])]
         result <- stepAndResult env val
         let Right (val, env) = result
-        val `shouldBe` Function [Has (Reference "a") (Literal (Thing "1")),Has (Reference "a") (Literal (Thing "2"))]
+        val `shouldBe` Scope [Function [Has (Reference "a") (Literal (Thing "1")),Has (Reference "a") (Literal (Thing "2"))]]
         map M.toList (environment env) `shouldBe` []
         result <- stepAndResult env val
         let Right (val, env) = result
-        val `shouldBe` Function [Literal (Thing "1"),Has (Reference "a") (Literal (Thing "2"))]
+        val `shouldBe` Scope [Function [Literal (Thing "1"),Has (Reference "a") (Literal (Thing "2"))]]
         map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "1")])]]
         result <- stepAndResult env val
         let Right (val, env) = result
-        val `shouldBe` Function [Literal (Thing "1"),Has (Set [Literal (Thing "1")]) (Literal (Thing "2"))]
+        val `shouldBe` Scope [Function [Literal (Thing "1"),Has (Set [Literal (Thing "1")]) (Literal (Thing "2"))]]
         map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "1")])]]
         result <- stepAndResult env val
         result `shouldBe` Left (BadHas (Set [Literal (Thing "1")]) (Literal (Thing "2")))
       it "(references) should handle backtracking" $ do
         res <- runMountain $ dotImportFile "Tests.Has.2_backtrack"
         let (Right (val, env), _) = res
-        val `shouldBe` Has (Function [Reference "a",Reference "a"]) (Function [Reference "x",Literal (Thing "2")])
-        result <- stepAndResult env val
-        let Right (val, env) = result
-        val `shouldBe` Function [Has (Reference "a") (Reference "x"),Has (Reference "a") (Literal (Thing "2"))]
-        map M.toList (environment env) `shouldBe` []
-        result <- stepAndResult env val
-        let Right (val, env) = result
-        val `shouldBe` Function [Has (Reference "a") (Reference "x"),Literal (Thing "2")]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")])]]
-        result <- stepAndResult env val
-        let Right (val, env) = result
-        val `shouldBe` Function [Has (Set [Literal (Thing "2")]) (Reference "x"),Literal (Thing "2")]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")])]]
-        result <- stepAndResult env val
-        let Right (val, env) = result
+        val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Reference "x",Literal (Thing "2")])]
+        res <- runMountain $ stepMany 20 val
+        let (Right (val, MountainEnv _ env), log) = res
+        print log
         val `shouldBe` Function [Literal (Thing "2"),Literal (Thing "2")]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]
+        env `shouldBe` []
       it "(references) should handle functions and backtracking" $ do
         res <- runMountain $ dotImportFile "Tests.Has.3_function_binding"
         let (Right (val, env), _) = res
-        val `shouldBe` Has (Function [Reference "a",Reference "a"]) (Function [Function [Reference "x",Reference "y"],Literal (Thing "2"),Literal (Thing "3")])
+        val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Function [Reference "x",Reference "y"],Literal (Thing "2"),Literal (Thing "3")])]
         res <- runMountain $ stepMany 10 val
         let (Right (val, env), _) = res
         val `shouldBe` Function [
@@ -313,7 +295,7 @@ spec = do
       it "(references) should handle tuples and backtracking" $ do
         res <- runMountain $ dotImportFile "Tests.Has.4_tuple"
         let (Right (val, env), _) = res
-        val `shouldBe` Has (Tuple [Reference "a",Reference "a"]) (Tuple [Reference "x",Literal (Thing "2")])
+        val `shouldBe` Scope [Has (Tuple [Reference "a",Reference "a"]) (Tuple [Reference "x",Literal (Thing "2")])]
         res <- runMountain $ stepMany 10 val
         let (Right (val, env), _) = res
         val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]

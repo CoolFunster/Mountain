@@ -219,11 +219,11 @@ pCall pa = do
 
 pSelectHideExt :: (Show a) => Structure a -> Parser (Structure a)
 pSelectHideExt base = do
-  s <- symbol ".-" <|> symbol "." 
+  s <- symbol ".-" <|> symbol "."
   ids <- choice [
     (: []) <$> try pId,
     pWrapBetween "[" "]" (sepEndBy pId (pWrapWS ","))]
-  let res = 
+  let res =
         case s of
           ".-" -> Hide base ids
           "." -> Select base ids
@@ -231,7 +231,7 @@ pSelectHideExt base = do
   followup <- optional $ pSelectHideExt res
   case followup of
     Nothing -> return res
-    Just x -> trace (show x) return x
+    Just x -> return x
 
 pSelectHide :: (Show a) => Parser a -> Parser (Structure a)
 pSelectHide pa = do
@@ -311,13 +311,16 @@ prettyTerm ((Context env a)) = do
   "(<" ++ intercalate "," terms ++ ">  => " ++ prettyTerm a ++ ")"
 
 prettyMountainEnv :: MountainEnv -> String
-prettyMountainEnv (MountainEnv _ e) = prettyEnv e
+prettyMountainEnv (MountainEnv _ e) = show $ map prettyEnv e
 
-prettyEnv :: (Show a) => [Env a] -> String
-prettyEnv xs =
-    show (map (M.toList . M.map show) xs)
+prettyEnv :: (Show a) => Env (Structure a) -> String
+prettyEnv xs = do
+  let env_as_list = M.toList xs
+  let terms = map (\(a,b) -> a ++ ":" ++ prettyTerm b) env_as_list
+  "<" ++ intercalate "," terms ++ ">"
 
 instance (Show a) => Show (Log a) where
   show (Step term env) = do
     let pterm = prettyTerm term
-    "Step " ++ prettyEnv env ++ " => " ++ pterm
+    let res = "Step [" ++  intercalate "," (map prettyEnv env) ++ "] => " ++ pterm
+    res
