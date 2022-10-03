@@ -194,6 +194,7 @@ replace old new input_s =
 
 -- TODO handle tuples and functions in a dep context with subtle binds
 -- probably via star
+-- TODO isRecursive should handle Contexts
 isRecursive :: Structure a -> Bool
 isRecursive (Bind (Reference n) s) =
   let
@@ -624,130 +625,153 @@ evaluate t = do
     then return res
     else evaluate res
 
--- Terms must be normalized, 
--- and fully stepped without binding new terms into context
--- That means contexts have been already replaced in terms
 bind :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-bind a@(Bind x y) b = return $ Bind x (Bind y b)
-bind a b@(Bind x y) = do
-  if isRecursive b
-    then case a of
-      Reference n -> do
-        putDef n b
-        return b
-      other -> do
-        pushEnv M.empty
+bind a@(Context env z@(Bind x y)) b = do
+  if isRecursive z
+    then throwError $ NotImplemented "Recursive lhs binds" $ Bind a b
+    else return $ Bind (Context env x) (Bind (Context env y) b)
+bind (Context env r@(Reference n)) b@(Bind x y) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Bind r' b
+    Nothing -> do
+      if isRecursive b
+        then do
+          putDef n b
+          return b
+      else if isRecursive $ Bind r b
+        then do
+          putDef n (Bind r b)
+          return b
+      else do
         res <- bind x y
-        new_env <- popEnv
-        return $ Bind a (Context new_env res)
+        return $ Bind (Context env r) res
+bind (Context env r@(Reference n)) b = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Bind r' b
+    Nothing -> do
+      if isRecursive $ Bind r b
+        then do
+          putDef n (Bind r b)
+          return b
+      else do
+          putDef n b
+          return b
+bind a@(Context _ _) b@(Bind x y) = do
+  if isRecursive b
+    then do
+      pushEnv M.empty
+      res <- bind x y
+      new_env <- popEnv
+      return $ Bind a (Context new_env res)
     else do
       res <- bind x y
       return $ Bind a res
-bind a b@(Either inner) = return $ Either $ map (a `Bind`) inner
-bind a b@(Each inner) = return $ Each $ map (a `Bind`) inner
-bind a@(Except inner) b = throwError $ NotImplemented "Excepts" $ Bind a b
-bind a b@(Except inner) = throwError $ NotImplemented "Excepts" $ Bind a b
-bind a@(Context _ _) b = throwError $ NotImplemented "Context lhs bind" $ Bind a b
-bind a b@(Context env x) = do
+bind a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Bind`) inner
+bind a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Bind`) inner
+bind (Context env a@(Except inner)) b = return $ Except $ map ((`Bind` b) . Context env) inner
+bind a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Bind`) inner
+bind a@(Context _ _) b@(Context env x) = do
+  pushEnv env
   res <- bind a x
+  new_env <- popEnv
   case res of
-    Bind a' b' -> return $ Bind a' (Context env b')
-    other -> return $ Context env other
-bind r@(Reference n) b =
-  if isRecursive $ Bind r b
-    then do
-      putDef n (Bind r b)
-      return b
-    else do
-      putDef n b
-      return b
-bind a (Import b) = return $ Import (Bind a b) -- TODO change to make imports bind afterwards
-bind a@(Import _) b = throwError $ BadBind a b
-bind Wildcard b = return b
-bind a@(Literal x) b@(Literal y) =
+    Bind a' b' -> return $ Bind a' (Context new_env b')
+    other -> return $ Context new_env other
+bind a@(Context _ _) (Import b) = return $ Import (Bind a b) -- TODO change to make imports bind afterwards
+bind (Context env a@(Import _)) b = error "imports should be stepped before binding"
+bind (Context env Wildcard) b = return b
+bind (Context env a@(Literal x)) b@(Literal y) =
   if x == y
     then return a
     else throwError $ BadBind a b
-bind a@(Literal _) b = throwError $ BadBind a b
-bind a@(Set [r@(Reference n)]) b@(Set elems2) =
-  return $ Bind r (Either elems2)
-bind a@(Set elems) b@(Set elems2) =
-  if elems == elems2
-    then return b
-    else throwError $ BadBind a b
-bind a@(Set elems) b = throwError $ BadBind a b
-bind a@(Function []) b@(Function []) = return b
-bind a@(Function _) b@(Function ((Bind ya yb):ys)) = do
+bind (Context env a@(Literal _)) b = throwError $ BadBind a b
+bind (Context env a@(Set [r@(Reference n)])) b@(Set elems2) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Bind (Context env (Set [r'])) b
+    Nothing -> return $ Bind r (Either elems2)
+bind a@(Context env x@(Set elems)) b@(Set elems2) = throwError $ NotImplemented "Set equality" $ Bind a b
+bind (Context env a@(Set elems)) b = throwError $ BadBind a b
+bind (Context env a@(Function [])) b@(Function []) = return b
+bind a@(Context env (Function _)) b@(Function (ib@(Bind ya yb):ys)) = do
   pushEnv M.empty
   res <- bind ya yb
   env' <- popEnv
   return $ Bind a (Context env' (Function (res:ys)))
-bind a@(Function (Wildcard:xs)) b@(Function (y:ys)) = do
-  res <- bind (normalize $ Function xs) (normalize $ Function ys)
-  case res of
-    Bind xs' ys' ->
-      if isRecursive res
-        then return (Function [y,res])
+bind (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
+  -- normalized here because Function [x] == x
+  res <- bind (Context env (normalize $ Function xs)) (normalize $ Function ys)
+  case normalize res of
+    b'@(Bind (Context new_env xs') ys') -> -- TODO isRecursive should handle Contexts
+      if isRecursive $ Bind xs' ys'
+        then return (Function [y,ys'])
+        else return $ Bind (Context new_env $ Function [Wildcard,xs']) (Function [y, ys'])
+    b'@(Bind xs' ys') ->
+      if isRecursive b'
+        then return (Function [y,b'])
         else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
-    other -> return (Function [y,res])
-bind a@(Function (x:xs)) b@(Function (y:ys)) = do
+    other -> return (Function [y,other])
+bind (Context env a@(Function (x:xs))) b@(Function (y:ys)) = do
   res <- bind x y
-  case res of
-    Bind x' y' ->
-      if isRecursive res
-        then return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
+  case normalize res of
+    b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
+      if isRecursive $ Bind x' y'
+        then return $ Bind (Function (Wildcard:xs)) (Function (b':ys))
         else return $ Bind (Function (x':xs)) (Function (y':ys))
+    b'@(Bind x' y') ->
+      if isRecursive b'
+        then return (Function (b':ys))
+        else return $ Bind (Function (Wildcard:xs)) (Function (y':ys))
     other -> return $ Bind (Function (Wildcard:xs)) (Function (other:ys))
-bind a@(Function _) b = throwError $ BadBind a b
-bind a@(Tuple []) b@(Tuple []) = return b
-bind a@(Tuple _) b@(Tuple ((Bind ya yb):ys)) = do
+bind (Context env a@(Function _)) b = throwError $ BadBind a b
+bind (Context env a@(Tuple [])) b@(Tuple []) = return b
+bind a@(Context env (Tuple _)) b@(Tuple ((Bind ya yb):ys)) = do
   pushEnv M.empty
   res <- bind ya yb
   env' <- popEnv
   return $ Bind a (Context env' (Tuple (res:ys)))
-bind a@(Tuple (Wildcard:xs)) b@(Tuple (y:ys)) = do
-  res <- bind (normalize $ Tuple xs) (normalize $ Tuple ys)
-  case res of
-    Bind xs' ys' ->
-      if isRecursive res
-        then return (Tuple [y,res])
+bind (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
+  res <- bind (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
+  case normalize res of
+    b'@(Bind (Context new_env xs') ys') -> -- TODO isRecursive should handle Contexts
+      if isRecursive $ Bind xs' ys'
+        then return (Tuple [y,ys'])
+        else return $ Bind (Context new_env $ Tuple [Wildcard,xs']) (Tuple [y, ys'])
+    b'@(Bind xs' ys') ->
+      if isRecursive b'
+        then return (Tuple [y,b])
         else return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
-    other -> return (Tuple [y,res])
-bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
+    other -> return (Tuple [y,other])
+bind (Context env a@(Tuple (x:xs))) b@(Tuple (y:ys)) = do
   res <- bind x y
-  case res of
-    Bind x' y' ->
-      if isRecursive res
-        then return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
+  case normalize res of
+    b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
+      if isRecursive $ Bind x' y'
+        then return $ Bind (Tuple (Wildcard:xs)) (Tuple (b':ys))
         else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
+    b'@(Bind x' y') ->
+      if isRecursive b'
+        then return (Tuple (b':ys))
+        else return $ Bind (Tuple (Wildcard:xs)) (Tuple (y':ys))
     other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (other:ys))
-bind a@(Tuple _) b = throwError $ BadBind a b
-bind a@(Each inner) b = return $ Each $ map (`Bind` b) inner
-bind a@(Either inner) b = return $ Either $ map (`Bind` b) inner
-bind a@(Scope _) b = throwError $ BadBind a b
-bind a@(Call x y) b@(Call x2 y2) = do
+bind (Context env a@(Tuple _)) b = throwError $ BadBind a b
+bind (Context env a@(Each inner)) b = return $ Each $ map ((`Bind` b) . Context env) inner
+bind (Context env a@(Either inner)) b = return $ Either $ map ((`Bind` b) . Context env) inner
+bind (Context env a@(Scope _)) b = error "Scopes should be normalized away in binds"
+bind (Context env a@(Call x y)) b@(Call x2 y2) = do
   resx <- bind x x2
   resy <- bind y y2
   return $ Call resx resy
-bind a@(Call _ _) b = throwError $ BadBind a b
-bind a@(Refine x y) b@(Refine x2 y2) = do
-  resx <- bind x x2
-  resy <- bind y y2
-  return $ Call resx resy
-bind a@(Refine _ _) b = throwError $ BadBind a b
-bind a@(Has typ x) b = bind x (Has typ b)
-bind a@(Select x ids) b = throwError $ BadBind a b
-bind a@(Hide x ids) b = throwError $ NotImplemented "hide" $ Bind a b
-bind a b@(Hide y ids) = throwError $ NotImplemented "hide" $ Bind a b
-bind a@(Unique h c) b@(Unique h2 c2) = do
-  res <- bind c c2
-  if h == h2
-    then return $ Unique h2 res
-    else throwError $ BadBind a b
-bind a@(Unique _ _) b = throwError $ BadBind a b
-
-getBindings :: Structure MountainLiteral -> MountainContextT IO (Env (Structure MountainLiteral))
-getBindings = error "not implemented"
+bind (Context env (Call _ _)) _ = error "Calls should be normalized away in before bind"
+bind a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined binding" $ Bind a b
+bind (Context env (Has typ x)) b = bind (Context env x) (Has (Context env typ) b)
+bind a@(Context env (Select x ids)) b = throwError $ NotImplemented "binding on selects" $ Bind a b
+bind a@(Context env (Hide x ids)) b = throwError $ NotImplemented "binding on hides" $ Bind a b
+bind a@(Context env (Unique _ _)) b = throwError $ NotImplemented "binding on Uniques" $ Bind a b
+bind (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
+bind a b = bind (Context M.empty a) b
 
 stepHas :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
 stepHas x y = do
@@ -896,14 +920,14 @@ stepScope (b@(Bind x y):xs) = do
     then do
       pushEnv M.empty
       _ <- bind x y
-      new_env <- popEnv 
+      new_env <- popEnv
       case xs of
         [] -> return b
         _ -> return $ Context new_env $ Scope xs
     else do
       pushEnv M.empty
       res <- bind x y
-      new_env <- popEnv 
+      new_env <- popEnv
       case xs of
         [] -> return res
         _ -> return $ Context new_env $ Scope (res : xs)
