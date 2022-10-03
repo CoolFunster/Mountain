@@ -133,6 +133,38 @@ spec = do
         res <- runMountain $ stepMany 20 res
         let (Right (val, MountainEnv _ env), _) = res
         val `shouldBe` Function [Literal (Thing "a"),Literal (Thing "a")]
+      it "Should handle simple contexts on the lhs of bind" $ do
+        let parse_str = "(z:a -> z) = #a -> #a; a"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` a
+      it "Should keep inner var of lhs of bind unbound" $ do
+        let parse_str = "(z:a -> z) = #a -> #a; z"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Reference "z"
+      it "Should handle simple contexts on the lhs of bind" $ do
+        let parse_str = "(z:a -> z) = #a -> #a; a"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` a
+      it "Should handle contexts on both sides" $ do
+        let parse_str = "(a:#x -> b:#y -> (a,b)) = (a1:#x -> b1:#y -> (a1,b1)); #a"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` a
+        env `shouldBe` []
+      it "Should bind references onto itself without doing anything else" $ do
+        let parse_str = "a = a; a"
+        let res = fromRight (error "404") $ parseString parse_str
+        res <- runMountain $ stepMany 20 res
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Reference "a"
+        env `shouldBe` []
     describe "has" $ do
       it "(things) equal things don't have each other" $ do
           let env = defaultEnv

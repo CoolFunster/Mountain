@@ -646,6 +646,16 @@ bind (Context env r@(Reference n)) b@(Bind x y) = do
       else do
         res <- bind x y
         return $ Bind (Context env r) res
+bind (Context env r@(Reference n)) b@(Reference m) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Bind r' b
+    Nothing ->
+      if n == m
+        then return (Reference m)
+        else do
+          putDef n b
+          return b
 bind (Context env r@(Reference n)) b = do
   let res = M.lookup n env
   case res of
@@ -700,6 +710,30 @@ bind a@(Context env (Function _)) b@(Function (ib@(Bind ya yb):ys)) = do
   res <- bind ya yb
   env' <- popEnv
   return $ Bind a (Context env' (Function (res:ys)))
+bind a@(Context env (Function (x@(Bind xa Wildcard):xs))) b@(Function (y:ys)) = do
+  pushEnv env
+  res <- bind (Context env xa) y
+  new_env <- popEnv
+  case normalize res of
+    b'@(Bind (Context env x') y') -> do -- TODO isRecursive should handle Contexts
+      let final_env = M.union new_env env
+      if isRecursive $ Bind x' y'
+        then return $ Bind (Context final_env (Function (Wildcard:xs))) (Function (b':ys))
+        else return $ Bind (Context final_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+    b'@(Bind x' y') -> do
+      if isRecursive b'
+        then return $ Bind (Context new_env (Function (Wildcard:xs))) (Function (y':ys))
+        else return $ Bind (Context new_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+    other ->
+      return $ Bind (Context new_env (Function (Wildcard:xs))) (Function (other:ys))
+bind a@(Context env (Function (x@(Bind xa xb):xs))) b@(Function (y:ys)) = do
+  res <- bind (Context env (Function (xb:xs))) (Function (y:ys))
+  case normalize res of
+    b'@(Bind (Context env (Function (x':xs'))) y') -> do
+      return $ Bind (Context env (Function (Bind xa x':xs'))) y'
+    b'@(Bind (Function (x':xs')) y') -> do
+      return $ Bind (Function (Bind xa x':xs')) y'
+    other -> return other
 bind (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
   -- normalized here because Function [x] == x
   res <- bind (Context env (normalize $ Function xs)) (normalize $ Function ys)
@@ -714,7 +748,7 @@ bind (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
         else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
     other -> return (Function [y,other])
 bind (Context env a@(Function (x:xs))) b@(Function (y:ys)) = do
-  res <- bind x y
+  res <- bind (Context env x) y
   case normalize res of
     b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
       if isRecursive $ Bind x' y'
@@ -732,6 +766,30 @@ bind a@(Context env (Tuple _)) b@(Tuple ((Bind ya yb):ys)) = do
   res <- bind ya yb
   env' <- popEnv
   return $ Bind a (Context env' (Tuple (res:ys)))
+bind a@(Context env (Tuple (x@(Bind xa Wildcard):xs))) b@(Tuple (y:ys)) = do
+  pushEnv env
+  res <- bind (Context env xa) y
+  new_env <- popEnv
+  case normalize res of
+    b'@(Bind (Context env x') y') -> do -- TODO isRecursive should handle Contexts
+      let final_env = M.union new_env env
+      if isRecursive $ Bind x' y'
+        then return $ Bind (Context final_env (Tuple (Wildcard:xs))) (Tuple (b':ys))
+        else return $ Bind (Context final_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+    b'@(Bind x' y') -> do
+      if isRecursive b'
+        then return $ Bind (Context new_env (Tuple (Wildcard:xs))) (Tuple (y':ys))
+        else return $ Bind (Context new_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+    other ->
+      return $ Bind (Context new_env (Tuple (Wildcard:xs))) (Tuple (other:ys))
+bind a@(Context env (Tuple (x@(Bind xa xb):xs))) b@(Tuple (y:ys)) = do
+  res <- bind (Context env (Tuple (xb:xs))) (Tuple (y:ys))
+  case normalize res of
+    b'@(Bind (Context env (Tuple (x':xs'))) y') -> do
+      return $ Bind (Context env (Tuple (Bind xa x':xs'))) y'
+    b'@(Bind (Tuple (x':xs')) y') -> do
+      return $ Bind (Tuple (Bind xa x':xs')) y'
+    other -> return other
 bind (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
   res <- bind (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
   case normalize res of
