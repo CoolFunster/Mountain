@@ -682,24 +682,22 @@ bind a@(Function _) b@(Function ((Bind ya yb):ys)) = do
   res <- bind ya yb
   env' <- popEnv
   return $ Bind a (Context env' (Function (res:ys)))
+bind a@(Function (Wildcard:xs)) b@(Function (y:ys)) = do
+  res <- bind (normalize $ Function xs) (normalize $ Function ys)
+  case res of
+    Bind xs' ys' ->
+      if isRecursive res
+        then return (Function [y,res])
+        else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
+    other -> return (Function [y,res])
 bind a@(Function (x:xs)) b@(Function (y:ys)) = do
-  case x of
-    Wildcard -> do
-      res <- bind (normalize $ Function xs) (normalize $ Function ys)
-      case res of
-        Bind xs' ys' ->
-          if isRecursive res
-            then return (Function [y,res])
-            else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
-        other -> return (Function [y,res])
-    _ -> do
-      res <- bind x y
-      case res of
-        Bind x' y' ->
-          if isRecursive res
-            then return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
-            else return $ Bind (Function (x':xs)) (Function (y':ys))
-        other -> return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
+  res <- bind x y
+  case res of
+    Bind x' y' ->
+      if isRecursive res
+        then return $ Bind (Function (Wildcard:xs)) (Function (res:ys))
+        else return $ Bind (Function (x':xs)) (Function (y':ys))
+    other -> return $ Bind (Function (Wildcard:xs)) (Function (other:ys))
 bind a@(Function _) b = throwError $ BadBind a b
 bind a@(Tuple []) b@(Tuple []) = return b
 bind a@(Tuple _) b@(Tuple ((Bind ya yb):ys)) = do
@@ -707,24 +705,22 @@ bind a@(Tuple _) b@(Tuple ((Bind ya yb):ys)) = do
   res <- bind ya yb
   env' <- popEnv
   return $ Bind a (Context env' (Tuple (res:ys)))
+bind a@(Tuple (Wildcard:xs)) b@(Tuple (y:ys)) = do
+  res <- bind (normalize $ Tuple xs) (normalize $ Tuple ys)
+  case res of
+    Bind xs' ys' ->
+      if isRecursive res
+        then return (Tuple [y,res])
+        else return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
+    other -> return (Tuple [y,res])
 bind a@(Tuple (x:xs)) b@(Tuple (y:ys)) = do
-  case x of
-    Wildcard -> do
-      res <- bind (normalize $ Tuple xs) (normalize $ Tuple ys)
-      case res of
-        Bind xs' ys' ->
-          if isRecursive res
-            then return (Tuple [y,res])
-            else return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
-        other -> return (Tuple [y,res])
-    _ -> do
-      res <- bind x y
-      case res of
-        Bind x' y' ->
-          if isRecursive res
-            then return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
-            else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
-        other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
+  res <- bind x y
+  case res of
+    Bind x' y' ->
+      if isRecursive res
+        then return $ Bind (Tuple (Wildcard:xs)) (Tuple (res:ys))
+        else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
+    other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (other:ys))
 bind a@(Tuple _) b = throwError $ BadBind a b
 bind a@(Each inner) b = return $ Each $ map (`Bind` b) inner
 bind a@(Either inner) b = return $ Either $ map (`Bind` b) inner
