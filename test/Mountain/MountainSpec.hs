@@ -167,77 +167,33 @@ spec = do
         env `shouldBe` []
     describe "has" $ do
       it "(things) equal things don't have each other" $ do
-          let env = defaultEnv
-          result <- stepAndResult env (Has a a)
-          result `shouldBe` Left (BadHas a a )
+          res <- runMountain $ stepMany 20 (Has a a)
+          let (res', log) = res
+          res' `shouldBe` Left (BadHas a a )
       it "(Set) set of thing has the thing" $ do
-          let env = defaultEnv
-          result <- stepAndResult env (Has (Set [a]) a)
-          let Right (val, env) = result
+          res <- runMountain $ stepMany 20 (Has (Set [a]) a)
+          let (Right (val, MountainEnv _ env), log) = res
           val `shouldBe` Literal (Thing "a")
       it "(Set) set of thing a does not have thing b" $ do
-          let env = defaultEnv
-          result <- stepAndResult env (Has (Set [a]) b)
-          result `shouldBe` Left (BadHas (Set [a]) b)
+          res <- runMountain $ stepMany 20 (Has (Set [a]) b)
+          let (Left e, log) = res
+          e `shouldBe` BadBind a b
       it "(Set) should have only its elements" $ do
-          let env = defaultEnv
-          result <- stepAndResult env (Has (Set [a,b]) b)
-          let Right (val, env) = result
-          val `shouldBe` Either [Has (Set [Literal (Thing "a")]) (Literal (Thing "b")),Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
+          res <- runMountain $ stepMany 20 (Has (Set [a,b]) a)
+          let (Right (val, MountainEnv _ env), log) = res
+          val `shouldBe` a
+          env `shouldBe` []
+
+          res <- runMountain $ stepMany 20 (Has (Set [a,b]) b)
+          let (Right (val, MountainEnv _ env), log) = res
           val `shouldBe` b
-          toList env `shouldBe` []
+          env `shouldBe` []
       it "(Set) should have eithers" $ do
-          let env = defaultEnv
-          result <- stepAndResult env (Has (Set [a,b]) (Either [a,b]))
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Has (Set [Literal (Thing "a"),Literal (Thing "b")]) (Literal (Thing "a")),
-            Has (Set [Literal (Thing "a"),Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Has (Set [Literal (Thing "a")]) (Literal (Thing "a")),
-            Has (Set [Literal (Thing "b")]) (Literal (Thing "a")),
-            Has (Set [Literal (Thing "a"),Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Literal (Thing "a"),
-            Has (Set [Literal (Thing "b")]) (Literal (Thing "a")),
-            Has (Set [Literal (Thing "a"),Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Literal (Thing "a"),
-            Has (Set [Literal (Thing "a"),Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Literal (Thing "a"),
-            Has (Set [Literal (Thing "a")]) (Literal (Thing "b")),
-            Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Literal (Thing "a"),
-            Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [Literal (Thing "a"),Literal (Thing "b")]
-          toList env `shouldBe` []
+          res <- runMountain $ stepMany 20 (Has (Set [a,b]) (Either [a,b]))
+          let (Right (val, MountainEnv _ env), log) = res
+          print log
+          val `shouldBe` Either [a,b]
+          env `shouldBe` []
       it "(Set,Either) Eithers of Sets should distribute" $ do
           let env = defaultEnv
           let val = Has (Either [Set [a], Set [b]]) b
@@ -257,16 +213,11 @@ spec = do
             Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
           toList env `shouldBe` []
       it "(Tuples) should unwrap types" $ do
-          let a' = Tuple [Set [a]]
-          let env = defaultEnv
-          result <- stepAndResult env (Has a' a)
-          let Right (val, env) = result
-          val `shouldBe` Has (Set [Literal (Thing "a")]) (Literal (Thing "a"))
-          toList env `shouldBe` []
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Literal (Thing "a")
-          toList env `shouldBe` []
+          res <- runMountain $ stepMany 20 $ Has (Tuple [Set [a]]) a
+          let (Right (val, MountainEnv _ env), log) = res
+          print log
+          val `shouldBe` a
+          env `shouldBe` []
       it "(Tuples) should unwrap values" $ do
           let a' = Tuple [a]
           let env = defaultEnv
@@ -281,29 +232,14 @@ spec = do
           let Right (val, env) = result
           val `shouldBe` Function [Has (Set [Literal (Thing "a")]) (Literal (Thing "a")),Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
       it "(references) should supply type var" $ do
-        let env = defaultEnv
-        result <- stepAndResult env (Has (Reference "x") a)
-        let Right (val, e) = result
+        result <- runMountain $ stepMany 20 $ Has (Reference "x") a
+        let (Right (val, MountainEnv _ env), log) = result
         val `shouldBe` Literal (Thing "a")
-        map M.toList (environment e) `shouldBe` [[("x",Set [a])]]
+        env `shouldBe` []
       it "(references) should handle simple function" $ do
         res <- runMountain $ dotImportFile "Tests.Has.1_simple_function"
         let (Right (val, env), _) = res
         val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Literal (Thing "1"),Literal (Thing "2")])]
-        result <- stepAndResult env val
-        let Right (val, env) = result
-        val `shouldBe` Scope [Function [Has (Reference "a") (Literal (Thing "1")),Has (Reference "a") (Literal (Thing "2"))]]
-        map M.toList (environment env) `shouldBe` []
-        result <- stepAndResult env val
-        let Right (val, env) = result
-        val `shouldBe` Scope [Function [Literal (Thing "1"),Has (Reference "a") (Literal (Thing "2"))]]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "1")])]]
-        result <- stepAndResult env val
-        let Right (val, env) = result
-        val `shouldBe` Scope [Function [Literal (Thing "1"),Has (Set [Literal (Thing "1")]) (Literal (Thing "2"))]]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "1")])]]
-        result <- stepAndResult env val
-        result `shouldBe` Left (BadHas (Set [Literal (Thing "1")]) (Literal (Thing "2")))
       it "(references) should handle backtracking" $ do
         res <- runMountain $ dotImportFile "Tests.Has.2_backtrack"
         let (Right (val, env), _) = res
@@ -317,7 +253,7 @@ spec = do
         res <- runMountain $ dotImportFile "Tests.Has.3_function_binding"
         let (Right (val, env), _) = res
         val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Function [Reference "x",Reference "y"],Literal (Thing "2"),Literal (Thing "3")])]
-        res <- runMountain $ stepMany 10 val
+        res <- runMountain $ stepMany 20 val
         let (Right (val, env), _) = res
         val `shouldBe` Function [
           Function [Reference "x",Reference "y"],
@@ -332,6 +268,21 @@ spec = do
         let (Right (val, env), _) = res
         val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]
         map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]
+      it "(functions) should handle simple functions 1" $ do
+        let example = "(a -> a)@(#a -> #a)"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        print res
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Function [a,a]
+        env `shouldBe` []
+      it "(functions) should handle simple functions 2" $ do
+        let example = "(a -> a)@(#1 -> #2)"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        print res
+        let (Left val, log) = res
+        val `shouldBe` BadBind (Literal $ Thing "1") (Literal $ Thing "2")
     -- describe "Select" $ do
       -- it "Should "
     -- describe "Base.Data.Numeric.Natural" $ do

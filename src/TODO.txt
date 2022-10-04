@@ -1,5 +1,3 @@
-- nested relabeling upon function call
-  (handles structural pattern matching)
 - strings
 - builtin parsing of numbers, strings, & lists
 - debugging has and call
@@ -91,3 +89,5 @@ Completed:
   Subtractive Access
     access with dot operator
   Question mark for placeholder flex
+  - nested relabeling upon function call
+  (handles structural pattern matching)

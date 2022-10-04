@@ -524,7 +524,7 @@ step t = normalize <$> step' t
       res <- _stepSeqNoError [x,y]
       let [x', y'] = res
       if x' == x && y' == y
-        then stepHas x y
+        then has x y
         else return $ Has x' y'
     step' b@(Bind x y) = do
       if isRecursive b
@@ -831,84 +831,74 @@ bind a@(Context env (Unique _ _)) b = throwError $ NotImplemented "binding on Un
 bind (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
 bind a b = bind (Context M.empty a) b
 
-stepHas :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-stepHas x y = do
-  has x y
-  `catchError` (\case
-      BadHas _ _ -> do
-        step_x <- step x
-        step_y <- step y
-        if step_x == x && step_y == y
-          then throwError $ BadHas x y
-          else return $ Has step_x step_y
-      other -> throwError other)
-
 has :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
     -- TODO: maybe a scope for the big has and small has so they don't overlap
 -- right associative rules come first
-has a@(Except inner) b = throwError $ NotImplemented "Excepts" $ Bind a b
-has a b@(Except inner) = throwError $ NotImplemented "Excepts" $ Bind a b
-has a (Either ys) = return $ Either (map (Has a) ys)
-has a (Each ys) = return $ Each (map (Has a) ys)
-has t@(Reference n) v@(Reference k) = do
-  def <- getDef n
-  return $ Has def v
-  `catchError` (\e -> do {
+has a@(Context _ _) b@(Has _ _) = error "has should be normalized before call"
+has a@(Context env (Has x y)) b = do
+  pushEnv env
+  res <- has x y
+  new_env <- popEnv
+  case normalize res of
+    h@(Has x' y') -> return $ Has (Has x' y') b
+    y' -> return $ Has (Context new_env y')  b
+has a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Has`) inner
+has a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Has`) inner
+has a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Has`) inner
+has t@(Context env (Reference n)) v@(Reference k) = do
+  let nres = M.lookup n env
+  case nres of
+    Just def -> return $ Has def v
+    Nothing -> do
       def <- getDef k
-    ; return $ Has t def
-    } `catchError` const (return $ Has t v))
-has t@(Reference n) a = do
-  def <- getDef n
-  return $ Has def a
-  `catchError` (\e -> do
-    putDef n (Set [a])
-    return a)
-has (Set [x]) y@(Reference n) = do
-  putDef n x
-  return x
-has a r@(Reference n) = do
+      return $ Has t def
+  `catchError` const (return $ Has t v)
+has t@(Context env (Reference n)) a = do
+  let nres = M.lookup n env
+  case nres of
+    Just def -> return $ Has def a
+    Nothing -> do
+      let new_env = M.insert n (Set [a]) env
+      return $ Has (Context new_env (Set [a])) a
+has a@(Context _ (Set [])) b = throwError $ BadHas (normalize a) b
+has (Context env (Set [x])) y@(Reference n) = do
+  res <- hasDef n
+  if res
+    then Has (Context env (Set [x])) <$> getDef n
+    else do
+      putDef n x
+      return x
+has a@(Context env (Set [x])) b = return $ Scope [Bind (Context env x) b]
+has a@(Context env (Set (x:xs))) b = return $ Either [Has (Context env (Set [x])) b, Has (Context env (Set xs)) b]
+has a@(Context _ _) r@(Reference n) = do
   def <- getDef n
   return $ Has a def
   `catchError` const (return (Has a r))
-has a@(Literal All) b = return b
-has Wildcard b = return b
-has a@(Literal (Thing _)) b = throwError $ BadHas a b
-has a@(Import x) b = throwError $ BadHas a b
-has a b@(Import x) = throwError $ BadHas a b
-has a@(Set []) b = throwError $ BadHas a b
-has a@(Set [x]) b = do
-  pushEnv M.empty
-  bind x b
-  popEnv
-  return b
-  `catchError` (\case
-    BadBind _ _ -> throwError (BadHas a b)
-    other -> throwError other
-  )
-has (Set (x:xs)) b = return $ Either [Has (Set [x]) b, Has (Set xs) b]
-has (Tuple []) (Tuple []) = return $ Tuple []
-has (Tuple [x]) (Tuple [y]) = return $ Tuple [Has x y]
-has (Tuple (x:xs)) (Tuple (y:ys)) = return $ Tuple [Has x y, Has (Tuple xs) (Tuple ys)]
-has a@(Tuple _) b = throwError $ BadHas a b
-has (Either xs) b = return $ Either $ map (`Has` b) xs
-has (Function []) (Function []) = return $ Function []
-has (Function [x]) (Function [y]) = return $ Function [Has x y]
-has (Function (x:xs)) (Function (y:ys)) = return $ Function [Has x y,Has (Function xs) (Function ys)]
-has a@(Function _) b = throwError $ BadHas a b
-has (Each xs) b = return $ Each $ map (`Has` b) xs
-has a@(Scope _) b = throwError $ BadHas a b -- should be stepped
-has a@(Call _ _) b = throwError $ BadHas a b -- should be stepped
-has a@(Refine _ _) b = throwError $ NotImplemented "Refined Has" $ Has a b
-has a@(Has _ _) b = throwError $ NotNormalized $ Has a b
-has a@(Bind x y) b = throwError $ BadHas a b -- should be stepped
-has a@(Select x ids) b = throwError $ BadHas a b -- should be stepped
-has a@(Hide x ids) b = throwError $ BadHas a b -- should be stepped
-has a@(Unique h1 x) b@(Unique h2 y) =
-  if h1 == h2
-    then return $ Unique h1 $ Has x y
-    else throwError $ BadHas a b
-has a@(Unique _ _) b = throwError $ BadHas a b
-has a@(Context _ _) b = throwError $ BadHas a b
+has a@(Context env (Literal All)) b = return b
+has a@(Context env Wildcard) b = return b
+has a@(Context env (Literal (Thing _))) b = throwError $ BadHas (normalize a) b
+has a@(Context env (Import x)) b = error "imports should have been stepped before executing has"
+has (Context _ _) b@(Import x) = error "imports should have been stepped before executing has"
+has (Context env (Tuple [])) (Tuple []) = return $ Tuple []
+has (Context env (Tuple [x])) (Tuple [y]) = return $ Has (Context env x) y
+has (Context env (Tuple (x:xs))) (Tuple (y:ys)) = return $ Tuple [Has (Context env x) y, Has (Context env (Tuple xs)) (Tuple ys)]
+has a@(Context env (Tuple _)) b = throwError $ BadHas (normalize a) b
+has (Context env (Either xs)) b = return $ Either $ map ((`Has` b) . Context env) xs
+has (Context env (Function [])) (Function []) = return $ Function []
+has (Context env (Function [x])) (Function [y]) = return $ Function [Has (Context env x) y]
+has (Context env (Function (x:xs))) (Function (y:ys)) = return $ Function [Has (Context env x) y,Has (Context env (Function xs)) (Function ys)]
+has a@(Context env (Function _)) b = throwError $ BadHas (normalize a) b
+has (Context env (Each xs)) b = return $ Each $ map ((`Has` b) . Context env) xs
+has a@(Context env (Except inner)) b = return $ Except $ map ((`Has` b) . Context env) inner
+has a@(Context env (Call _ _)) b = throwError $ BadHas (normalize a) b -- should be stepped
+has a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined Has" $ Has a b
+has a@(Context env (Bind x y)) b = throwError $ BadHas (normalize a) b -- should be stepped
+has a@(Context env (Select x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
+has a@(Context env (Hide x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
+has a@(Context env (Unique h1 x)) b = throwError $ NotImplemented "unique types" $ Has a b
+has (Context env a@(Scope _)) b = error "Scopes should be stepped away in has"
+has (Context _ (Context _ _)) b = error "nested contexts should be normalized"
+has a b = has (Context M.empty a) b
 
 stepSelect :: MountainTerm -> [Id] -> MountainContextT IO MountainTerm
 stepSelect a ids = do
