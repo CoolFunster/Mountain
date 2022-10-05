@@ -658,6 +658,15 @@ bind (Context env r@(Reference n)) b@(Reference m) = do
         else do
           putDef n b
           return b
+bind c@(Context env x) b@(Reference n) = do
+  res <- hasDef n
+  if res
+    then do
+      def <- getDef n
+      return $ Bind c def
+    else do
+      putDef n c
+      return b
 bind (Context env r@(Reference n)) b = do
   let res = M.lookup n env
   case res of
@@ -1020,36 +1029,32 @@ select c@(Context env x) ids = do
   res <- select x ids
   new_env <- popEnv
   return $ Context env res
-select b@(Bind (Reference n) x) ids = do
-  if n `elem` ids
-    then
-      return b
-    else return unit
+select b@(Bind (Reference n) x) ids = select (Tuple [b]) ids
 select (Bind a y@(Bind b c)) ids = do
   res <- select y ids
   case res of
     Either [] -> select (Bind a c) ids
     something -> return something
 select b@(Bind _ _) ids = return nothing
-select s@(Set xs) ids = return $ Set $ map (`Select` ids) xs
+select s@(Set xs) ids = return $ Either $ map (`Select` ids) xs
 select s@(Either xs) ids = return $ Either $ map (`Select` ids) xs
 select s@(Each xs) ids = return $ Each $ map (`Select` ids) xs
 select s@(Except xs) ids = return $ Except $ map (`Select` ids) xs
 select (Tuple _) [] = return unit
 select s@(Tuple []) ids = throwError $ BadSelect s ids
-select (Tuple (Bind (Reference n) xb:xs)) ids = do
+select (Tuple (b@(Bind (Reference n) xb):xs)) ids = do
   let new_ids = filter (/= n) ids
   if n `elem` ids
     then do
       return $ Tuple [Bind (Reference n) xb,Select (Tuple xs) new_ids]
-    else return $ Select (Tuple xs) new_ids
+    else return $ Scope [b,Select (Tuple xs) new_ids]
 select (Tuple (x@(Tuple (Literal (Thing n):_)):xs)) ids = do
   let new_ids = filter (/= n) ids
   if n `elem` ids
     then do
       return $ Tuple [x,Select (Tuple xs) new_ids]
-    else return $ Select (Tuple xs) new_ids
-select (Tuple (x:xs)) ids = return $ Select (Tuple xs) ids
+    else return $ Scope [x,Select (Tuple xs) new_ids]
+select (Tuple (x:xs)) ids = return $ Scope [x,Select (Tuple xs) ids]
 select a@(Unique h xs) ids = throwError $ NotImplemented "Unique stuff" $ Select a ids
 select r@(Reference n) ids = return $ Select r ids
 
@@ -1120,7 +1125,7 @@ stepImport s@(Select r@(Reference n) l@(id:ids)) = do
   dirExist <- lift $ doesDirectoryExist dir_path
   fileExist <- lift $ doesFileExist (dir_path ++ file_ext)
   if dirExist
-    then 
+    then
       case ids of
         [] -> return $ Import $ Reference (n ++ "." ++ id)
         something -> return $ Import $ Select (Reference (n ++ "." ++ id)) ids

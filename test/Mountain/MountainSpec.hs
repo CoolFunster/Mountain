@@ -298,14 +298,75 @@ spec = do
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Function [Literal $ Thing "r", Literal $ Thing "r"]
         env `shouldBe` []
+      it "(References) should leave unbindables alone" $ do
+        let example = "(a,b) = x"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Tuple [Reference "a",Reference "b"]
+        env `shouldBe` []
     describe "Select" $ do
-      it "should select out elements of a tuple" $ do
+      it "should select first elem from a tuple" $ do
         let example = "(x:#a, y:#b).x"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` a
         env `shouldBe` []
+      it "should select second element of a tuple" $ do
+        let example = "(x:#a, y:#b).y"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Literal (Thing "b")
+        env `shouldBe` []
+      it "should return the original tuple if both selected" $ do
+        let example = "(x:#a, y:#b).[x,y]"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Tuple [Bind (Reference "x") (Literal (Thing "a")),Bind (Reference "y") (Literal (Thing "b"))]
+        env `shouldBe` []
+      it "should throw error on bad selection" $ do
+        let example = "(x:#a, y:#b).[z]"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Left e, log) = res
+        e `shouldBe` BadSelect unit ["z"]
+      it "should select on sets" $ do
+        let example = "{x:#a, y:#b}.y"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` b
+        env `shouldBe` []
+      it "should select on eithers" $ do
+        let example = "(x:#a | y:#b).y"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` b
+        env `shouldBe` []
+      it "should handle dependent tuples" $ do
+        let example = "(x:#a, y:x).y"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` a
+        env `shouldBe` []
+      it "should handle structure binds of refs" $ do
+        let example = "((x,y):a, y:x).y"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Reference "x"
+        env `shouldBe` []
+      it "should throw error on functions" $ do
+        let example = "(y:a -> b).y"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Left e, log) = res
+        e `shouldBe` BadSelect (Function [Bind (Reference "y") (Reference "a"),Reference "b"]) ["y"]
     -- describe "Base.Data.Numeric.Natural" $ do
     --   it "should import and select correctly" $ do
     --     res <- runMountain $ dotImportFile "Tests.Base.Data.Numeric.testNatural"
