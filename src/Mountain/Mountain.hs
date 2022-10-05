@@ -397,7 +397,7 @@ normalize e@(Tuple []) = e
 normalize e@(Tuple [a]) = normalize a
 normalize e@(Tuple (x:xs)) = do
   case normalize (Tuple xs) of
-    Tuple [] -> Tuple (normalize x:[Tuple []])
+    Tuple [] -> normalize x
     Tuple new_xs -> Tuple (normalize x:new_xs)
     other -> Tuple [normalize x, other]
 normalize e@(Function []) = e
@@ -450,7 +450,7 @@ normalize r@(Refine (Refine x y) b) = normalize $ Refine x (Each [y,b])
 normalize r@(Refine a b) = Refine (normalize a) (normalize b)
 normalize h@(Has a (Has x y)) = Has (Each [a,x]) y
 normalize h@(Has a b) = Has (normalize a) (normalize b)
-normalize b@(Bind x y) = 
+normalize b@(Bind x y) =
   if x == y
     then normalize x
     else Bind (normalize x) (normalize y)
@@ -458,7 +458,6 @@ normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
     Select new_a ids -> Select new_a (ids ++ id1)
     other -> Select other id1
-normalize s@(Select a []) = normalize a
 normalize s@(Select a ids) = Select (normalize a) ids
 normalize s@(Hide s2@(Hide _ _) id1) = do
   case normalize s2 of
@@ -546,7 +545,7 @@ step t = normalize <$> step' t
     step' (Select a ids) = do
       res <- step a
       if res == a
-        then stepSelect a ids
+        then select a ids
         else return $ Select res ids
     -- step' (Hide a ids) = stepHide a ids
     step' (Unique h a) = Unique h <$> step a
@@ -924,7 +923,7 @@ has (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
 has a@(Context env (Function (x:xs))) b@(Function (y:ys)) = do
   pushEnv M.empty
   res <- has (Context env x) y
-  main_env <- popEnv 
+  main_env <- popEnv
   if res /= Has (Context env x) y -- has was possible 
     then do
       case normalize res of
@@ -974,7 +973,7 @@ has (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
 has a@(Context env (Tuple (x:xs))) b@(Tuple (y:ys)) = do
   pushEnv M.empty
   res <- has (Context env x) y
-  main_env <- popEnv 
+  main_env <- popEnv
   if res /= Has (Context env x) y -- has was possible 
     then do
       case normalize res of
@@ -1001,50 +1000,58 @@ has (Context env a@(Scope _)) b = error "Scopes should be stepped away in has"
 has (Context _ (Context _ _)) b = error "nested contexts should be normalized"
 has a b = has (Context M.empty a) b
 
-stepSelect :: MountainTerm -> [Id] -> MountainContextT IO MountainTerm
-stepSelect a ids = do
-  select a ids
-  `catchError` (\case
-    b@(BadSelect x idx) -> do
-      stepa <- step a
-      if stepa == a
-        then throwError b
-        else return $ Select stepa ids
-    other -> throwError other
-  )
-
 select :: MountainTerm -> [Id] -> MountainContextT IO MountainTerm
-select something [] = return something
 select l@(Literal (Thing id)) [x] =
   if id == x
     then return l
     else throwError $ BadSelect l [x]
-select s@(Set xs) ids = select (Either xs) ids
+select a@(Literal _) ids = throwError $ BadSelect a ids
+select a@Wildcard ids = return $ Tuple $ map ((`Bind` Wildcard) . Reference) ids
+select f@(Function _) ids = throwError $ BadSelect f ids
+select s@(Scope _) ids = error "should be stepped before selecting"
+select i@(Import _) ids = error "should be stepped before selecting"
+select r@(Refine _ _) ids = throwError $ NotImplemented "refinements" (Select r ids)
+select r@(Call _ _) ids = error "should be stepped before selecting"
+select h@(Has _ _) ids = error "should be stepped before selecting"
+select s@(Select _ _) ids = throwError $ NotNormalized $ Select s ids
+select h@(Hide _ _) ids = throwError $ NotImplemented "Hides" $ Select h ids
+select c@(Context env x) ids = do
+  pushEnv env
+  res <- select x ids
+  new_env <- popEnv
+  return $ Context env res
+select b@(Bind (Reference n) x) ids = do
+  if n `elem` ids
+    then
+      return b
+    else return unit
+select (Bind a y@(Bind b c)) ids = do
+  res <- select y ids
+  case res of
+    Either [] -> select (Bind a c) ids
+    something -> return something
+select b@(Bind _ _) ids = return nothing
+select s@(Set xs) ids = return $ Set $ map (`Select` ids) xs
+select s@(Either xs) ids = return $ Either $ map (`Select` ids) xs
+select s@(Each xs) ids = return $ Each $ map (`Select` ids) xs
+select s@(Except xs) ids = return $ Except $ map (`Select` ids) xs
+select (Tuple _) [] = return unit
 select s@(Tuple []) ids = throwError $ BadSelect s ids
-select (Tuple (x@(Bind a b):xs)) ids = do -- TODO fix leaking scope
-  bind a b
-  res <- getBoundIds ids
-  let (found_vals, rest_ids) = res
-  return $ Tuple (found_vals ++ [Select (Tuple xs) rest_ids])
+select (Tuple (Bind (Reference n) xb:xs)) ids = do
+  let new_ids = filter (/= n) ids
+  if n `elem` ids
+    then do
+      return $ Tuple [Bind (Reference n) xb,Select (Tuple xs) new_ids]
+    else return $ Select (Tuple xs) new_ids
+select (Tuple (x@(Tuple (Literal (Thing n):_)):xs)) ids = do
+  let new_ids = filter (/= n) ids
+  if n `elem` ids
+    then do
+      return $ Tuple [x,Select (Tuple xs) new_ids]
+    else return $ Select (Tuple xs) new_ids
 select (Tuple (x:xs)) ids = return $ Select (Tuple xs) ids
-select s@(Either []) ids = throwError $ BadSelect s ids
-select s@(Either ((Bind a b):xs)) ids = do
-  pushEnv M.empty
-  bind a b
-  res <- getBoundIds ids
-  let (found_vals, res_ids) = res
-  popEnv
-  return $ Tuple $ found_vals ++ [Select (Either xs) res_ids]
-select (Either (x:xs)) ids = return $ Select (Either xs) ids
-select (Unique h xs) ids = Unique h <$> select xs ids
-select r@(Reference n) b = do
-  d <- getDef n
-  return $ Select d b
-  `catchError` (\case
-    UnboundId _ -> return $ Select r b
-    other -> throwError other
-  )
-select a b = throwError $ BadSelect a b
+select a@(Unique h xs) ids = throwError $ NotImplemented "Unique stuff" $ Select a ids
+select r@(Reference n) ids = return $ Select r ids
 
 stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
 stepCall a@(Function []) b = throwError $ BadCall a b
@@ -1113,7 +1120,10 @@ stepImport s@(Select r@(Reference n) l@(id:ids)) = do
   dirExist <- lift $ doesDirectoryExist dir_path
   fileExist <- lift $ doesFileExist (dir_path ++ file_ext)
   if dirExist
-    then return $ Import $ Select (Reference (n ++ "." ++ id)) ids
+    then 
+      case ids of
+        [] -> return $ Import $ Reference (n ++ "." ++ id)
+        something -> return $ Import $ Select (Reference (n ++ "." ++ id)) ids
   else if fileExist
     then return $ Select (Import r) l
   else throwError $ BadImport s

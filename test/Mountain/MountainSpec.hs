@@ -51,6 +51,7 @@ spec = do
           Right (val, env) -> do
             val `shouldBe` Scope [Import (Bind (Reference "Nat") (Select (Reference "Tests") ["Import","1_test_nat"])),Reference "Nat"]
             res <- runMountain $ stepMany 20 val
+            print res
             let (Right (val, MountainEnv _ env), log) = res
             let (Scope [x]) = nat_import'
             val `shouldBe` x
@@ -297,8 +298,14 @@ spec = do
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Function [Literal $ Thing "r", Literal $ Thing "r"]
         env `shouldBe` []
-    -- describe "Select" $ do
-      -- it "Should "
+    describe "Select" $ do
+      it "should select out elements of a tuple" $ do
+        let example = "(x:#a, y:#b).x"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` a
+        env `shouldBe` []
     -- describe "Base.Data.Numeric.Natural" $ do
     --   it "should import and select correctly" $ do
     --     res <- runMountain $ dotImportFile "Tests.Base.Data.Numeric.testNatural"

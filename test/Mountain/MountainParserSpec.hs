@@ -71,7 +71,7 @@ spec = do
       it "Should parse recursive sets" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Tuple [Literal (Thing "1"),Literal (Thing "2"),Tuple []]]
+        val `shouldBe` Scope [Tuple [Literal (Thing "1"),Literal (Thing "2")]]
       it "Should ignore ws" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.4_ws"
         let (Right (val, env), log) = res
