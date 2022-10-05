@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
-module Mountain.MountainSpec (spec) where
+module MountainSpec (spec) where
 
 import Data.Either
 import qualified Data.Map.Strict as M
@@ -7,8 +7,8 @@ import Data.Map.Strict (fromList)
 import Debug.Trace
 
 import Test.Hspec
-import Mountain.Mountain
-import Mountain.MountainParser
+import Mountain
+import MountainParser
 
 -- TODO Split into respective files
 

@@ -1,7 +1,0 @@
-import (
-  base.Vector,
-  base.Char
-) -> (
-  String: Vector Char,
-  as_int: (String -> Maybe Int)
-)

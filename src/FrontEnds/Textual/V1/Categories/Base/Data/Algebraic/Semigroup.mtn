@@ -1,8 +1,0 @@
-// From https://argumatronic.com/posts/2019-06-21-algebra-cheatsheet.html
-Semigroup:
-  import Base.Data.Algebraic.Magma -> (
-    `<>: {(a->b->c) : m.`<> | (a -> b -> c)::x -> ((a -> b) -> c)::x }
-  )
-  m:(Magma t) -> (
-    
-  )

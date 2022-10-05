@@ -1,6 +1,6 @@
-module Mountain.MountainParser where
+module MountainParser where
 
-import Mountain.Mountain
+import Mountain
 
 import Text.Megaparsec
 import Text.Megaparsec.Error
@@ -26,7 +26,7 @@ import System.FilePath.Posix
 import qualified Data.Text.IO as TextIO
 import qualified Data.Set as Set
 import Control.Monad.Trans
-import Mountain.Hash
+import Hash
 
 
 _baseParse :: Parser a -> FilePath -> Text -> Either String a
@@ -255,7 +255,7 @@ pStructure = pStructureOp
 -- ######################
 
 basePath :: FilePath
-basePath = "/home/mpriam/git/mtpl_language/src/Mountain/Repository/"
+basePath = "/home/mpriam/git/mtpl_language/src/Repository/"
 
 fileExt :: String
 fileExt = ".mtn"

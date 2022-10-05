@@ -3,9 +3,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Mountain.Mountain where
+module Mountain where
 
-import Mountain.Hash
+import Hash
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Control.Monad.State.Strict

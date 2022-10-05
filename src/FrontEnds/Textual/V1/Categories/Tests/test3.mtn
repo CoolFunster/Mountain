@@ -1,8 +1,0 @@
-x: #a;
-
-y: #b;
-
-return (
-  first: x,
-  second: y
-);

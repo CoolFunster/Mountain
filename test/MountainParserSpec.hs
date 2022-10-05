@@ -1,8 +1,8 @@
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
-module Mountain.MountainParserSpec (spec) where
+module MountainParserSpec (spec) where
 
-import Mountain.Mountain
-import Mountain.MountainParser
+import Mountain
+import MountainParser
 import Data.Map.Strict as M
 
 import Test.Hspec

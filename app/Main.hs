@@ -1,12 +1,12 @@
 module Main where
 
-import Category
+import Mountain
 
 main :: IO ()
 main = do
-  let a = Thing (Name "a")
-  let b = Thing (Name "b")
-  let a_b = Composite{composite_type=Function, inner_categories=[a,b]}
+  let a = Literal $ Thing "a"
+  let b = Literal $ Thing "a"
+  let a_b = Function [a,b]
 
-  let expr = Call{base=a_b, argument=a}
+  let expr = Call a_b a
   putStr $ show expr

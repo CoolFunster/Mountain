@@ -25,17 +25,9 @@ source-repository head
 
 library
   exposed-modules:
-      Category
-      CategoryHash
-      FrontEnds.AST.V1.CategoryParser
-      FrontEnds.AST.V1.CategoryWriter
-      FrontEnds.Textual.V1.CategoryParser
-      FrontEnds.Textual.V1.CategoryWriter
-      FrontEnds.Textual.V1.Mountain
-      Mountain.Hash
-      Mountain.Mountain
-      Mountain.MountainParser
-      TypeCheck
+      Hash
+      Mountain
+      MountainParser
   other-modules:
       Paths_MTPL
   hs-source-dirs:
@@ -96,8 +88,8 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Mountain.MountainParserSpec
-      Mountain.MountainSpec
+      MountainParserSpec
+      MountainSpec
       Paths_MTPL
   hs-source-dirs:
       test

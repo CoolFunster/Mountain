@@ -1,5 +1,0 @@
-// From https://argumatronic.com/posts/2019-06-21-algebra-cheatsheet.html
-Magma:
-  Type::(a) -> Type::(
-    `<>: a -> a -> a
-  )

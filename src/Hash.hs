@@ -1,4 +1,4 @@
-module Mountain.Hash where
+module Hash where
 
 import Crypto.Hash ( hashWith, SHA256(..), Digest )
 import Numeric (showHex)

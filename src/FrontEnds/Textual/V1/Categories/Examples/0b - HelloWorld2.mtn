@@ -1,5 +1,0 @@
-import *:Body.SimpleConsole -> 
-
-ConsoleProgram :: (
-  (c, _, _) -> (print (c,"Hello World")), 0)
-);
