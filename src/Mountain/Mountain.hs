@@ -450,7 +450,10 @@ normalize r@(Refine (Refine x y) b) = normalize $ Refine x (Each [y,b])
 normalize r@(Refine a b) = Refine (normalize a) (normalize b)
 normalize h@(Has a (Has x y)) = Has (Each [a,x]) y
 normalize h@(Has a b) = Has (normalize a) (normalize b)
-normalize b@(Bind x y) = Bind (normalize x) (normalize y)
+normalize b@(Bind x y) = 
+  if x == y
+    then normalize x
+    else Bind (normalize x) (normalize y)
 normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
     Select new_a ids -> Select new_a (ids ++ id1)
@@ -845,6 +848,12 @@ has a@(Context env (Has x y)) b = do
 has a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Has`) inner
 has a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Has`) inner
 has a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Has`) inner
+has a@(Context _ _) b@(Bind x y) = do
+  res <- has a y
+  case normalize res of
+    b'@(Has a' y') -> -- TODO isRecursive should handle Contexts
+      return $ Has a' (Bind x y')
+    other -> return (Bind x other)
 has t@(Context env (Reference n)) v@(Reference k) = do
   let nres = M.lookup n env
   case nres of
@@ -859,7 +868,7 @@ has t@(Context env (Reference n)) a = do
     Just def -> return $ Has def a
     Nothing -> do
       let new_env = M.insert n (Set [a]) env
-      return $ Has (Context new_env (Set [a])) a
+      return $ Has (Context new_env (Set [a])) a -- TODO MAKE THIS WILDCARD instead of Set [a]
 has a@(Context _ (Set [])) b = throwError $ BadHas (normalize a) b
 has (Context env (Set [x])) y@(Reference n) = do
   res <- hasDef n
@@ -879,20 +888,112 @@ has a@(Context env Wildcard) b = return b
 has a@(Context env (Literal (Thing _))) b = throwError $ BadHas (normalize a) b
 has a@(Context env (Import x)) b = error "imports should have been stepped before executing has"
 has (Context _ _) b@(Import x) = error "imports should have been stepped before executing has"
-has (Context env (Tuple [])) (Tuple []) = return $ Tuple []
-has (Context env (Tuple [x])) (Tuple [y]) = return $ Has (Context env x) y
-has (Context env (Tuple (x:xs))) (Tuple (y:ys)) = return $ Tuple [Has (Context env x) y, Has (Context env (Tuple xs)) (Tuple ys)]
-has a@(Context env (Tuple _)) b = throwError $ BadHas (normalize a) b
+has a@(Context env (Bind x y)) b = return $ Has y b
+has (Context env a@(Function [])) b@(Function []) = return b
+has (Context env a@(Function (Bind xa Wildcard:xs))) b@(Function (Bind ya yb:ys)) = do
+  pushEnv env
+  res <- bind xa (Set [yb])
+  new_env <- popEnv
+  let unioned = M.union new_env env
+  case normalize res of
+    b'@(Bind x' y') -> return $ Has (Context unioned (Function (Bind x' Wildcard:xs))) (Function (Bind ya y':ys))
+    other -> return $ Has (Context unioned (Function (Wildcard:xs))) b
+has (Context env a@(Function (Bind xa Wildcard:xs))) b@(Function (y:ys)) = do
+  pushEnv env
+  res <- bind xa (Set [y])
+  new_env <- popEnv
+  let unioned = M.union new_env env
+  case normalize res of
+    b'@(Bind x' y') -> return $ Has (Context unioned (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+    other -> return $ Has (Context unioned (Function (Wildcard:xs))) b
+has (Context env a@(Function (Bind xa xb:xs))) b@(Function (y:ys)) = do
+  res <- has (Context env (Function (xb:xs))) b
+  case normalize res of
+    (Has (Context env' (Function (xb':xs'))) b') -> return $ Has (Context env' $ Function (Bind xa xb':xs')) b'
+    (Has (Function (xb':xs')) b') -> return $ Has (Function (Bind xa xb':xs')) b'
+    other -> return other
+has (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
+  -- normalized here because Function [x] == x
+  pushEnv M.empty
+  res <- has (Context env (normalize $ Function xs)) (normalize $ Function ys)
+  main_env <- popEnv
+  case normalize res of
+    b'@(Has (Context env' xs') ys') -> return $ Has (Context env' $ Function [Wildcard,xs']) (Context main_env (Function [y,ys']))
+    b'@(Has xs' ys') -> return $ Has (Function [Wildcard,xs']) (Context main_env (Function [y, ys']))
+    other -> return (Context main_env (Function [y,other]))
+has a@(Context env (Function (x:xs))) b@(Function (y:ys)) = do
+  pushEnv M.empty
+  res <- has (Context env x) y
+  main_env <- popEnv 
+  if res /= Has (Context env x) y -- has was possible 
+    then do
+      case normalize res of
+        b'@(Has (Context env' x') y') -> return $ Has (Context env' $ Function (x':xs)) (Context main_env (Function (y':ys)))
+        b'@(Has x' y') -> return $ Has (Function (x':xs)) (Context main_env (Function (y':ys)))
+        other -> return $ Has (Function (Wildcard:xs)) (Context main_env (Function (other:ys)))
+    else do
+      res <- has (Context env (Function (Wildcard:xs))) b
+      case normalize res of
+        (Has (Context env' (Function (Wildcard:xs'))) b') -> return $ Has (Context env' $ Function (x:xs')) b'
+        (Has (Function (Wildcard:xs')) b') -> return $ Has (Function (x:xs')) b'
+        (Has _ b') -> error "what is this case"
+        other -> return $ Function [y,other]
+has (Context env a@(Function _)) b = throwError $ BadHas a b
+has (Context env a@(Tuple [])) b@(Tuple []) = return b
+has (Context env a@(Tuple (Bind xa Wildcard:xs))) b@(Tuple (Bind ya yb:ys)) = do
+  pushEnv env
+  res <- bind xa (Set [yb])
+  new_env <- popEnv
+  let unioned = M.union new_env env
+  case normalize res of
+    b'@(Bind x' y') -> return $ Has (Context unioned (Tuple (Bind x' Wildcard:xs))) (Tuple (Bind ya y':ys))
+    other -> return $ Has (Context unioned (Tuple (Wildcard:xs))) b
+has (Context env a@(Tuple (Bind xa Wildcard:xs))) b@(Tuple (y:ys)) = do
+  pushEnv env
+  res <- bind xa (Set [y])
+  new_env <- popEnv
+  let unioned = M.union new_env env
+  case normalize res of
+    b'@(Bind x' y') -> return $ Has (Context unioned (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+    other -> return $ Has (Context unioned (Tuple (Wildcard:xs))) b
+has (Context env a@(Tuple (Bind xa xb:xs))) b@(Tuple (y:ys)) = do
+  res <- has (Context env (Tuple (xb:xs))) b
+  case normalize res of
+    (Has (Context env' (Tuple (xb':xs'))) b') -> return $ Has (Context env' $ Tuple (Bind xa xb':xs')) b'
+    (Has (Tuple (xb':xs')) b') -> return $ Has (Tuple (Bind xa xb':xs')) b'
+    other -> return other
+has (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
+  -- normalized here because Function [x] == x
+  pushEnv M.empty
+  res <- has (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
+  main_env <- popEnv
+  case normalize res of
+    b'@(Has (Context env' xs') ys') -> return $ Has (Context env' $ Tuple [Wildcard,xs']) (Context main_env (Tuple [y,ys']))
+    b'@(Has xs' ys') -> return $ Has (Tuple [Wildcard,xs']) (Context main_env (Tuple [y, ys']))
+    other -> return (Context main_env (Tuple [y,other]))
+has a@(Context env (Tuple (x:xs))) b@(Tuple (y:ys)) = do
+  pushEnv M.empty
+  res <- has (Context env x) y
+  main_env <- popEnv 
+  if res /= Has (Context env x) y -- has was possible 
+    then do
+      case normalize res of
+        b'@(Has (Context env' x') y') -> return $ Has (Context env' $ Tuple (x':xs)) (Context main_env (Tuple (y':ys)))
+        b'@(Has x' y') -> return $ Has (Tuple (x':xs)) (Context main_env (Tuple (y':ys)))
+        other -> return $ Has (Tuple (Wildcard:xs)) (Context main_env (Tuple (other:ys)))
+    else do
+      res <- has (Context env (Tuple (Wildcard:xs))) b
+      case normalize res of
+        (Has (Context env' (Tuple (Wildcard:xs'))) b') -> return $ Has (Context env' $ Tuple (x:xs')) b'
+        (Has (Tuple (Wildcard:xs')) b') -> return $ Has (Tuple (x:xs')) b'
+        (Has _ b') -> error "what is this case"
+        other -> return $ Tuple [y,other]
+has (Context env a@(Tuple _)) b = throwError $ BadHas a b
 has (Context env (Either xs)) b = return $ Either $ map ((`Has` b) . Context env) xs
-has (Context env (Function [])) (Function []) = return $ Function []
-has (Context env (Function [x])) (Function [y]) = return $ Function [Has (Context env x) y]
-has (Context env (Function (x:xs))) (Function (y:ys)) = return $ Function [Has (Context env x) y,Has (Context env (Function xs)) (Function ys)]
-has a@(Context env (Function _)) b = throwError $ BadHas (normalize a) b
 has (Context env (Each xs)) b = return $ Each $ map ((`Has` b) . Context env) xs
 has a@(Context env (Except inner)) b = return $ Except $ map ((`Has` b) . Context env) inner
 has a@(Context env (Call _ _)) b = throwError $ BadHas (normalize a) b -- should be stepped
 has a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined Has" $ Has a b
-has a@(Context env (Bind x y)) b = throwError $ BadHas (normalize a) b -- should be stepped
 has a@(Context env (Select x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
 has a@(Context env (Hide x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
 has a@(Context env (Unique h1 x)) b = throwError $ NotImplemented "unique types" $ Has a b
@@ -976,9 +1077,7 @@ stepScope (b@(Bind x y):xs) = do
       pushEnv M.empty
       res <- bind x y
       new_env <- popEnv
-      case xs of
-        [] -> return res
-        _ -> return $ Context new_env $ Scope (res : xs)
+      return $ Context new_env $ Scope (res : xs)
 stepScope (x:xs) = do
   res <- step x
   if res == x

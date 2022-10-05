@@ -191,7 +191,6 @@ spec = do
       it "(Set) should have eithers" $ do
           res <- runMountain $ stepMany 20 (Has (Set [a,b]) (Either [a,b]))
           let (Right (val, MountainEnv _ env), log) = res
-          print log
           val `shouldBe` Either [a,b]
           env `shouldBe` []
       it "(Set,Either) Eithers of Sets should distribute" $ do
@@ -215,7 +214,6 @@ spec = do
       it "(Tuples) should unwrap types" $ do
           res <- runMountain $ stepMany 20 $ Has (Tuple [Set [a]]) a
           let (Right (val, MountainEnv _ env), log) = res
-          print log
           val `shouldBe` a
           env `shouldBe` []
       it "(Tuples) should unwrap values" $ do
@@ -225,12 +223,10 @@ spec = do
           let Right (val, env) = result
           val `shouldBe` Has (Set [Literal (Thing "a")]) (Literal (Thing "a"))
       it "(Functions) properly checks simple function" $ do
-          let ta_b = Function [Set [a], Set [b]]
-          let a_b = Function [a, b]
-          let env = defaultEnv
-          result <- stepAndResult env (Has ta_b a_b)
-          let Right (val, env) = result
-          val `shouldBe` Function [Has (Set [Literal (Thing "a")]) (Literal (Thing "a")),Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
+          res <- runMountain $ stepMany 20 (Has (Function [Set [a], Set [b]]) (Function [a, b]))
+          let (Right (val, MountainEnv _ env), log) = res
+          val `shouldBe` Function [a, b]
+          env `shouldBe` []
       it "(references) should supply type var" $ do
         result <- runMountain $ stepMany 20 $ Has (Reference "x") a
         let (Right (val, MountainEnv _ env), log) = result
@@ -246,7 +242,6 @@ spec = do
         val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Reference "x",Literal (Thing "2")])]
         res <- runMountain $ stepMany 20 val
         let (Right (val, MountainEnv _ env), log) = res
-        print log
         val `shouldBe` Function [Literal (Thing "2"),Literal (Thing "2")]
         env `shouldBe` []
       it "(references) should handle functions and backtracking" $ do
@@ -254,25 +249,24 @@ spec = do
         let (Right (val, env), _) = res
         val `shouldBe` Scope [Has (Function [Reference "a",Reference "a"]) (Function [Function [Reference "x",Reference "y"],Literal (Thing "2"),Literal (Thing "3")])]
         res <- runMountain $ stepMany 20 val
-        let (Right (val, env), _) = res
+        let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Function [
           Function [Reference "x",Reference "y"],
           Literal (Thing "2"),
           Literal (Thing "3")]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Function [Reference "x",Reference "y"]])]]
+        env `shouldBe` []
       it "(references) should handle tuples and backtracking" $ do
         res <- runMountain $ dotImportFile "Tests.Has.4_tuple"
         let (Right (val, env), _) = res
         val `shouldBe` Scope [Has (Tuple [Reference "a",Reference "a"]) (Tuple [Reference "x",Literal (Thing "2")])]
         res <- runMountain $ stepMany 10 val
-        let (Right (val, env), _) = res
+        let (Right (val, MountainEnv _ env), _) = res
         val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]
-        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]
+        env `shouldBe` []
       it "(functions) should handle simple functions 1" $ do
         let example = "(a -> a)@(#a -> #a)"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
-        print res
         let (Right (val, MountainEnv _ env), log) = res
         val `shouldBe` Function [a,a]
         env `shouldBe` []
@@ -280,9 +274,29 @@ spec = do
         let example = "(a -> a)@(#1 -> #2)"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
-        print res
         let (Left val, log) = res
         val `shouldBe` BadBind (Literal $ Thing "1") (Literal $ Thing "2")
+      it "(functions) should handle inner contexts rhs" $ do
+        let example = "(a -> a) @ (x:#z -> x)"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Function [Literal (Thing "z"),Literal (Thing "z")]
+        env `shouldBe` []
+      it "(functions) should handle inner contexts lhs" $ do
+        let example = "(z:a -> z) @ (#z -> #z)"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Function [Literal (Thing "z"),Literal (Thing "z")]
+        env `shouldBe` []
+      it "(functions) should handle inner contexts both lhs rhs" $ do
+        let example = "(z:a -> z) @ (x:#r -> x)"
+        let Right term = parseString example
+        res <- runMountain $ stepMany 20 term
+        let (Right (val, MountainEnv _ env), log) = res
+        val `shouldBe` Function [Literal $ Thing "r", Literal $ Thing "r"]
+        env `shouldBe` []
     -- describe "Select" $ do
       -- it "Should "
     -- describe "Base.Data.Numeric.Natural" $ do
