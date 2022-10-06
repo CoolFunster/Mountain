@@ -4,7 +4,7 @@ module MountainParserSpec (spec) where
 import Mountain
 import MountainParser
 import Data.Map.Strict as M
-
+import qualified Data.UUID as UUID
 import Test.Hspec
 
 -- TODO Split into respective files
@@ -165,15 +165,15 @@ spec = do
       it "Should parse Unique" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.1_basic"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Unique emptyHash (Literal $ Thing "2")]
+        val `shouldBe` Scope [Unique UUID.nil (Literal $ Thing "2")]
       it "Should parse Either second" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.2_either"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Unique emptyHash (Either [Literal (Thing "2"),Literal (Thing "3")])]
+        val `shouldBe` Scope [Unique UUID.nil (Either [Literal (Thing "2"),Literal (Thing "3")])]
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Unique emptyHash (Unique emptyHash (Literal (Thing "2")))]
+        val `shouldBe` Scope [Unique UUID.nil (Unique UUID.nil (Literal (Thing "2")))]
     describe "Call" $ do
       it "Should parse Call" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.1_basic"

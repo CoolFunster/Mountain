@@ -6,6 +6,8 @@
 module Mountain where
 
 import Hash
+import qualified Data.UUID as UUID
+import Data.UUID.V4 (nextRandom)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Control.Monad.State.Strict
@@ -38,7 +40,7 @@ data Structure a =
   | Scope [Structure a]
   | Import (Structure a)
   | Refine (Structure a) (Structure a)
-  | Unique Hash (Structure a)
+  | Unique UUID.UUID (Structure a)
   | Call (Structure a) (Structure a)
   | Has (Structure a) (Structure a)
   | Bind (Structure a) (Structure a)
@@ -217,7 +219,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Literal x)= hash x
   hash Wildcard = hashStr "?"
   hash (Reference id) = seqHash [hashStr "Reference", hashStr id]
-  hash (Unique h x) = seqHash [hashStr "Unique", h, hash x]
+  hash (Unique h x) = seqHash [hashStr "Unique", hashStr $ UUID.toString h, hash x]
   hash (Import a) = seqHash [hashStr "Import", hash a]
   hash (Set xs) = seqHash [hashStr "Set", sumHash (map hash xs)]
   hash (Either xs) = seqHash [hashStr "Either", sumHash (map hash xs)]
@@ -465,6 +467,7 @@ normalize s@(Hide s2@(Hide _ _) id1) = do
     other -> Hide other id1
 normalize s@(Hide a []) = normalize a
 normalize s@(Hide a ids) = Hide (normalize a) ids
+normalize u@(Unique h (Tuple [x])) = Unique h (Tuple [normalize x])
 normalize u@(Unique h x) = Unique h (normalize x)
 normalize c@(Context env c2@(Context env2 a)) = do
   case normalize c2 of
@@ -474,6 +477,29 @@ normalize c@(Context env a) =
   if M.null env
     then normalize a
     else Context (M.map normalize env) (normalize a)
+
+setUniqueIds :: MountainTerm -> MountainContextT IO MountainTerm
+setUniqueIds (Literal x) = return $ Literal x
+setUniqueIds Wildcard = return $ Wildcard
+setUniqueIds (Set ic) = Set <$> mapM setUniqueIds ic
+setUniqueIds (Unique _ ic) = do
+  id_ <- lift nextRandom
+  Unique id_ <$> setUniqueIds ic
+setUniqueIds (Function xs) = Function <$> mapM setUniqueIds xs
+setUniqueIds (Each xs) = Each <$> mapM setUniqueIds xs
+setUniqueIds (Tuple xs) = Tuple <$> mapM setUniqueIds xs
+setUniqueIds (Either xs) = Either <$> mapM setUniqueIds xs
+setUniqueIds (Except xs) = Either <$> mapM setUniqueIds xs
+setUniqueIds (Refine b p) = Refine <$> setUniqueIds b <*> setUniqueIds p
+setUniqueIds (Call b a) = Call <$> setUniqueIds b <*> setUniqueIds a
+setUniqueIds (Import i_c) = Import <$> setUniqueIds i_c
+setUniqueIds (Has b s) = Has <$> setUniqueIds b <*> setUniqueIds s
+setUniqueIds (Scope xs) = Scope <$> mapM setUniqueIds xs
+setUniqueIds (Bind a b) = Bind <$> setUniqueIds a <*> setUniqueIds b
+setUniqueIds (Reference id) = return $ Reference id
+setUniqueIds (Select a ids) = Select <$> setUniqueIds a <*> return ids
+setUniqueIds (Hide a ids) = Hide <$> setUniqueIds a <*> return ids
+setUniqueIds (Context env a) = Context <$> mapM setUniqueIds env <*> setUniqueIds a
 
 step :: MountainTerm -> MountainContextT IO MountainTerm
 step t = normalize <$> step' t
@@ -1111,7 +1137,9 @@ stepImport r@(Reference n) = do
   file_exist <- lift $ doesFileExist full_path
   if not file_exist
     then throwError $ BadImport r
-    else lift $ parser full_path
+    else do
+      res <- lift $ parser full_path
+      setUniqueIds res
 stepImport (Bind n@(Reference _) i) = do
   res <- stepImport i
   return $ case res of
