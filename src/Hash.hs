@@ -6,28 +6,50 @@ import qualified Data.ByteString as B
 import qualified Data.Text as T
 import qualified Data.Text.Encoding             as T
 import Data.ByteArray.Encoding ( convertToBase, Base(Base16) )
+import Data.UUID.V4 (nextRandom)
+import Data.UUID (toString)
 
 -- Hashing
-newtype Hash = Hash B.ByteString deriving (Eq, Ord)
+data Hash =
+    Hash B.ByteString
+  | Nil
+  | Unset
+  deriving (Eq, Ord)
 
 instance Show Hash where
-  show (Hash b_string) = B.foldr showHex "" b_string
+  show (Hash b_string) = "<...>"
+  show Nil = "Nil"
+  show Unset = "_"
 
 sumHash :: [Hash] -> Hash
-sumHash [] = error "bad sum hash"
-sumHash [x] = x
+sumHash [] = Nil
 sumHash ((Hash x):xs) = do
-  let (Hash res_xs) = sumHash xs
-  let ux = B.unpack x
-  let uxs = B.unpack res_xs
-  Hash $ B.pack $ zipWith (+) ux uxs
+  let res = sumHash xs
+  case res of
+    Nil -> Hash x
+    Unset -> error "should not be unset"
+    Hash res_xs -> do
+      let (Hash res_xs) = sumHash xs
+      let ux = B.unpack x
+      let uxs = B.unpack res_xs
+      Hash $ B.pack $ zipWith (+) ux uxs
+sumHash (Nil:xs) = sumHash xs
+sumHash (Unset:xs) = error "unset in sum hash"
 
 seqHash :: [Hash] -> Hash
-seqHash [] = error "bad seq hash"
+seqHash [] = Nil
 seqHash [x] = x
 seqHash ((Hash x):xs) = do
-  let (Hash res_xs) = seqHash xs
-  Hash $ sha256 $ show (x <> res_xs)
+  let res = seqHash xs
+  case res of
+    Nil -> Hash x
+    Unset -> error "should not be unset"
+    Hash res_xs -> Hash $ sha256 $ show (x <> res_xs)
+seqHash (Nil:xs) = seqHash xs
+seqHash (Unset:xs) = error "unset in seq hash"
+
+randHash :: IO Hash
+randHash = hashStr . toString <$> nextRandom
 
 class Hashable a where
   hash :: a -> Hash

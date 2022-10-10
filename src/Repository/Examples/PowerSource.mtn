@@ -1,0 +1,5 @@
+List:
+  (Int -> Any) :: |
+    0 -> {#empty)},
+    other -> {(other, )}
+  |

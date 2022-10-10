@@ -1,0 +1,6 @@
+import base.String;
+
+print = ((<#Console>, String) -> <#Console>);
+getInput = (<#Console>, String) -> (<#Console>, String);
+view = (c:<#Console>) -> (c, String);
+Main = (<#Console>, [String]) -> (<#Console>,Int);

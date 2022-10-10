@@ -27,7 +27,6 @@ import qualified Data.Text.IO as TextIO
 import qualified Data.Set as Set
 import Control.Monad.Trans
 import Hash
-import qualified Data.UUID as UUID
 
 
 _baseParse :: Parser a -> FilePath -> Text -> Either String a
@@ -174,7 +173,7 @@ emptyHash :: Hash
 emptyHash = Hash B.empty
 
 pUnique :: (Show a) => Parser a -> Parser (Structure a)
-pUnique pa = Unique UUID.nil <$> (symbol "$" *> pStructure pa)
+pUnique pa = Unique Unset <$> (symbol "$" *> pStructure pa)
 
 pEnvDecl :: (Show a) => Parser a -> Parser (M.Map Id (Structure a))
 pEnvDecl pa = do

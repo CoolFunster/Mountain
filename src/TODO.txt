@@ -9,10 +9,16 @@ dev tooling
 - autocomplete
 
 Current Job
+  -- Unique Types 
 
 Backlog
-  Dependent Access
-  Captialized Reference is Ref to Type
+  - Make binding structural (remove auto unrolling)
+  - Create a separate recursive type
+      has unroll, and relabel
+  - Make Eithers/Each/Sets use Sets
+      This makes certain errors go away like equality
+      and makes some ops more efficient
+
   Linked List testing
     linked list (in progress)
   StdLib Strings
@@ -32,20 +38,17 @@ Backlog
     Type annotations need rank 1
     Double labeling is not allowed
   Refinements
-  Rename Category to something else (Won't do)
-  Rank of Category
   Builtin parse
     String
     Float
     Integer
     Bool
-  ignore training commas/semicolons
   improve parser error messages
-  operator presidence?
-    probably not
-  Rename Category as Structure
 
 Completed:
+  -ignore trailing commas/semicolons
+  -Rename Category to structure
+  -Dependent Access
   -Add sets (DONE)
   -Rename Placeholder back to Placeholder, to reflect mountain docs (DONE)
   -Implement Binding and delete Definition (Done)

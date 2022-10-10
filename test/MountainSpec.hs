@@ -8,6 +8,7 @@ import Debug.Trace
 
 import Test.Hspec
 import Mountain
+import Hash
 import MountainParser
 
 -- TODO Split into respective files
@@ -55,6 +56,14 @@ spec = do
             let (Right (val, MountainEnv _ env), log) = res
             let (Scope [x]) = nat_import'
             val `shouldBe` x
+      it "Should set unique values" $ do
+        let val = Scope [Import (Bind (Reference "n") (Select (Reference "Tests") ["Import","2_unique"])),Reference "n"]
+        res <- runMountain $ stepMany 20 val
+        print res
+        let (Right (val, MountainEnv _ env), log) = res
+        let (Unique h x) = val
+        h `shouldNotBe` Nil
+        x `shouldBe` Literal (Thing "x")
     describe "Step" $ do
       it "should keep sets in a context" $ do
         let nat = fromRight (error "bad nat parsing") $ parseString "Nat = {zero:#Z | succ:(#S, Nat)}"

@@ -6,8 +6,6 @@
 module Mountain where
 
 import Hash
-import qualified Data.UUID as UUID
-import Data.UUID.V4 (nextRandom)
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Control.Monad.State.Strict
@@ -40,7 +38,7 @@ data Structure a =
   | Scope [Structure a]
   | Import (Structure a)
   | Refine (Structure a) (Structure a)
-  | Unique UUID.UUID (Structure a)
+  | Unique Hash (Structure a)
   | Call (Structure a) (Structure a)
   | Has (Structure a) (Structure a)
   | Bind (Structure a) (Structure a)
@@ -219,7 +217,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Literal x)= hash x
   hash Wildcard = hashStr "?"
   hash (Reference id) = seqHash [hashStr "Reference", hashStr id]
-  hash (Unique h x) = seqHash [hashStr "Unique", hashStr $ UUID.toString h, hash x]
+  hash (Unique h x) = seqHash [hashStr "Unique", h, hash x]
   hash (Import a) = seqHash [hashStr "Import", hash a]
   hash (Set xs) = seqHash [hashStr "Set", sumHash (map hash xs)]
   hash (Either xs) = seqHash [hashStr "Either", sumHash (map hash xs)]
@@ -247,11 +245,17 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
 -- TODO: ensure "Any, ?" are reserved keywords in parser
 data MountainLiteral =
     Thing String
+  | Things
+  | Char Char
+  | Chars
   | All
   deriving (Eq, Show)
 
 instance Hashable MountainLiteral where
   hash (Thing name) = hashStr name
+  hash Things = hashStr "_Things"
+  hash (Char c) = hashStr [c]
+  hash Chars = hashStr "_Chars"
   hash All = hashStr "All"
 
 type MountainTerm = Structure MountainLiteral
@@ -344,6 +348,11 @@ getDef id = do
           res <- getDef id
           pushEnv x
           return res
+        Just u@(Unique h x) -> do
+          x <- popEnv
+          let x' = M.delete id x
+          pushEnv x'
+          return u
         Just val -> return val
 
 putDef :: (Monad m) => Id -> MountainTerm -> MountainContextT m ()
@@ -394,7 +403,7 @@ normalize Wildcard = Wildcard
 normalize r@(Reference _) = r
 normalize i@(Import (Import a)) = normalize $ Import a
 normalize i@(Import a) = Import (normalize a)
-normalize s@(Set _) = s
+normalize s@(Set xs) = Set (map normalize xs)
 normalize e@(Tuple []) = e
 normalize e@(Tuple [a]) = normalize a
 normalize e@(Tuple (x:xs)) = do
@@ -467,7 +476,11 @@ normalize s@(Hide s2@(Hide _ _) id1) = do
     other -> Hide other id1
 normalize s@(Hide a []) = normalize a
 normalize s@(Hide a ids) = Hide (normalize a) ids
-normalize u@(Unique h (Tuple [x])) = Unique h (Tuple [normalize x])
+normalize u@(Unique Nil x) = normalize x
+normalize u@(Unique h (Unique h2 x)) =
+  if h == h2
+    then Unique h (normalize x)
+    else Unique h (Unique h2 (normalize x))
 normalize u@(Unique h x) = Unique h (normalize x)
 normalize c@(Context env c2@(Context env2 a)) = do
   case normalize c2 of
@@ -478,31 +491,8 @@ normalize c@(Context env a) =
     then normalize a
     else Context (M.map normalize env) (normalize a)
 
-setUniqueIds :: MountainTerm -> MountainContextT IO MountainTerm
-setUniqueIds (Literal x) = return $ Literal x
-setUniqueIds Wildcard = return $ Wildcard
-setUniqueIds (Set ic) = Set <$> mapM setUniqueIds ic
-setUniqueIds (Unique _ ic) = do
-  id_ <- lift nextRandom
-  Unique id_ <$> setUniqueIds ic
-setUniqueIds (Function xs) = Function <$> mapM setUniqueIds xs
-setUniqueIds (Each xs) = Each <$> mapM setUniqueIds xs
-setUniqueIds (Tuple xs) = Tuple <$> mapM setUniqueIds xs
-setUniqueIds (Either xs) = Either <$> mapM setUniqueIds xs
-setUniqueIds (Except xs) = Either <$> mapM setUniqueIds xs
-setUniqueIds (Refine b p) = Refine <$> setUniqueIds b <*> setUniqueIds p
-setUniqueIds (Call b a) = Call <$> setUniqueIds b <*> setUniqueIds a
-setUniqueIds (Import i_c) = Import <$> setUniqueIds i_c
-setUniqueIds (Has b s) = Has <$> setUniqueIds b <*> setUniqueIds s
-setUniqueIds (Scope xs) = Scope <$> mapM setUniqueIds xs
-setUniqueIds (Bind a b) = Bind <$> setUniqueIds a <*> setUniqueIds b
-setUniqueIds (Reference id) = return $ Reference id
-setUniqueIds (Select a ids) = Select <$> setUniqueIds a <*> return ids
-setUniqueIds (Hide a ids) = Hide <$> setUniqueIds a <*> return ids
-setUniqueIds (Context env a) = Context <$> mapM setUniqueIds env <*> setUniqueIds a
-
 step :: MountainTerm -> MountainContextT IO MountainTerm
-step t = normalize <$> step' t
+step t = normalize . fst . uniquify <$> step' t
   where
     step' :: MountainTerm -> MountainContextT IO MountainTerm
     step' l@(Literal _) = return l
@@ -613,10 +603,9 @@ _stepEach (c@(Context env x):xs) = do
   newEnv <- popEnv
   if res == x && env == newEnv
     then do
-      res <- _stepEither xs
+      res <- _stepEach xs
       return $ c:res
     else return $ Context newEnv res:xs
-  `catchError` (\e -> return xs)
 _stepEach (x:xs) = _stepEither (Context M.empty x:xs)
 
 _joinContexts :: ([MountainTerm] -> MountainTerm) -> [MountainTerm] -> MountainTerm
@@ -864,7 +853,16 @@ bind a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined bindi
 bind (Context env (Has typ x)) b = bind (Context env x) (Has (Context env typ) b)
 bind a@(Context env (Select x ids)) b = throwError $ NotImplemented "binding on selects" $ Bind a b
 bind a@(Context env (Hide x ids)) b = throwError $ NotImplemented "binding on hides" $ Bind a b
-bind a@(Context env (Unique _ _)) b = throwError $ NotImplemented "binding on Uniques" $ Bind a b
+bind a@(Context env (Unique h x)) b@(Unique h2 y) = do
+  if h /= h2
+    then throwError $ BadBind a b
+    else do
+      res <- bind (Context env x) y
+      case res of
+        Bind (Context env a') b' -> return $ Bind (Context env (Unique h a')) (Unique h2 b')
+        Bind a' b' -> return $ Bind (Unique h a') (Unique h2 b')
+        other -> return $ Unique h2 other
+bind a@(Context env (Unique h x)) other = throwError $ BadBind a other
 bind (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
 bind a b = bind (Context M.empty a) b
 
@@ -1030,7 +1028,12 @@ has a@(Context env (Call _ _)) b = throwError $ BadHas (normalize a) b -- should
 has a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined Has" $ Has a b
 has a@(Context env (Select x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
 has a@(Context env (Hide x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
-has a@(Context env (Unique h1 x)) b = throwError $ NotImplemented "unique types" $ Has a b
+has a@(Context env (Unique h1 x)) b = do
+  res <- has (Context env x) b
+  case res of
+    Has (Context env a') b' -> return $ Has (Context env (Unique h1 a')) b'
+    Has a' b' -> return $ Bind (Unique h1 a') b'
+    other -> return other
 has (Context env a@(Scope _)) b = error "Scopes should be stepped away in has"
 has (Context _ (Context _ _)) b = error "nested contexts should be normalized"
 has a b = has (Context M.empty a) b
@@ -1081,7 +1084,11 @@ select (Tuple (x@(Tuple (Literal (Thing n):_)):xs)) ids = do
       return $ Tuple [x,Select (Tuple xs) new_ids]
     else return $ Scope [x,Select (Tuple xs) new_ids]
 select (Tuple (x:xs)) ids = return $ Scope [x,Select (Tuple xs) ids]
-select a@(Unique h xs) ids = throwError $ NotImplemented "Unique stuff" $ Select a ids
+select a@(Unique h x) ids = do
+  res <- select x ids
+  case res of
+    (Select x' ids) -> return $ Select (Unique h x') ids
+    other -> return $ Unique h other
 select r@(Reference n) ids = return $ Select r ids
 
 stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
@@ -1129,6 +1136,104 @@ dotPathAsDir [] = []
 dotPathAsDir ('.':xs) = '/':dotPathAsDir xs
 dotPathAsDir (x:xs) = x:dotPathAsDir xs
 
+setUnsetUniques :: MountainTerm -> IO MountainTerm
+setUnsetUniques (Literal x) = return $ Literal x
+setUnsetUniques Wildcard = return Wildcard
+setUnsetUniques (Set ic) = Set <$> mapM setUnsetUniques ic
+setUnsetUniques u@(Unique Unset (Reference _)) = return u
+setUnsetUniques (Unique Unset ic) = do
+  id_ <- randHash
+  Unique id_ <$> setUnsetUniques ic
+setUnsetUniques (Unique h ic) = Unique h <$> setUnsetUniques ic
+setUnsetUniques (Function xs) = Function <$> mapM setUnsetUniques xs
+setUnsetUniques (Each xs) = Each <$> mapM setUnsetUniques xs
+setUnsetUniques (Tuple xs) = Tuple <$> mapM setUnsetUniques xs
+setUnsetUniques (Either xs) = Either <$> mapM setUnsetUniques xs
+setUnsetUniques (Except xs) = Either <$> mapM setUnsetUniques xs
+setUnsetUniques (Refine b p) = Refine <$> setUnsetUniques b <*> setUnsetUniques p
+setUnsetUniques (Call b a) = Call <$> setUnsetUniques b <*> setUnsetUniques a
+setUnsetUniques (Import i_c) = Import <$> setUnsetUniques i_c
+setUnsetUniques (Has b s) = Has <$> setUnsetUniques b <*> setUnsetUniques s
+setUnsetUniques (Scope xs) = Scope <$> mapM setUnsetUniques xs
+setUnsetUniques (Bind a b) = Bind <$> setUnsetUniques a <*> setUnsetUniques b
+setUnsetUniques (Reference id) = return $ Reference id
+setUnsetUniques (Select a ids) = Select <$> setUnsetUniques a <*> return ids
+setUnsetUniques (Hide a ids) = Hide <$> setUnsetUniques a <*> return ids
+setUnsetUniques (Context env a) = Context <$> mapM setUnsetUniques env <*> setUnsetUniques a
+
+uniquify :: MountainTerm -> (MountainTerm, Hash)
+uniquify (Literal x) = (Literal x, Nil)
+uniquify Wildcard = (Wildcard, Nil)
+uniquify (Set ic) = do
+  let (new_ic, hash) = unzip $ map uniquify ic
+  let new_hash = sumHash hash
+  (Unique new_hash (Set new_ic), new_hash)
+uniquify (Unique Unset ic) = error "unset unique"
+uniquify u@(Unique h (Literal _)) = (u,h)
+uniquify u@(Unique h (Reference _)) = (u,h)
+uniquify u@(Unique h (Tuple [])) = (u,h)
+uniquify u@(Unique h x) = uniquify x
+uniquify (Function xs) = do
+  let (new_ic, hash) = unzip $ map uniquify xs
+  let unduped = (map head . filter (\x -> length x == 1) . group . sort) hash
+  let final_hash = seqHash $ filter (`elem` unduped) hash
+  (Unique final_hash (Function new_ic), final_hash)
+uniquify (Each xs) = do
+  let (new_ic, hash) = unzip $ map uniquify xs
+  let new_hash = sumHash hash
+  (Unique new_hash (Each new_ic), new_hash)
+uniquify (Tuple xs) = do
+  let (new_ic, hash) = unzip $ map uniquify xs
+  let new_hash = seqHash hash
+  (Unique new_hash (Tuple new_ic), new_hash)
+uniquify (Either xs) = do
+  let (new_ic, hash) = unzip $ map uniquify xs
+  let new_hash = sumHash hash
+  (Unique new_hash (Either new_ic), new_hash)
+uniquify (Except xs) = do
+  let (new_ic, hash) = unzip $ map uniquify xs
+  let new_hash = sumHash hash
+  (Unique new_hash (Set new_ic), new_hash)
+uniquify (Refine a b) = do
+  let (a', hash_a) = uniquify a
+  let (b', hash_b) = uniquify b
+  (Refine (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
+uniquify (Call a b) = do
+  let (a', hash_a) = uniquify a
+  let (b', hash_b) = uniquify b
+  (Call (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
+uniquify i@(Import i_c) = (i, Nil)
+uniquify (Has a b) = do
+  let (a', hash_a) = uniquify a
+  let (b', hash_b) = uniquify b
+  (Has (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
+uniquify (Scope xs) = do
+  let (new_ic, hash) = unzip $ map uniquify xs
+  let new_hash = seqHash hash
+  (Unique new_hash (Scope new_ic), new_hash)
+uniquify (Bind a b) = do
+  let (a', hash_a) = uniquify a
+  let (b', hash_b) = uniquify b
+  (Bind (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
+uniquify (Reference id) = (Reference id, Nil)
+uniquify (Select a ids) = do
+  let (new_ic, hash) = uniquify a
+  (Select new_ic ids, hash)
+uniquify (Hide a ids) = do
+  let (new_ic, hash) = uniquify a
+  (Hide new_ic ids, hash)
+uniquify (Context env a) = do
+  let env_as_list = M.toList env
+  let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Hash]) -> ([(Id, MountainTerm)], [Hash]) =
+        \(id,term) (cur_list, cur_hashes) -> do {
+            let (new_term, hash) = uniquify term
+          ; ((id, new_term):cur_list, hash:cur_hashes)
+        }
+  let (new_map_list, hashes) :: ([(Id,MountainTerm)], [Hash]) = foldr inner_foo ([],[]) env_as_list
+  let (a', hash) = uniquify a
+  let final_hash = sumHash (hash:hashes)
+  (Unique final_hash (Context (M.fromList new_map_list) a'), final_hash)
+
 stepImport :: MountainTerm -> MountainContextT IO MountainTerm
 stepImport r@(Reference n) = do
   opt <- getOptions
@@ -1139,7 +1244,7 @@ stepImport r@(Reference n) = do
     then throwError $ BadImport r
     else do
       res <- lift $ parser full_path
-      setUniqueIds res
+      lift $ fst . uniquify <$> setUnsetUniques res
 stepImport (Bind n@(Reference _) i) = do
   res <- stepImport i
   return $ case res of
@@ -1166,7 +1271,3 @@ stepImport something = error $ "what is this import case? " ++ show something
 
 validate :: MountainTerm -> Bool
 validate _ = True
--- LHS of Bindings must be structures of references.
--- LHS of Bindings must not contain sub bindings
--- Structural bindings are not allowed within tuples and functions
--- Refinements are not allowed to be recursive
