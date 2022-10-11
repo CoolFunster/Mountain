@@ -245,17 +245,21 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
 -- TODO: ensure "Any, ?" are reserved keywords in parser
 data MountainLiteral =
     Thing String
-  | Things
+  | Bool Bool
   | Char Char
-  | Chars
+  | String String
+  | Int Int
+  | Float Float
   | All
   deriving (Eq, Show)
 
 instance Hashable MountainLiteral where
-  hash (Thing name) = hashStr name
-  hash Things = hashStr "_Things"
+  hash (Thing name) = hashStr $ "_" ++ name
+  hash (Bool b) = hashStr $ "_" ++ show b
   hash (Char c) = hashStr [c]
-  hash Chars = hashStr "_Chars"
+  hash (String s) = hashStr $ "_" ++ s
+  hash (Int i) = hashStr $ "_" ++ show i
+  hash (Float f) = hashStr $ "_" ++ show f
   hash All = hashStr "All"
 
 type MountainTerm = Structure MountainLiteral
@@ -728,7 +732,7 @@ bind (Context env a@(Set [r@(Reference n)])) b@(Set elems2) = do
   case res of
     Just r' -> return $ Bind (Context env (Set [r'])) b
     Nothing -> return $ Bind r (Either elems2)
-bind a@(Context env x@(Set elems)) b@(Set elems2) = throwError $ NotImplemented "Set equality" $ Bind a b
+bind a@(Context env x@(Set elems)) b@(Set elems2) = return $ Bind (Context env (Either elems)) (Either elems2)
 bind (Context env a@(Set elems)) b = throwError $ BadBind a b
 bind (Context env a@(Function [])) b@(Function []) = return b
 bind a@(Context env (Function _)) b@(Function (ib@(Bind ya yb):ys)) = do

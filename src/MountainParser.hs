@@ -4,7 +4,7 @@ import Mountain
 
 import Text.Megaparsec
 import Text.Megaparsec.Error
-import Text.Megaparsec.Char
+import Text.Megaparsec.Char ( space1, string )
 import Text.Megaparsec.Debug (dbg)
 import qualified Text.Megaparsec.Char.Lexer as L
 
@@ -17,7 +17,7 @@ import Data.Text ( Text, pack, unpack, unpack, replace)
 import Data.Void
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Char ( isSpace )
-import Data.List ( intercalate, foldl', sort )
+import Data.List ( intercalate, foldl', sort, isPrefixOf )
 
 import Debug.Trace (trace)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
@@ -86,9 +86,6 @@ binaryN  inner_parser f = InfixN  (f <$ inner_parser)
 prefix  inner_parser f = Prefix  (f <$ inner_parser)
 postfix inner_parser f = Postfix (f <$ inner_parser)
 
-integer :: Parser Integer
-integer = lexeme L.decimal
-
 pWrapWS :: [Char] -> Parser String
 pWrapWS input_str = try $ between (optional spaceConsumer) (optional spaceConsumer) (symbol input_str)
 
@@ -98,7 +95,17 @@ pWrapBetween open_char close_char = between (symbol open_char <* optional spaceC
 -- {- megaparsec helpers end -}The func
 
 reservedIds :: [String]
-reservedIds = ["All", "function", "return", "import"]
+reservedIds = [
+  "import",
+  "True",
+  "False",
+  "Thing",
+  "Bool",
+  "Char",
+  "String",
+  "Int",
+  "Float",
+  "All"]
 
 restrictedIdChars :: [Char]
 restrictedIdChars = "?$*#.,=:;@`[]{}()<>|&']-\\%"
@@ -108,7 +115,9 @@ pId = do
     name <- some $ satisfy isValidChar
     if name `elem` reservedIds
       then fail $ "Cannot use " ++ name ++ " as it is a reserved keyword"
-      else return name
+    else if "_" `isPrefixOf` name
+      then fail $ "Cannot start varname with underscore like " ++ name
+    else return name
     where
       isValidChar :: Char -> Bool
       isValidChar c = not (c `elem` restrictedIdChars || isSpace c)
@@ -120,13 +129,55 @@ pId = do
 pMountainLiteral :: Parser MountainLiteral
 pMountainLiteral = choice [
   pThing,
-  pAll]
+  pBool,
+  pChar,
+  pString,
+  try pFloat,
+  pInt,
+  pBigType]
 
 pThing :: Parser MountainLiteral
 pThing = symbol "#" *> (Thing <$> pId)
 
-pAll :: Parser MountainLiteral
-pAll = try (symbol "All") *> return All
+pBigType :: Parser MountainLiteral
+pBigType =
+    try (symbol "All") *> return All
+
+pChar :: Parser MountainLiteral
+pChar = Char <$> between (symbol "\'") (symbol "\'") (try escaped <|> normalChar)
+   where
+     escaped :: Parser Char
+     escaped = do {
+        _ <- symbol "\\"
+      ; satisfy (=='\'')
+     }
+     normalChar :: Parser Char
+     normalChar = satisfy (/= '\'')
+
+pString :: Parser MountainLiteral
+pString = String <$> between (symbol "\"") (symbol "\"") (many (try escaped <|> normalChar))
+   where
+     escaped :: Parser Char
+     escaped = do {
+        _ <- symbol "\\"
+      ; satisfy (=='\"')
+     }
+     normalChar :: Parser Char
+     normalChar = satisfy (/= '\"')
+
+pBool :: Parser MountainLiteral
+pBool = Bool <$> do
+  res <- symbol "True" <|> symbol "False"
+  case res of
+    "True" -> return True
+    "False" -> return False
+    _ -> error "unreachable"
+
+pInt :: Parser MountainLiteral
+pInt = Int <$> L.signed (L.space Text.Megaparsec.empty Text.Megaparsec.empty Text.Megaparsec.empty) L.decimal
+
+pFloat :: Parser MountainLiteral
+pFloat = Float <$> L.signed spaceConsumer L.float
 
 -- ######################
 -- ### StructureData  ###
@@ -134,8 +185,8 @@ pAll = try (symbol "All") *> return All
 
 pStructureData :: (Show a) => Parser a -> Parser (Structure a)
 pStructureData pa = choice [
+    try $ pLiteral pa,
     pImport pa,
-    pLiteral pa,
     pWildcard,
     pSet pa,
     pTuple pa,
@@ -212,10 +263,20 @@ pStructureOp pa = makeExprParser (pCall pa) [
 pCall :: (Show a) => Parser a -> Parser (Structure a)
 pCall pa = do
   struct1 <- pSelectHide pa
-  struct2 <- many $ try (spaceConsumer *> pSelectHide pa)
-  case struct2 of
-    [] -> return struct1
-    (x:xs) -> return $ foldl' Call (Call struct1 x) xs
+  struct2 <- many $ try (optional spaceConsumer *> (pCallInfix pa <|> pCallNormal pa))
+  return $ foldl' (\state f -> f state) struct1 struct2
+
+pCallInfix :: (Show a) => Parser a -> Parser (Structure a -> Structure a)
+pCallInfix pa = do
+  struct <- between (symbol "`") (symbol "`") (pSelectHide pa)
+  res <- getInput 
+  return $ Call struct
+
+pCallNormal :: (Show a) => Parser a -> Parser (Structure a -> Structure a)
+pCallNormal pa = do
+  struct <- try (pSelectHide pa)
+  res <- getInput 
+  return (`Call` struct)
 
 pSelectHideExt :: (Show a) => Structure a -> Parser (Structure a)
 pSelectHideExt base = do

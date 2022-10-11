@@ -5,6 +5,7 @@ import Mountain
 import MountainParser
 import Hash
 import Data.Map.Strict as M
+import Data.Either
 import qualified Data.UUID as UUID
 import Test.Hspec
 
@@ -192,6 +193,14 @@ spec = do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.4_sequence"
         let (Right (val, env), log) = res
         val `shouldBe` Scope [Call (Call (Call (Call (Call (Reference "x") (Reference "y")) (Reference "z")) (Reference "a")) (Reference "b")) (Reference "c")]
+      it "Should handle infix" $ do
+        res <- runMountain $ dotImportFile "Tests.Parser.Calls.5_infix"
+        let (Right (val, env), log) = res
+        val `shouldBe` Scope [Call (Call (Reference "+") (Call (Call (Reference "+") (Literal (Int 1))) (Literal (Int 2)))) (Literal (Int 3))]
+      it "Should handle mixfix" $ do
+        res <- runMountain $ dotImportFile "Tests.Parser.Calls.6_mixfix"
+        let (Right (val, env), log) = res
+        val `shouldBe`  Scope [Call (Call (Call (Call (Reference "+") (Literal (Int 1))) (Literal (Int 2))) (Reference "+")) (Literal (Int 3))]
     describe "Has" $ do
       it "Should parse Has" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Hass.1_basic"
@@ -213,11 +222,11 @@ spec = do
       it "= should parse last" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Bind.2_="
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Bind (Reference "1") (Either [Reference "2",Reference "3"])]
+        val `shouldBe` Scope [Bind (Literal (Float 1.0)) (Either [Literal (Float 2.0),Literal (Float 3.1)])]
       it ": should parse first" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Bind.3_:"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Either [Bind (Reference "1") (Reference "2"),Reference "3"]]
+        val `shouldBe` Scope [Either [Bind (Literal (Int 1)) (Literal (Int 2)),Literal (Int 3)]]
       it "mixing = and : should be right" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Bind.4_recursive"
         let (Right (val, env), log) = res
@@ -246,11 +255,11 @@ spec = do
       it "Should parse either first, other second" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Contexts.2_either"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Either [Reference "a",Context (fromList [("x",Reference "1")]) (Reference "x")]]
+        val `shouldBe` Scope [Either [Reference "a",Context (fromList [("x",Literal (Int 1))]) (Reference "x")]]
       it "Should handle recursive contexts" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Contexts.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Context (M.fromList [("x",Reference "1"),("y",Reference "2")]) (Tuple [Reference "x",Reference "y"])]
+        val `shouldBe` Scope [Context (fromList [("x",Literal (Int 1)),("y",Literal (Int 2))]) (Tuple [Reference "x",Reference "y"])]
       
       -- it "Should parse recursive selects" $ do
       --   res <- runMountain $ dotImportFile "Tests.Parser.Context.3_recursive"

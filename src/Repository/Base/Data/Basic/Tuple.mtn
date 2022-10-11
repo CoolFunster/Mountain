@@ -1,13 +1,12 @@
-LinkedTuple: 
-  import (
-    Data.LinkedList
-  ) -> TupleType -> (
-    Tuple:LinkedList[TupleType],
-    
-)
+Tuple = type -> (
+    empty: ()
+  | full: (type, Tuple)
+);
 
-head
-tail
-fst
-snd
-get Int
+Push = 
+  Val -> Tuple(T) -> Tuple(Val | T) @
+    x -> old -> (x,old);
+
+
+
+
