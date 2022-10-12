@@ -32,15 +32,15 @@ spec = do
           let simple_rec = Bind (Reference "x") (Function [Literal $ Thing "a", Reference "x"])
           isRecursive simple_rec `shouldBe` True
         it "should not remove binding on finished rec" $ do
-          let simple_rec = Scope [Bind (Reference "x") (Function [Literal $ Thing "a", Reference "x"])]
+          let simple_rec = Scope [Recursive "x" (Function [Literal $ Thing "a", Reference "x"])]
           res <- runMountain $ stepMany 10 simple_rec
           let (Right (val, env), log) = res
-          val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "a"),Reference "x"])
+          val `shouldBe` Recursive "x" (Function [Literal (Thing "a"),Reference "x"])
         it "should step other parts of rec cat" $ do
-          let need_eval_rec = Bind (Reference "x") (Function [Call (Function [a,b]) a, Reference "x"])
+          let need_eval_rec = Recursive "x" (Function [Call (Function [a,b]) a, Reference "x"])
           res <- runMountain $ stepMany 10 need_eval_rec
           let (Right (val, env), log) = res
-          val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "b"),Reference "x"])
+          val `shouldBe` Recursive "x" (Function [Literal (Thing "b"),Reference "x"])
     describe "Import" $ do
       it "Should import nats" $ do
         res <- runMountain $ dotImportFile "Tests.Import.1_import_nat"
@@ -70,7 +70,7 @@ spec = do
         case res' of
           Left e -> error (show e ++ "\n\n" ++ show log)
           Right (val, env) -> do
-            val `shouldBe` Bind (Reference "Nat") (Set [Either [Bind (Reference "zero") (Literal (Thing "Z")),Bind (Reference "succ") (Tuple [Literal (Thing "S"),Reference "Nat"])]])
+            val `shouldBe` Recursive "Nat" (Set [Either [Bind (Reference "zero") (Literal (Thing "Z")),Bind (Reference "succ") (Tuple [Literal (Thing "S"),Reference "Nat"])]])
       it "should resolve contexts" $ do
         let term = fromRight (error "404") $ parseString "<x:#1> => x"
         term `shouldBe` Scope [Context (M.fromList [("x",Literal (Thing "1"))]) (Reference "x")]
@@ -116,13 +116,14 @@ spec = do
         let res = fromRight (error "404") $ parseString parse_str
         res <- runMountain $ stepMany 5 res
         let (Right (val, MountainEnv _ env), log) = res
-        val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "a"),Reference "x"])
-      it "should handle recursion" $ do
+        val `shouldBe`  Recursive "x" (Function [Literal (Thing "a"),Reference "x"])
+      it "should only bind structurally" $ do
         let parse_str = "#a -> #a -> y = (x = #a -> x); y"
         let res = fromRight (error "404") $ parseString parse_str
         res <- runMountain $ stepMany 20 res
-        let (Right (val, MountainEnv _ env), log) = res
-        val `shouldBe` Bind (Reference "x") (Function [Literal (Thing "a"),Reference "x"])
+        print res
+        let (Left e, log) = res
+        e `shouldBe` BadBind (Context M.empty (Function [Literal (Thing "a"),Literal (Thing "a"),Reference "y"])) (Recursive "x" (Function [Literal (Thing "a"),Reference "x"]))
       it "should handle left binds" $ do
         let parse_str = "(x = ?) = #a; x"
         let res = fromRight (error "404") $ parseString parse_str
@@ -375,10 +376,10 @@ spec = do
         let (Left e, log) = res
         e `shouldBe` BadSelect (Function [Bind (Reference "y") (Reference "a"),Reference "b"]) ["y"]
     describe "Base.Data.Basic.Tuple" $ do
-      it "should import" $ do
+      it "Test Tuple 1" $ do
         res <- runMountain $ dotImportFile "Tests.Base.Data.Basic.Tuple.TupleTest"
         let (Right (val, env), _) = res
-        res <- runMountain $ stepMany 30 val
+        res <- runMountain $ stepMany 20 val
         print res
         let (Right (val, env), _) = res
         val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]

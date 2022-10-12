@@ -42,6 +42,7 @@ data Structure a =
   | Call (Structure a) (Structure a)
   | Has (Structure a) (Structure a)
   | Bind (Structure a) (Structure a)
+  | Recursive Id (Structure a)
   | Select (Structure a) [Id]
   | Hide (Structure a) [Id]
   | Context (Env (Structure a)) (Structure a)
@@ -114,6 +115,7 @@ instance Functor Structure where
   fmap f (Refine x y) = Refine (fmap f x) (fmap f y)
   fmap f (Has x y) = Has (fmap f x) (fmap f y)
   fmap f (Bind x y) = Bind (fmap f x) (fmap f y)
+  fmap f (Recursive id y) = Recursive id (fmap f y)
   fmap f (Select x ids) = Select (fmap f x) ids
   fmap f (Hide x ids) = Select (fmap f x) ids
   fmap f (Unique h x) = Unique h (fmap f x)
@@ -146,6 +148,7 @@ transform transformer input_structure = do
         (Has b s) -> Has (recurse b) (recurse s)
         (Scope xs) -> Scope $ map recurse xs
         (Bind a b) -> Bind (recurse a) (recurse b)
+        (Recursive id x) -> Recursive id (recurse x)
         (Reference id) -> Reference id
         (Select a ids) -> Select (recurse a) ids
         (Hide a ids) -> Hide (recurse a) ids
@@ -173,6 +176,7 @@ check f c s = do
         (Has x y) -> f [b,recurse x,recurse y]
         (Scope xs) -> f (b:map recurse xs)
         (Bind x y) -> f [b,recurse x,recurse y]
+        (Recursive id x) -> f [b, recurse x]
         (Reference id) -> b
         (Select a ids) -> f [b,recurse a]
         (Hide a ids) -> f [b,recurse a]
@@ -226,6 +230,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Refine a b) = seqHash [hashStr "Refine", hash a, hash b]
   hash (Has a b) = seqHash [hashStr "Has", hash a, hash b]
   hash (Bind a b) = seqHash [hashStr "Bind", hash a, hash b]
+  hash (Recursive id b) = seqHash [hashStr "Recursive", hashStr id, hash b]
   hash (Select a ids) = seqHash [hashStr "Select", hash a, seqHash $ map hashStr ids]
   hash (Hide a ids) = seqHash [hashStr "Hide", hash a, seqHash $ map hashStr ids]
   hash (Function xs) = seqHash $ hashStr "Function" : map hash xs
@@ -477,6 +482,15 @@ normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
     Select new_a ids -> Select new_a (ids ++ id1)
     other -> Select other id1
+normalize r@(Recursive id (Reference n)) = 
+  if id == n
+    then Reference n
+    else r
+normalize r@(Recursive id (Recursive id2 x)) = 
+  if id == id2
+    then normalize $ Recursive id x
+    else Recursive id $ normalize (Recursive id2 x)
+normalize r@(Recursive id x) = Recursive id (normalize x)
 normalize s@(Select a ids) = Select (normalize a) ids
 normalize s@(Hide s2@(Hide _ _) id1) = do
   case normalize s2 of
@@ -553,18 +567,16 @@ step t = normalize . fst . uniquify <$> step' t
         then has x y
         else return $ Has x' y'
     step' b@(Bind x y) = do
-      if isRecursive b
-        then do
-          let Reference n = x
-          pushEnv (M.singleton n x)
-          res <- _stepSeqNoError [x,y]
-          popEnv
-          let [x',y'] = res
-          return $ Bind x' y'
-        else do
-          res <- _stepSeqNoError [x,y]
-          let [x',y'] = res
-          return $ Bind x' y'
+      res <- _stepSeqNoError [x,y]
+      let [x',y'] = res
+      return $ Bind x' y'
+    step' r@(Recursive n x) = do
+      -- we don't want it to unroll here, but in specific other places
+      pushEnv (M.singleton n (Reference n))
+      res <- _stepSeqNoError [x]
+      popEnv
+      let [x'] = res
+      return $ Recursive n x'
     step' h@(Hide _ _) = throwError $ NotImplemented "hides" h
     step' (Select a ids) = do
       res <- step a
@@ -651,26 +663,24 @@ evaluate t = do
     else evaluate res
 
 bind :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-bind a@(Context env z@(Bind x y)) b = do
-  if isRecursive z
-    then throwError $ NotImplemented "Recursive lhs binds" $ Bind a b
-    else return $ Bind (Context env x) (Bind (Context env y) b)
+bind a@(Context env z@(Bind x y)) b = return $ Bind (Context env x) (Bind (Context env y) b)
+bind (Context env r@(Recursive id x)) r2@(Recursive id2 y) = return $ Bind (Context env (unroll r)) (Context (M.singleton id2 (Reference id)) y)
+bind a@(Context env r@(Recursive id x)) b = throwError $ BadBind a b
+bind (Context env r@(Reference n)) b@(Recursive x y) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Bind r' b
+    Nothing -> do
+      putDef n b
+      return b
+bind a@(Context _ _) b@(Recursive _ _) = throwError $ BadBind a b
 bind (Context env r@(Reference n)) b@(Bind x y) = do
   let res = M.lookup n env
   case res of
     Just r' -> return $ Bind r' b
     Nothing -> do
-      if isRecursive b
-        then do
-          putDef n b
-          return b
-      else if isRecursive $ Bind r b
-        then do
-          putDef n (Bind r b)
-          return b
-      else do
-        res <- bind x y
-        return $ Bind (Context env r) res
+      res <- bind x y
+      return $ Bind (Context env r) res
 bind (Context env r@(Reference n)) b@(Reference m) = do
   let res = M.lookup n env
   case res of
@@ -695,23 +705,11 @@ bind (Context env r@(Reference n)) b = do
   case res of
     Just r' -> return $ Bind r' b
     Nothing -> do
-      if isRecursive $ Bind r b
-        then do
-          putDef n (Bind r b)
-          return b
-      else do
-          putDef n b
-          return b
+      putDef n b
+      return b
 bind a@(Context _ _) b@(Bind x y) = do
-  if isRecursive b
-    then do
-      pushEnv M.empty
-      res <- bind x y
-      new_env <- popEnv
-      return $ Bind a (Context new_env res)
-    else do
-      res <- bind x y
-      return $ Bind a res
+  res <- bind x y
+  return $ Bind a res
 bind a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Bind`) inner
 bind a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Bind`) inner
 bind (Context env a@(Except inner)) b = return $ Except $ map ((`Bind` b) . Context env) inner
@@ -751,13 +749,9 @@ bind a@(Context env (Function (x@(Bind xa Wildcard):xs))) b@(Function (y:ys)) = 
   case normalize res of
     b'@(Bind (Context env x') y') -> do -- TODO isRecursive should handle Contexts
       let final_env = M.union new_env env
-      if isRecursive $ Bind x' y'
-        then return $ Bind (Context final_env (Function (Wildcard:xs))) (Function (b':ys))
-        else return $ Bind (Context final_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
-    b'@(Bind x' y') -> do
-      if isRecursive b'
-        then return $ Bind (Context new_env (Function (Wildcard:xs))) (Function (y':ys))
-        else return $ Bind (Context new_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+      return $ Bind (Context final_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+    b'@(Bind x' y') ->
+      return $ Bind (Context new_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
     other ->
       return $ Bind (Context new_env (Function (Wildcard:xs))) (Function (other:ys))
 bind a@(Context env (Function (x@(Bind xa xb):xs))) b@(Function (y:ys)) = do
@@ -773,29 +767,21 @@ bind (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
   res <- bind (Context env (normalize $ Function xs)) (normalize $ Function ys)
   case normalize res of
     b'@(Bind (Context new_env xs') ys') -> -- TODO isRecursive should handle Contexts
-      if isRecursive $ Bind xs' ys'
-        then return (Function [y,ys'])
-        else return $ Bind (Context new_env $ Function [Wildcard,xs']) (Function [y, ys'])
+      return $ Bind (Context new_env $ Function [Wildcard,xs']) (Function [y, ys'])
     b'@(Bind xs' ys') ->
-      if isRecursive b'
-        then return (Function [y,b'])
-        else return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
+      return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
     other -> return (Function [y,other])
 bind (Context env a@(Function (x:xs))) b@(Function (y:ys)) = do
   res <- bind (Context env x) y
   case normalize res of
     b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
-      if isRecursive $ Bind x' y'
-        then return $ Bind (Function (Wildcard:xs)) (Function (b':ys))
-        else return $ Bind (Function (x':xs)) (Function (y':ys))
+      return $ Bind (Function (x':xs)) (Function (y':ys))
     b'@(Bind x' y') ->
-      if isRecursive b'
-        then return (Function (b':ys))
-        else return $ Bind (Function (Wildcard:xs)) (Function (y':ys))
+      return $ Bind (Function (Wildcard:xs)) (Function (y':ys))
     other -> return $ Bind (Function (Wildcard:xs)) (Function (other:ys))
 bind (Context env a@(Function _)) b = throwError $ BadBind a b
 bind (Context env a@(Tuple [])) b@(Tuple []) = return b
-bind a@(Context env (Tuple _)) b@(Tuple ((Bind ya yb):ys)) = do
+bind a@(Context env (Tuple _)) b@(Tuple (ib@(Bind ya yb):ys)) = do
   pushEnv M.empty
   res <- bind ya yb
   env' <- popEnv
@@ -807,13 +793,9 @@ bind a@(Context env (Tuple (x@(Bind xa Wildcard):xs))) b@(Tuple (y:ys)) = do
   case normalize res of
     b'@(Bind (Context env x') y') -> do -- TODO isRecursive should handle Contexts
       let final_env = M.union new_env env
-      if isRecursive $ Bind x' y'
-        then return $ Bind (Context final_env (Tuple (Wildcard:xs))) (Tuple (b':ys))
-        else return $ Bind (Context final_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
-    b'@(Bind x' y') -> do
-      if isRecursive b'
-        then return $ Bind (Context new_env (Tuple (Wildcard:xs))) (Tuple (y':ys))
-        else return $ Bind (Context new_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+      return $ Bind (Context final_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+    b'@(Bind x' y') ->
+      return $ Bind (Context new_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
     other ->
       return $ Bind (Context new_env (Tuple (Wildcard:xs))) (Tuple (other:ys))
 bind a@(Context env (Tuple (x@(Bind xa xb):xs))) b@(Tuple (y:ys)) = do
@@ -825,28 +807,21 @@ bind a@(Context env (Tuple (x@(Bind xa xb):xs))) b@(Tuple (y:ys)) = do
       return $ Bind (Tuple (Bind xa x':xs')) y'
     other -> return other
 bind (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
+  -- normalized here because Tuple [x] == x
   res <- bind (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
   case normalize res of
     b'@(Bind (Context new_env xs') ys') -> -- TODO isRecursive should handle Contexts
-      if isRecursive $ Bind xs' ys'
-        then return (Tuple [y,ys'])
-        else return $ Bind (Context new_env $ Tuple [Wildcard,xs']) (Tuple [y, ys'])
+      return $ Bind (Context new_env $ Tuple [Wildcard,xs']) (Tuple [y, ys'])
     b'@(Bind xs' ys') ->
-      if isRecursive b'
-        then return (Tuple [y,b])
-        else return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
+      return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
     other -> return (Tuple [y,other])
 bind (Context env a@(Tuple (x:xs))) b@(Tuple (y:ys)) = do
-  res <- bind x y
+  res <- bind (Context env x) y
   case normalize res of
     b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
-      if isRecursive $ Bind x' y'
-        then return $ Bind (Tuple (Wildcard:xs)) (Tuple (b':ys))
-        else return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
+      return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
     b'@(Bind x' y') ->
-      if isRecursive b'
-        then return (Tuple (b':ys))
-        else return $ Bind (Tuple (Wildcard:xs)) (Tuple (y':ys))
+      return $ Bind (Tuple (Wildcard:xs)) (Tuple (y':ys))
     other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (other:ys))
 bind (Context env a@(Tuple _)) b = throwError $ BadBind a b
 bind (Context env a@(Each inner)) b = return $ Each $ map ((`Bind` b) . Context env) inner
@@ -1046,6 +1021,10 @@ has (Context env a@(Scope _)) b = error "Scopes should be stepped away in has"
 has (Context _ (Context _ _)) b = error "nested contexts should be normalized"
 has a b = has (Context M.empty a) b
 
+unroll :: MountainTerm -> MountainTerm
+unroll (Recursive id x) = Context (M.singleton id x) x
+unroll other = error "should be only used on recursive terms"
+
 select :: MountainTerm -> [Id] -> MountainContextT IO MountainTerm
 select l@(Literal (Thing id)) [x] =
   if id == x
@@ -1073,6 +1052,10 @@ select (Bind a y@(Bind b c)) ids = do
     Either [] -> select (Bind a c) ids
     something -> return something
 select b@(Bind _ _) ids = return nothing
+select r@(Recursive id x) ids = 
+  if id `elem` ids
+    then return r
+    else return $ Select (unroll r) ids
 select s@(Set xs) ids = return $ Either $ map (`Select` ids) xs
 select s@(Either xs) ids = return $ Either $ map (`Select` ids) xs
 select s@(Each xs) ids = return $ Each $ map (`Select` ids) xs
@@ -1117,20 +1100,15 @@ stepCall a b = return $ Call a b
 
 stepScope :: [MountainTerm] -> MountainContextT IO MountainTerm
 stepScope [] = throwError EmptyScope
+stepScope (r@(Recursive id y):xs) =
+  case xs of
+    [] -> return r
+    _ -> return $ Context (M.singleton id r) $ Scope xs
 stepScope (b@(Bind x y):xs) = do
-  if isRecursive b
-    then do
-      pushEnv M.empty
-      _ <- bind x y
-      new_env <- popEnv
-      case xs of
-        [] -> return b
-        _ -> return $ Context new_env $ Scope xs
-    else do
-      pushEnv M.empty
-      res <- bind x y
-      new_env <- popEnv
-      return $ Context new_env $ Scope (res : xs)
+  pushEnv M.empty
+  res <- bind x y
+  new_env <- popEnv
+  return $ Context new_env $ Scope (res : xs)
 stepScope (x:xs) = do
   res <- step x
   if res == x
@@ -1164,6 +1142,7 @@ setUnsetUniques (Import i_c) = Import <$> setUnsetUniques i_c
 setUnsetUniques (Has b s) = Has <$> setUnsetUniques b <*> setUnsetUniques s
 setUnsetUniques (Scope xs) = Scope <$> mapM setUnsetUniques xs
 setUnsetUniques (Bind a b) = Bind <$> setUnsetUniques a <*> setUnsetUniques b
+setUnsetUniques (Recursive id b) = Recursive id <$> setUnsetUniques b
 setUnsetUniques (Reference id) = return $ Reference id
 setUnsetUniques (Select a ids) = Select <$> setUnsetUniques a <*> return ids
 setUnsetUniques (Hide a ids) = Hide <$> setUnsetUniques a <*> return ids
@@ -1223,6 +1202,9 @@ uniquify (Bind a b) = do
   let (a', hash_a) = uniquify a
   let (b', hash_b) = uniquify b
   (Bind (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
+uniquify (Recursive id b) = do
+  let (b', hash_b) = uniquify b
+  (Unique hash_b (Recursive id b'), hash_b)
 uniquify (Reference id) = (Reference id, Nil)
 uniquify (Select a ids) = do
   let (new_ic, hash) = uniquify a

@@ -248,6 +248,15 @@ pContext pa = do
 -- ######################
 
 
+replaceBindsWithRec :: Structure a -> Structure a
+replaceBindsWithRec (Bind a b) = do
+  if isRecursive (Bind a b)
+    then do
+      let Reference n = a
+      Recursive n b
+    else Bind a b
+replaceBindsWithRec _ = error "used on something else"
+
 pStructureOp :: (Show a) => Parser a -> Parser (Structure a)
 pStructureOp pa = makeExprParser (pCall pa) [
     [binaryR (pWrapWS ":") Bind],
@@ -257,7 +266,7 @@ pStructureOp pa = makeExprParser (pCall pa) [
     [binaryR (pWrapWS "~") (\lhs rhs -> Except [lhs,rhs])],
     [binaryR (pWrapWS "->") (\lhs rhs -> Function [lhs,rhs])],
     [binaryL (pWrapWS "%") Refine],
-    [binaryR (pWrapWS "=") Bind]
+    [binaryR (pWrapWS "=") (\x y -> replaceBindsWithRec $ Bind x y)]
   ]
 
 pCall :: (Show a) => Parser a -> Parser (Structure a)
@@ -343,6 +352,11 @@ runMountain = runMountainContextT defaultEnv
 
 prettyLiteral :: MountainLiteral -> String
 prettyLiteral (Thing id) = "#" ++ id
+prettyLiteral (Bool b) = show b
+prettyLiteral (Int i) = show i
+prettyLiteral (Char c) = show c
+prettyLiteral (String s) = show s
+prettyLiteral (Float f) = show f
 prettyLiteral All = "All"
 
 prettyTerm :: (Show a) => Structure a -> String
@@ -361,6 +375,7 @@ prettyTerm ((Unique _ as)) = "$" ++ prettyTerm as
 prettyTerm ((Call a b)) = "(" ++ prettyTerm a ++ " " ++ prettyTerm b ++ ")"
 prettyTerm ((Has a b)) = "(" ++ prettyTerm a ++ "@" ++ prettyTerm b ++ ")"
 prettyTerm ((Bind a b)) = "(" ++ prettyTerm a ++ ":" ++ prettyTerm b ++ ")"
+prettyTerm (Recursive id b) = "(" ++ id ++ ":" ++ prettyTerm b ++ ")"
 prettyTerm ((Refine a b)) = "(" ++ prettyTerm a ++ " % " ++ prettyTerm b ++ ")"
 prettyTerm ((Select a [id])) = prettyTerm a ++ "." ++ id
 prettyTerm ((Select a ids)) = prettyTerm a ++ "." ++ "[" ++ intercalate "," ids ++ "]"
