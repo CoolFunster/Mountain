@@ -52,14 +52,12 @@ spec = do
           Right (val, env) -> do
             val `shouldBe` Scope [Import (Bind (Reference "Nat") (Select (Reference "Tests") ["Import","1_test_nat"])),Reference "Nat"]
             res <- runMountain $ stepMany 20 val
-            print res
             let (Right (val, MountainEnv _ env), log) = res
             let (Scope [x]) = nat_import'
             val `shouldBe` x
       it "Should set unique values" $ do
         let val = Scope [Import (Bind (Reference "n") (Select (Reference "Tests") ["Import","2_unique"])),Reference "n"]
         res <- runMountain $ stepMany 20 val
-        print res
         let (Right (val, MountainEnv _ env), log) = res
         let (Unique h x) = val
         h `shouldNotBe` Nil
@@ -376,13 +374,12 @@ spec = do
         res <- runMountain $ stepMany 20 term
         let (Left e, log) = res
         e `shouldBe` BadSelect (Function [Bind (Reference "y") (Reference "a"),Reference "b"]) ["y"]
-    -- describe "Base.Data.Numeric.Natural" $ do
-    --   it "should import and select correctly" $ do
-    --     res <- runMountain $ dotImportFile "Tests.Base.Data.Numeric.testNatural"
-    --     let (Right (val, env), _) = res
-    --     val `shouldBe` Scope [Import (Bind (Reference "nat") (Select (Reference "Base") ["Data","Numeric","Natural"])),Select (Reference "nat") ["increment"]]
-    --     res <- runMountain $ stepMany 10 val
-    --     print res
-    --     let (Right (val, env), _) = res
-    --     val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]
-    --     map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]
+    describe "Base.Data.Basic.Tuple" $ do
+      it "should import" $ do
+        res <- runMountain $ dotImportFile "Tests.Base.Data.Basic.Tuple.TupleTest"
+        let (Right (val, env), _) = res
+        res <- runMountain $ stepMany 30 val
+        print res
+        let (Right (val, env), _) = res
+        val `shouldBe` Tuple [Literal (Thing "2"),Literal (Thing "2")]
+        map M.toList (environment env) `shouldBe` [[("a",Set [Literal (Thing "2")]),("x",Literal (Thing "2"))]]

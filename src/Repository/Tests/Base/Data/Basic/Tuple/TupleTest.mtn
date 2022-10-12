@@ -1,0 +1,3 @@
+import tuple:Base.Data.Basic.Tuple;
+
+tuple.push(3)(())

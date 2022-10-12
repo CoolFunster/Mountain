@@ -465,9 +465,13 @@ normalize r@(Refine (Refine x y) b) = normalize $ Refine x (Each [y,b])
 normalize r@(Refine a b) = Refine (normalize a) (normalize b)
 normalize h@(Has a (Has x y)) = Has (Each [a,x]) y
 normalize h@(Has a b) = Has (normalize a) (normalize b)
+normalize b@(Bind x a@(Bind y z)) = 
+  if x == y
+    then normalize $ Bind x z
+    else Bind (normalize x) (normalize a)
 normalize b@(Bind x y) =
   if x == y
-    then normalize x
+    then normalize y
     else Bind (normalize x) (normalize y)
 normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
@@ -1109,7 +1113,7 @@ stepCall a@(Either []) b = throwError EmptyEither
 stepCall a@(Either xs) b = return $ Either $ map (`Call` b) xs
 stepCall a@(Each []) b = throwError $ BadCall a b
 stepCall a@(Each xs) b = return $ Each $ map (`Call` b) xs
-stepCall a b = error "bad evaluate call"
+stepCall a b = return $ Call a b
 
 stepScope :: [MountainTerm] -> MountainContextT IO MountainTerm
 stepScope [] = throwError EmptyScope
