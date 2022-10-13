@@ -5,8 +5,7 @@ Tuple = type -> (
 
 
 Push = 
-  Val -> Tuple(T) -> Tuple(Val | T) @
-    x -> old -> (x,old);
+  (Val -> Tuple(T) -> Tuple(Val | T)) @ (x -> old -> (x,old));
 
 (
   tuple:Tuple,

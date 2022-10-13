@@ -41,7 +41,7 @@ data Structure a =
   | Unique Hash (Structure a)
   | Call (Structure a) (Structure a)
   | Has (Structure a) (Structure a)
-  | Bind (Structure a) (Structure a)
+  | Def (Structure a) (Structure a)
   | Recursive Id (Structure a)
   | Select (Structure a) [Id]
   | Hide (Structure a) [Id]
@@ -58,7 +58,7 @@ data Error a =
   BadImport (Structure a) |
   BadCall (Structure a) (Structure a) |
   BadHas (Structure a) (Structure a) |
-  BadBind (Structure a) (Structure a) |
+  BadDef (Structure a) (Structure a) |
   BadSelect (Structure a) [Id]
   deriving (Show, Eq)
 
@@ -114,7 +114,7 @@ instance Functor Structure where
   fmap f (Call x y) = Call (fmap f x) (fmap f y)
   fmap f (Refine x y) = Refine (fmap f x) (fmap f y)
   fmap f (Has x y) = Has (fmap f x) (fmap f y)
-  fmap f (Bind x y) = Bind (fmap f x) (fmap f y)
+  fmap f (Def x y) = Def (fmap f x) (fmap f y)
   fmap f (Recursive id y) = Recursive id (fmap f y)
   fmap f (Select x ids) = Select (fmap f x) ids
   fmap f (Hide x ids) = Select (fmap f x) ids
@@ -147,7 +147,7 @@ transform transformer input_structure = do
         (Import i_c) -> Import (recurse i_c)
         (Has b s) -> Has (recurse b) (recurse s)
         (Scope xs) -> Scope $ map recurse xs
-        (Bind a b) -> Bind (recurse a) (recurse b)
+        (Def a b) -> Def (recurse a) (recurse b)
         (Recursive id x) -> Recursive id (recurse x)
         (Reference id) -> Reference id
         (Select a ids) -> Select (recurse a) ids
@@ -175,7 +175,7 @@ check f c s = do
         (Import i_c) -> f [b, recurse i_c]
         (Has x y) -> f [b,recurse x,recurse y]
         (Scope xs) -> f (b:map recurse xs)
-        (Bind x y) -> f [b,recurse x,recurse y]
+        (Def x y) -> f [b,recurse x,recurse y]
         (Recursive id x) -> f [b, recurse x]
         (Reference id) -> b
         (Select a ids) -> f [b,recurse a]
@@ -200,11 +200,11 @@ replace old new input_s =
 -- probably via star
 -- TODO isRecursive should handle Contexts
 isRecursive :: Structure a -> Bool
-isRecursive (Bind (Reference n) s) =
+isRecursive (Def (Reference n) s) =
   let
     hasRefOfn :: Structure a -> (Bool, ShouldRecurse (Structure a))
     hasRefOfn r@(Reference k) = (n == k, Result r)
-    hasRefOfn b@(Bind (Reference k) v) =
+    hasRefOfn b@(Def (Reference k) v) =
       if n == k
         then (False, Result b)
         else (False, Recurse)
@@ -229,7 +229,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash (Call a b) = seqHash [hashStr "Call", hash a, hash b]
   hash (Refine a b) = seqHash [hashStr "Refine", hash a, hash b]
   hash (Has a b) = seqHash [hashStr "Has", hash a, hash b]
-  hash (Bind a b) = seqHash [hashStr "Bind", hash a, hash b]
+  hash (Def a b) = seqHash [hashStr "Bind", hash a, hash b]
   hash (Recursive id b) = seqHash [hashStr "Recursive", hashStr id, hash b]
   hash (Select a ids) = seqHash [hashStr "Select", hash a, seqHash $ map hashStr ids]
   hash (Hide a ids) = seqHash [hashStr "Hide", hash a, seqHash $ map hashStr ids]
@@ -470,23 +470,25 @@ normalize r@(Refine (Refine x y) b) = normalize $ Refine x (Each [y,b])
 normalize r@(Refine a b) = Refine (normalize a) (normalize b)
 normalize h@(Has a (Has x y)) = Has (Each [a,x]) y
 normalize h@(Has a b) = Has (normalize a) (normalize b)
-normalize b@(Bind x a@(Bind y z)) = 
+normalize b@(Def x a@(Def y z)) =
   if x == y
-    then normalize $ Bind x z
-    else Bind (normalize x) (normalize a)
-normalize b@(Bind x y) =
-  if x == y
-    then normalize y
-    else Bind (normalize x) (normalize y)
+    then normalize $ Def x z
+    else Def (normalize x) (normalize a)
+normalize b@(Def x y)
+  | x == y = normalize y
+  | isRecursive b = do
+    let Reference n = x
+    normalize $ Recursive n y
+  | otherwise = Def (normalize x) (normalize y)
 normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
     Select new_a ids -> Select new_a (ids ++ id1)
     other -> Select other id1
-normalize r@(Recursive id (Reference n)) = 
+normalize r@(Recursive id (Reference n)) =
   if id == n
     then Reference n
     else r
-normalize r@(Recursive id (Recursive id2 x)) = 
+normalize r@(Recursive id (Recursive id2 x)) =
   if id == id2
     then normalize $ Recursive id x
     else Recursive id $ normalize (Recursive id2 x)
@@ -566,10 +568,10 @@ step t = normalize . fst . uniquify <$> step' t
       if x' == x && y' == y
         then has x y
         else return $ Has x' y'
-    step' b@(Bind x y) = do
-      res <- _stepSeqNoError [x,y]
-      let [x',y'] = res
-      return $ Bind x' y'
+    step' b@(Def x y) = do
+      res <- _stepSeqNoError [y]
+      let [y'] = res
+      return $ Def x y'
     step' r@(Recursive n x) = do
       -- we don't want it to unroll here, but in specific other places
       pushEnv (M.singleton n (Reference n))
@@ -662,192 +664,192 @@ evaluate t = do
     then return res
     else evaluate res
 
-bind :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-bind a@(Context env z@(Bind x y)) b = return $ Bind (Context env x) (Bind (Context env y) b)
-bind (Context env r@(Recursive id x)) r2@(Recursive id2 y) = return $ Bind (Context env (unroll r)) (Context (M.singleton id2 (Reference id)) y)
-bind a@(Context env r@(Recursive id x)) b = throwError $ BadBind a b
-bind (Context env r@(Reference n)) b@(Recursive x y) = do
+define :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
+define a@(Context env z@(Def x y)) b = return $ Def (Context env x) (Def (Context env y) b)
+define (Context env r@(Recursive id x)) r2@(Recursive id2 y) = return $ Def (Context env (unroll r)) (Context (M.singleton id2 (Reference id)) y)
+define a@(Context env r@(Recursive id x)) b = throwError $ BadDef a b
+define (Context env r@(Reference n)) b@(Recursive x y) = do
   let res = M.lookup n env
   case res of
-    Just r' -> return $ Bind r' b
+    Just r' -> return $ Def r' b
     Nothing -> do
       putDef n b
       return b
-bind a@(Context _ _) b@(Recursive _ _) = throwError $ BadBind a b
-bind (Context env r@(Reference n)) b@(Bind x y) = do
+define a@(Context _ _) b@(Recursive _ _) = throwError $ BadDef a b
+define (Context env r@(Reference n)) b@(Def x y) = do
   let res = M.lookup n env
   case res of
-    Just r' -> return $ Bind r' b
+    Just r' -> return $ Def r' b
     Nothing -> do
-      res <- bind x y
-      return $ Bind (Context env r) res
-bind (Context env r@(Reference n)) b@(Reference m) = do
+      res <- define x y
+      return $ Def (Context env r) res
+define (Context env r@(Reference n)) b@(Reference m) = do
   let res = M.lookup n env
   case res of
-    Just r' -> return $ Bind r' b
+    Just r' -> return $ Def r' b
     Nothing ->
       if n == m
         then return (Reference m)
         else do
           putDef n b
           return b
-bind c@(Context env x) b@(Reference n) = do
+define c@(Context env x) b@(Reference n) = do
   res <- hasDef n
   if res
     then do
       def <- getDef n
-      return $ Bind c def
+      return $ Def c def
     else do
       putDef n c
       return b
-bind (Context env r@(Reference n)) b = do
+define (Context env r@(Reference n)) b = do
   let res = M.lookup n env
   case res of
-    Just r' -> return $ Bind r' b
+    Just r' -> return $ Def r' b
     Nothing -> do
       putDef n b
       return b
-bind a@(Context _ _) b@(Bind x y) = do
-  res <- bind x y
-  return $ Bind a res
-bind a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Bind`) inner
-bind a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Bind`) inner
-bind (Context env a@(Except inner)) b = return $ Except $ map ((`Bind` b) . Context env) inner
-bind a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Bind`) inner
-bind a@(Context _ _) b@(Context env x) = do
+define a@(Context _ _) b@(Def x y) = do
+  res <- define x y
+  return $ Def a res
+define a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Def`) inner
+define a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Def`) inner
+define (Context env a@(Except inner)) b = return $ Except $ map ((`Def` b) . Context env) inner
+define a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Def`) inner
+define a@(Context _ _) b@(Context env x) = do
   pushEnv env
-  res <- bind a x
+  res <- define a x
   new_env <- popEnv
   case res of
-    Bind a' b' -> return $ Bind a' (Context new_env b')
+    Def a' b' -> return $ Def a' (Context new_env b')
     other -> return $ Context new_env other
-bind a@(Context _ _) (Import b) = return $ Import (Bind a b) -- TODO change to make imports bind afterwards
-bind (Context env a@(Import _)) b = error "imports should be stepped before binding"
-bind (Context env Wildcard) b = return b
-bind (Context env a@(Literal x)) b@(Literal y) =
+define a@(Context _ _) (Import b) = return $ Import (Def a b) -- TODO change to make imports define afterwards
+define (Context env a@(Import _)) b = error "imports should be stepped before binding"
+define (Context env Wildcard) b = return b
+define (Context env a@(Literal x)) b@(Literal y) =
   if x == y
     then return a
-    else throwError $ BadBind a b
-bind (Context env a@(Literal _)) b = throwError $ BadBind a b
-bind (Context env a@(Set [r@(Reference n)])) b@(Set elems2) = do
+    else throwError $ BadDef a b
+define (Context env a@(Literal _)) b = throwError $ BadDef a b
+define (Context env a@(Set [r@(Reference n)])) b@(Set elems2) = do
   let res = M.lookup n env
   case res of
-    Just r' -> return $ Bind (Context env (Set [r'])) b
-    Nothing -> return $ Bind r (Either elems2)
-bind a@(Context env x@(Set elems)) b@(Set elems2) = return $ Bind (Context env (Either elems)) (Either elems2)
-bind (Context env a@(Set elems)) b = throwError $ BadBind a b
-bind (Context env a@(Function [])) b@(Function []) = return b
-bind a@(Context env (Function _)) b@(Function (ib@(Bind ya yb):ys)) = do
+    Just r' -> return $ Def (Context env (Set [r'])) b
+    Nothing -> return $ Def r (Either elems2)
+define a@(Context env x@(Set elems)) b@(Set elems2) = return $ Def (Context env (Either elems)) (Either elems2)
+define (Context env a@(Set elems)) b = throwError $ BadDef a b
+define (Context env a@(Function [])) b@(Function []) = return b
+define a@(Context env (Function _)) b@(Function (ib@(Def ya yb):ys)) = do
   pushEnv M.empty
-  res <- bind ya yb
+  res <- define ya yb
   env' <- popEnv
-  return $ Bind a (Context env' (Function (res:ys)))
-bind a@(Context env (Function (x@(Bind xa Wildcard):xs))) b@(Function (y:ys)) = do
+  return $ Def a (Context env' (Function (res:ys)))
+define a@(Context env (Function (x@(Def xa Wildcard):xs))) b@(Function (y:ys)) = do
   pushEnv env
-  res <- bind (Context env xa) y
+  res <- define (Context env xa) y
   new_env <- popEnv
   case normalize res of
-    b'@(Bind (Context env x') y') -> do -- TODO isRecursive should handle Contexts
+    b'@(Def (Context env x') y') -> do
       let final_env = M.union new_env env
-      return $ Bind (Context final_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
-    b'@(Bind x' y') ->
-      return $ Bind (Context new_env (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+      return $ Def (Context final_env (Function (Def x' Wildcard:xs))) (Function (y':ys))
+    b'@(Def x' y') ->
+      return $ Def (Context new_env (Function (Def x' Wildcard:xs))) (Function (y':ys))
     other ->
-      return $ Bind (Context new_env (Function (Wildcard:xs))) (Function (other:ys))
-bind a@(Context env (Function (x@(Bind xa xb):xs))) b@(Function (y:ys)) = do
-  res <- bind (Context env (Function (xb:xs))) (Function (y:ys))
+      return $ Def (Context new_env (Function (Wildcard:xs))) (Function (other:ys))
+define a@(Context env (Function (x@(Def xa xb):xs))) b@(Function (y:ys)) = do
+  res <- define (Context env (Function (xb:xs))) (Function (y:ys))
   case normalize res of
-    b'@(Bind (Context env (Function (x':xs'))) y') -> do
-      return $ Bind (Context env (Function (Bind xa x':xs'))) y'
-    b'@(Bind (Function (x':xs')) y') -> do
-      return $ Bind (Function (Bind xa x':xs')) y'
+    b'@(Def (Context env (Function (x':xs'))) y') -> do
+      return $ Def (Context env (Function (Def xa x':xs'))) y'
+    b'@(Def (Function (x':xs')) y') -> do
+      return $ Def (Function (Def xa x':xs')) y'
     other -> return other
-bind (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
+define (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
   -- normalized here because Function [x] == x
-  res <- bind (Context env (normalize $ Function xs)) (normalize $ Function ys)
+  res <- define (Context env (normalize $ Function xs)) (normalize $ Function ys)
   case normalize res of
-    b'@(Bind (Context new_env xs') ys') -> -- TODO isRecursive should handle Contexts
-      return $ Bind (Context new_env $ Function [Wildcard,xs']) (Function [y, ys'])
-    b'@(Bind xs' ys') ->
-      return $ Bind (Function [Wildcard,xs']) (Function [y, ys'])
+    b'@(Def (Context new_env xs') ys') ->
+      return $ Def (Context new_env $ Function [Wildcard,xs']) (Function [y, ys'])
+    b'@(Def xs' ys') ->
+      return $ Def (Function [Wildcard,xs']) (Function [y, ys'])
     other -> return (Function [y,other])
-bind (Context env a@(Function (x:xs))) b@(Function (y:ys)) = do
-  res <- bind (Context env x) y
+define (Context env a@(Function (x:xs))) b@(Function (y:ys)) = do
+  res <- define (Context env x) y
   case normalize res of
-    b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
-      return $ Bind (Function (x':xs)) (Function (y':ys))
-    b'@(Bind x' y') ->
-      return $ Bind (Function (Wildcard:xs)) (Function (y':ys))
-    other -> return $ Bind (Function (Wildcard:xs)) (Function (other:ys))
-bind (Context env a@(Function _)) b = throwError $ BadBind a b
-bind (Context env a@(Tuple [])) b@(Tuple []) = return b
-bind a@(Context env (Tuple _)) b@(Tuple (ib@(Bind ya yb):ys)) = do
+    b'@(Def (Context env x') y') ->
+      return $ Def (Function (x':xs)) (Function (y':ys))
+    b'@(Def x' y') ->
+      return $ Def (Function (Wildcard:xs)) (Function (y':ys))
+    other -> return $ Def (Function (Wildcard:xs)) (Function (other:ys))
+define (Context env a@(Function _)) b = throwError $ BadDef a b
+define (Context env a@(Tuple [])) b@(Tuple []) = return b
+define a@(Context env (Tuple _)) b@(Tuple (ib@(Def ya yb):ys)) = do
   pushEnv M.empty
-  res <- bind ya yb
+  res <- define ya yb
   env' <- popEnv
-  return $ Bind a (Context env' (Tuple (res:ys)))
-bind a@(Context env (Tuple (x@(Bind xa Wildcard):xs))) b@(Tuple (y:ys)) = do
+  return $ Def a (Context env' (Tuple (res:ys)))
+define a@(Context env (Tuple (x@(Def xa Wildcard):xs))) b@(Tuple (y:ys)) = do
   pushEnv env
-  res <- bind (Context env xa) y
+  res <- define (Context env xa) y
   new_env <- popEnv
   case normalize res of
-    b'@(Bind (Context env x') y') -> do -- TODO isRecursive should handle Contexts
+    b'@(Def (Context env x') y') -> do
       let final_env = M.union new_env env
-      return $ Bind (Context final_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
-    b'@(Bind x' y') ->
-      return $ Bind (Context new_env (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+      return $ Def (Context final_env (Tuple (Def x' Wildcard:xs))) (Tuple (y':ys))
+    b'@(Def x' y') ->
+      return $ Def (Context new_env (Tuple (Def x' Wildcard:xs))) (Tuple (y':ys))
     other ->
-      return $ Bind (Context new_env (Tuple (Wildcard:xs))) (Tuple (other:ys))
-bind a@(Context env (Tuple (x@(Bind xa xb):xs))) b@(Tuple (y:ys)) = do
-  res <- bind (Context env (Tuple (xb:xs))) (Tuple (y:ys))
+      return $ Def (Context new_env (Tuple (Wildcard:xs))) (Tuple (other:ys))
+define a@(Context env (Tuple (x@(Def xa xb):xs))) b@(Tuple (y:ys)) = do
+  res <- define (Context env (Tuple (xb:xs))) (Tuple (y:ys))
   case normalize res of
-    b'@(Bind (Context env (Tuple (x':xs'))) y') -> do
-      return $ Bind (Context env (Tuple (Bind xa x':xs'))) y'
-    b'@(Bind (Tuple (x':xs')) y') -> do
-      return $ Bind (Tuple (Bind xa x':xs')) y'
+    b'@(Def (Context env (Tuple (x':xs'))) y') -> do
+      return $ Def (Context env (Tuple (Def xa x':xs'))) y'
+    b'@(Def (Tuple (x':xs')) y') -> do
+      return $ Def (Tuple (Def xa x':xs')) y'
     other -> return other
-bind (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
+define (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
   -- normalized here because Tuple [x] == x
-  res <- bind (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
+  res <- define (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
   case normalize res of
-    b'@(Bind (Context new_env xs') ys') -> -- TODO isRecursive should handle Contexts
-      return $ Bind (Context new_env $ Tuple [Wildcard,xs']) (Tuple [y, ys'])
-    b'@(Bind xs' ys') ->
-      return $ Bind (Tuple [Wildcard,xs']) (Tuple [y, ys'])
+    b'@(Def (Context new_env xs') ys') ->
+      return $ Def (Context new_env $ Tuple [Wildcard,xs']) (Tuple [y, ys'])
+    b'@(Def xs' ys') ->
+      return $ Def (Tuple [Wildcard,xs']) (Tuple [y, ys'])
     other -> return (Tuple [y,other])
-bind (Context env a@(Tuple (x:xs))) b@(Tuple (y:ys)) = do
-  res <- bind (Context env x) y
+define (Context env a@(Tuple (x:xs))) b@(Tuple (y:ys)) = do
+  res <- define (Context env x) y
   case normalize res of
-    b'@(Bind (Context env x') y') -> -- TODO isRecursive should handle Contexts
-      return $ Bind (Tuple (x':xs)) (Tuple (y':ys))
-    b'@(Bind x' y') ->
-      return $ Bind (Tuple (Wildcard:xs)) (Tuple (y':ys))
-    other -> return $ Bind (Tuple (Wildcard:xs)) (Tuple (other:ys))
-bind (Context env a@(Tuple _)) b = throwError $ BadBind a b
-bind (Context env a@(Each inner)) b = return $ Each $ map ((`Bind` b) . Context env) inner
-bind (Context env a@(Either inner)) b = return $ Either $ map ((`Bind` b) . Context env) inner
-bind (Context env a@(Scope _)) b = error "Scopes should be normalized away in binds"
-bind (Context env a@(Call x y)) b@(Call x2 y2) = do
-  resx <- bind x x2
-  resy <- bind y y2
+    b'@(Def (Context env x') y') ->
+      return $ Def (Tuple (x':xs)) (Tuple (y':ys))
+    b'@(Def x' y') ->
+      return $ Def (Tuple (Wildcard:xs)) (Tuple (y':ys))
+    other -> return $ Def (Tuple (Wildcard:xs)) (Tuple (other:ys))
+define (Context env a@(Tuple _)) b = throwError $ BadDef a b
+define (Context env a@(Each inner)) b = return $ Each $ map ((`Def` b) . Context env) inner
+define (Context env a@(Either inner)) b = return $ Either $ map ((`Def` b) . Context env) inner
+define (Context env a@(Scope _)) b = error "Scopes should be normalized away in binds"
+define (Context env a@(Call x y)) b@(Call x2 y2) = do
+  resx <- define x x2
+  resy <- define y y2
   return $ Call resx resy
-bind (Context env (Call _ _)) _ = error "Calls should be normalized away in before bind"
-bind a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined binding" $ Bind a b
-bind (Context env (Has typ x)) b = bind (Context env x) (Has (Context env typ) b)
-bind a@(Context env (Select x ids)) b = throwError $ NotImplemented "binding on selects" $ Bind a b
-bind a@(Context env (Hide x ids)) b = throwError $ NotImplemented "binding on hides" $ Bind a b
-bind a@(Context env (Unique h x)) b@(Unique h2 y) = do
+define a@(Context env (Call _ _)) b = throwError $ BadDef a b
+define a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined binding" $ Def a b
+define (Context env (Has typ x)) b = define (Context env x) (Has (Context env typ) b)
+define a@(Context env (Select x ids)) b = throwError $ NotImplemented "binding on selects" $ Def a b
+define a@(Context env (Hide x ids)) b = throwError $ NotImplemented "binding on hides" $ Def a b
+define a@(Context env (Unique h x)) b@(Unique h2 y) = do
   if h /= h2
-    then throwError $ BadBind a b
+    then throwError $ BadDef a b
     else do
-      res <- bind (Context env x) y
+      res <- define (Context env x) y
       case res of
-        Bind (Context env a') b' -> return $ Bind (Context env (Unique h a')) (Unique h2 b')
-        Bind a' b' -> return $ Bind (Unique h a') (Unique h2 b')
+        Def (Context env a') b' -> return $ Def (Context env (Unique h a')) (Unique h2 b')
+        Def a' b' -> return $ Def (Unique h a') (Unique h2 b')
         other -> return $ Unique h2 other
-bind a@(Context env (Unique h x)) other = throwError $ BadBind a other
-bind (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
-bind a b = bind (Context M.empty a) b
+define a@(Context env (Unique h x)) other = throwError $ BadDef a other
+define (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
+define a b = define (Context M.empty a) b
 
 has :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
     -- TODO: maybe a scope for the big has and small has so they don't overlap
@@ -863,12 +865,12 @@ has a@(Context env (Has x y)) b = do
 has a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Has`) inner
 has a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Has`) inner
 has a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Has`) inner
-has a@(Context _ _) b@(Bind x y) = do
+has a@(Context _ _) b@(Def x y) = do
   res <- has a y
   case normalize res of
-    b'@(Has a' y') -> -- TODO isRecursive should handle Contexts
-      return $ Has a' (Bind x y')
-    other -> return (Bind x other)
+    b'@(Has a' y') ->
+      return $ Has a' (Def x y')
+    other -> return (Def x other)
 has t@(Context env (Reference n)) v@(Reference k) = do
   let nres = M.lookup n env
   case nres of
@@ -892,7 +894,7 @@ has (Context env (Set [x])) y@(Reference n) = do
     else do
       putDef n x
       return x
-has a@(Context env (Set [x])) b = return $ Scope [Bind (Context env x) b]
+has a@(Context env (Set [x])) b = return $ Scope [Def (Context env x) b]
 has a@(Context env (Set (x:xs))) b = return $ Either [Has (Context env (Set [x])) b, Has (Context env (Set xs)) b]
 has a@(Context _ _) r@(Reference n) = do
   def <- getDef n
@@ -903,29 +905,29 @@ has a@(Context env Wildcard) b = return b
 has a@(Context env (Literal (Thing _))) b = throwError $ BadHas (normalize a) b
 has a@(Context env (Import x)) b = error "imports should have been stepped before executing has"
 has (Context _ _) b@(Import x) = error "imports should have been stepped before executing has"
-has a@(Context env (Bind x y)) b = return $ Has y b
+has a@(Context env (Def x y)) b = return $ Has y b
 has (Context env a@(Function [])) b@(Function []) = return b
-has (Context env a@(Function (Bind xa Wildcard:xs))) b@(Function (Bind ya yb:ys)) = do
+has (Context env a@(Function (Def xa Wildcard:xs))) b@(Function (Def ya yb:ys)) = do
   pushEnv env
-  res <- bind xa (Set [yb])
+  res <- define xa (Set [yb])
   new_env <- popEnv
   let unioned = M.union new_env env
   case normalize res of
-    b'@(Bind x' y') -> return $ Has (Context unioned (Function (Bind x' Wildcard:xs))) (Function (Bind ya y':ys))
+    b'@(Def x' y') -> return $ Has (Context unioned (Function (Def x' Wildcard:xs))) (Function (Def ya y':ys))
     other -> return $ Has (Context unioned (Function (Wildcard:xs))) b
-has (Context env a@(Function (Bind xa Wildcard:xs))) b@(Function (y:ys)) = do
+has (Context env a@(Function (Def xa Wildcard:xs))) b@(Function (y:ys)) = do
   pushEnv env
-  res <- bind xa (Set [y])
+  res <- define xa (Set [y])
   new_env <- popEnv
   let unioned = M.union new_env env
   case normalize res of
-    b'@(Bind x' y') -> return $ Has (Context unioned (Function (Bind x' Wildcard:xs))) (Function (y':ys))
+    b'@(Def x' y') -> return $ Has (Context unioned (Function (Def x' Wildcard:xs))) (Function (y':ys))
     other -> return $ Has (Context unioned (Function (Wildcard:xs))) b
-has (Context env a@(Function (Bind xa xb:xs))) b@(Function (y:ys)) = do
+has (Context env a@(Function (Def xa xb:xs))) b@(Function (y:ys)) = do
   res <- has (Context env (Function (xb:xs))) b
   case normalize res of
-    (Has (Context env' (Function (xb':xs'))) b') -> return $ Has (Context env' $ Function (Bind xa xb':xs')) b'
-    (Has (Function (xb':xs')) b') -> return $ Has (Function (Bind xa xb':xs')) b'
+    (Has (Context env' (Function (xb':xs'))) b') -> return $ Has (Context env' $ Function (Def xa xb':xs')) b'
+    (Has (Function (xb':xs')) b') -> return $ Has (Function (Def xa xb':xs')) b'
     other -> return other
 has (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
   -- normalized here because Function [x] == x
@@ -955,27 +957,27 @@ has a@(Context env (Function (x:xs))) b@(Function (y:ys)) = do
         other -> return $ Function [y,other]
 has (Context env a@(Function _)) b = throwError $ BadHas a b
 has (Context env a@(Tuple [])) b@(Tuple []) = return b
-has (Context env a@(Tuple (Bind xa Wildcard:xs))) b@(Tuple (Bind ya yb:ys)) = do
+has (Context env a@(Tuple (Def xa Wildcard:xs))) b@(Tuple (Def ya yb:ys)) = do
   pushEnv env
-  res <- bind xa (Set [yb])
+  res <- define xa (Set [yb])
   new_env <- popEnv
   let unioned = M.union new_env env
   case normalize res of
-    b'@(Bind x' y') -> return $ Has (Context unioned (Tuple (Bind x' Wildcard:xs))) (Tuple (Bind ya y':ys))
+    b'@(Def x' y') -> return $ Has (Context unioned (Tuple (Def x' Wildcard:xs))) (Tuple (Def ya y':ys))
     other -> return $ Has (Context unioned (Tuple (Wildcard:xs))) b
-has (Context env a@(Tuple (Bind xa Wildcard:xs))) b@(Tuple (y:ys)) = do
+has (Context env a@(Tuple (Def xa Wildcard:xs))) b@(Tuple (y:ys)) = do
   pushEnv env
-  res <- bind xa (Set [y])
+  res <- define xa (Set [y])
   new_env <- popEnv
   let unioned = M.union new_env env
   case normalize res of
-    b'@(Bind x' y') -> return $ Has (Context unioned (Tuple (Bind x' Wildcard:xs))) (Tuple (y':ys))
+    b'@(Def x' y') -> return $ Has (Context unioned (Tuple (Def x' Wildcard:xs))) (Tuple (y':ys))
     other -> return $ Has (Context unioned (Tuple (Wildcard:xs))) b
-has (Context env a@(Tuple (Bind xa xb:xs))) b@(Tuple (y:ys)) = do
+has (Context env a@(Tuple (Def xa xb:xs))) b@(Tuple (y:ys)) = do
   res <- has (Context env (Tuple (xb:xs))) b
   case normalize res of
-    (Has (Context env' (Tuple (xb':xs'))) b') -> return $ Has (Context env' $ Tuple (Bind xa xb':xs')) b'
-    (Has (Tuple (xb':xs')) b') -> return $ Has (Tuple (Bind xa xb':xs')) b'
+    (Has (Context env' (Tuple (xb':xs'))) b') -> return $ Has (Context env' $ Tuple (Def xa xb':xs')) b'
+    (Has (Tuple (xb':xs')) b') -> return $ Has (Tuple (Def xa xb':xs')) b'
     other -> return other
 has (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
   -- normalized here because Function [x] == x
@@ -1007,15 +1009,15 @@ has (Context env a@(Tuple _)) b = throwError $ BadHas a b
 has (Context env (Either xs)) b = return $ Either $ map ((`Has` b) . Context env) xs
 has (Context env (Each xs)) b = return $ Each $ map ((`Has` b) . Context env) xs
 has a@(Context env (Except inner)) b = return $ Except $ map ((`Has` b) . Context env) inner
-has a@(Context env (Call _ _)) b = throwError $ BadHas (normalize a) b -- should be stepped
+has a@(Context env (Call _ _)) b = return $ Has a b -- should be stepped
 has a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined Has" $ Has a b
-has a@(Context env (Select x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
-has a@(Context env (Hide x ids)) b = throwError $ BadHas (normalize a) b -- should be stepped
+has a@(Context env (Select x ids)) b = return $ Has a b -- should be stepped
+has a@(Context env (Hide x ids)) b = return $ Has a b-- should be stepped
 has a@(Context env (Unique h1 x)) b = do
   res <- has (Context env x) b
   case res of
     Has (Context env a') b' -> return $ Has (Context env (Unique h1 a')) b'
-    Has a' b' -> return $ Bind (Unique h1 a') b'
+    Has a' b' -> return $ Def (Unique h1 a') b'
     other -> return other
 has (Context env a@(Scope _)) b = error "Scopes should be stepped away in has"
 has (Context _ (Context _ _)) b = error "nested contexts should be normalized"
@@ -1031,7 +1033,7 @@ select l@(Literal (Thing id)) [x] =
     then return l
     else throwError $ BadSelect l [x]
 select a@(Literal _) ids = throwError $ BadSelect a ids
-select a@Wildcard ids = return $ Tuple $ map ((`Bind` Wildcard) . Reference) ids
+select a@Wildcard ids = return $ Tuple $ map ((`Def` Wildcard) . Reference) ids
 select f@(Function _) ids = throwError $ BadSelect f ids
 select s@(Scope _) ids = error "should be stepped before selecting"
 select i@(Import _) ids = error "should be stepped before selecting"
@@ -1045,14 +1047,14 @@ select c@(Context env x) ids = do
   res <- select x ids
   new_env <- popEnv
   return $ Context env res
-select b@(Bind (Reference n) x) ids = select (Tuple [b]) ids
-select (Bind a y@(Bind b c)) ids = do
+select b@(Def (Reference n) x) ids = select (Tuple [b]) ids
+select (Def a y@(Def b c)) ids = do
   res <- select y ids
   case res of
-    Either [] -> select (Bind a c) ids
+    Either [] -> select (Def a c) ids
     something -> return something
-select b@(Bind _ _) ids = return nothing
-select r@(Recursive id x) ids = 
+select b@(Def _ _) ids = return nothing
+select r@(Recursive id x) ids =
   if id `elem` ids
     then return r
     else return $ Select (unroll r) ids
@@ -1062,11 +1064,11 @@ select s@(Each xs) ids = return $ Each $ map (`Select` ids) xs
 select s@(Except xs) ids = return $ Except $ map (`Select` ids) xs
 select (Tuple _) [] = return unit
 select s@(Tuple []) ids = throwError $ BadSelect s ids
-select (Tuple (b@(Bind (Reference n) xb):xs)) ids = do
+select (Tuple (b@(Def (Reference n) xb):xs)) ids = do
   let new_ids = filter (/= n) ids
   if n `elem` ids
     then do
-      return $ Tuple [Bind (Reference n) xb,Select (Tuple xs) new_ids]
+      return $ Tuple [Def (Reference n) xb,Select (Tuple xs) new_ids]
     else return $ Scope [b,Select (Tuple xs) new_ids]
 select (Tuple (x@(Tuple (Literal (Thing n):_)):xs)) ids = do
   let new_ids = filter (/= n) ids
@@ -1086,11 +1088,11 @@ stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
 stepCall a@(Function []) b = throwError $ BadCall a b
 stepCall a@(Function (x:xs)) b = do
   pushEnv M.empty
-  res <- bind x b
+  res <- define x b
   new_env <- popEnv
   return $ Context new_env $ Function xs
   `catchError` (\case
-    BadBind _ _ -> throwError $ BadCall a b
+    BadDef _ _ -> throwError $ BadCall a b
     other -> throwError other)
 stepCall a@(Either []) b = throwError EmptyEither
 stepCall a@(Either xs) b = return $ Either $ map (`Call` b) xs
@@ -1104,9 +1106,9 @@ stepScope (r@(Recursive id y):xs) =
   case xs of
     [] -> return r
     _ -> return $ Context (M.singleton id r) $ Scope xs
-stepScope (b@(Bind x y):xs) = do
+stepScope (b@(Def x y):xs) = do
   pushEnv M.empty
-  res <- bind x y
+  res <- define x y
   new_env <- popEnv
   return $ Context new_env $ Scope (res : xs)
 stepScope (x:xs) = do
@@ -1141,7 +1143,7 @@ setUnsetUniques (Call b a) = Call <$> setUnsetUniques b <*> setUnsetUniques a
 setUnsetUniques (Import i_c) = Import <$> setUnsetUniques i_c
 setUnsetUniques (Has b s) = Has <$> setUnsetUniques b <*> setUnsetUniques s
 setUnsetUniques (Scope xs) = Scope <$> mapM setUnsetUniques xs
-setUnsetUniques (Bind a b) = Bind <$> setUnsetUniques a <*> setUnsetUniques b
+setUnsetUniques (Def a b) = Def <$> setUnsetUniques a <*> setUnsetUniques b
 setUnsetUniques (Recursive id b) = Recursive id <$> setUnsetUniques b
 setUnsetUniques (Reference id) = return $ Reference id
 setUnsetUniques (Select a ids) = Select <$> setUnsetUniques a <*> return ids
@@ -1198,10 +1200,10 @@ uniquify (Scope xs) = do
   let (new_ic, hash) = unzip $ map uniquify xs
   let new_hash = seqHash hash
   (Unique new_hash (Scope new_ic), new_hash)
-uniquify (Bind a b) = do
+uniquify (Def a b) = do
   let (a', hash_a) = uniquify a
   let (b', hash_b) = uniquify b
-  (Bind (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
+  (Def (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
 uniquify (Recursive id b) = do
   let (b', hash_b) = uniquify b
   (Unique hash_b (Recursive id b'), hash_b)
@@ -1235,12 +1237,12 @@ stepImport r@(Reference n) = do
     else do
       res <- lift $ parser full_path
       lift $ fst . uniquify <$> setUnsetUniques res
-stepImport (Bind n@(Reference _) i) = do
+stepImport (Def n@(Reference _) i) = do
   res <- stepImport i
   return $ case res of
-    Bind _ b -> Bind n b
-    Import x -> Import (Bind n x)
-    other -> Bind n other
+    Def _ b -> Def n b
+    Import x -> Import (Def n x)
+    other -> Def n other
 stepImport s@(Select r@(Reference n) l@(id:ids)) = do
   opt <- getOptions
   let Options _ repo file_ext = opt

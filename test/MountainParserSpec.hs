@@ -209,28 +209,28 @@ spec = do
       it "Should parse Either first, has second" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Hass.2_either"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Either [Has (Literal (Thing "1")) (Literal (Thing "2")),Literal (Thing "3")]]
+        val `shouldBe` Scope [Has (Literal (Thing "1")) (Either [Literal (Thing "2"),Literal (Thing "3")])]
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Hass.3_recursive"
         let (Right (val, env), log) = res
         val `shouldBe` Scope [Has (Each [Reference "x",Reference "y"]) (Reference "z")]
-    describe "Bind" $ do
-      it "Should parse Bind colon and equal" $ do
-        res <- runMountain $ dotImportFile "Tests.Parser.Bind.1_basic"
+    describe "Define" $ do
+      it "Should parse Def colon and equal" $ do
+        res <- runMountain $ dotImportFile "Tests.Parser.Define.1_basic"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Bind (Reference "a") (Reference "b"),Bind (Reference "a") (Reference "b")]
+        val `shouldBe` Scope [Def (Reference "a") (Reference "b"),Def (Reference "a") (Reference "b")]
       it "= should parse last" $ do
-        res <- runMountain $ dotImportFile "Tests.Parser.Bind.2_="
+        res <- runMountain $ dotImportFile "Tests.Parser.Define.2_="
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Bind (Literal (Float 1.0)) (Either [Literal (Float 2.0),Literal (Float 3.1)])]
+        val `shouldBe` Scope [Def (Literal (Float 1.0)) (Either [Literal (Float 2.0),Literal (Float 3.1)])]
       it ": should parse first" $ do
-        res <- runMountain $ dotImportFile "Tests.Parser.Bind.3_:"
+        res <- runMountain $ dotImportFile "Tests.Parser.Define.3_:"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Either [Bind (Literal (Int 1)) (Literal (Int 2)),Literal (Int 3)]]
+        val `shouldBe` Scope [Either [Def (Literal (Int 1)) (Literal (Int 2)),Literal (Int 3)]]
       it "mixing = and : should be right" $ do
-        res <- runMountain $ dotImportFile "Tests.Parser.Bind.4_recursive"
+        res <- runMountain $ dotImportFile "Tests.Parser.Define.4_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Bind (Bind (Reference "x") (Bind (Reference "y") (Reference "z"))) (Reference "a"),Bind (Reference "x") (Bind (Bind (Reference "y") (Reference "z")) (Reference "a"))]
+        val `shouldBe` Scope [Def (Def (Reference "x") (Def (Reference "y") (Reference "z"))) (Reference "a"),Def (Reference "x") (Def (Def (Reference "y") (Reference "z")) (Reference "a"))]
     describe "Select" $ do
       it "Should parse Select" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Select.1_basic"

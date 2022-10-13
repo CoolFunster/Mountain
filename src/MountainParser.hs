@@ -108,7 +108,7 @@ reservedIds = [
   "All"]
 
 restrictedIdChars :: [Char]
-restrictedIdChars = "?$*#.,=:;@`[]{}()<>|&']-\\%"
+restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
 
 pId :: Parser Id
 pId = do
@@ -248,25 +248,26 @@ pContext pa = do
 -- ######################
 
 
-replaceBindsWithRec :: Structure a -> Structure a
-replaceBindsWithRec (Bind a b) = do
-  if isRecursive (Bind a b)
+replaceDefsWithRec :: Structure a -> Structure a
+replaceDefsWithRec (Def a b) = do
+  if isRecursive (Def a b)
     then do
       let Reference n = a
       Recursive n b
-    else Bind a b
-replaceBindsWithRec _ = error "used on something else"
+    else Def a b
+replaceDefsWithRec _ = error "used on something else"
 
 pStructureOp :: (Show a) => Parser a -> Parser (Structure a)
 pStructureOp pa = makeExprParser (pCall pa) [
-    [binaryR (pWrapWS ":") Bind],
-    [binaryR (pWrapWS "@") Has],
+    [binaryR (pWrapWS ":") Def],
     [binaryR (pWrapWS "&") (\lhs rhs -> Each [lhs,rhs])],
     [binaryR (pWrapWS "|") (\lhs rhs -> Either [lhs,rhs])],
-    [binaryR (pWrapWS "~") (\lhs rhs -> Except [lhs,rhs])],
+    [binaryR (pWrapWS "!") (\lhs rhs -> Except [lhs,rhs])],
     [binaryR (pWrapWS "->") (\lhs rhs -> Function [lhs,rhs])],
     [binaryL (pWrapWS "%") Refine],
-    [binaryR (pWrapWS "=") (\x y -> replaceBindsWithRec $ Bind x y)]
+    [binaryL (pWrapWS "~") (\(Reference n) rhs -> Recursive n rhs)],
+    [binaryR (pWrapWS "@") Has],
+    [binaryR (pWrapWS "=") (\x y -> replaceDefsWithRec $ Def x y)]
   ]
 
 pCall :: (Show a) => Parser a -> Parser (Structure a)
@@ -369,13 +370,13 @@ prettyTerm ((Tuple as)) = "(" ++ intercalate "," (map prettyTerm as) ++ ")"
 prettyTerm ((Function as)) = "(" ++ intercalate "->" (map prettyTerm as) ++ ")"
 prettyTerm ((Either as)) = "(" ++ intercalate "|" (map prettyTerm as) ++ ")"
 prettyTerm ((Each as)) = "(" ++ intercalate "&" (map prettyTerm as) ++ ")"
-prettyTerm ((Except as)) = "(" ++ intercalate "~" (map prettyTerm as) ++ ")"
+prettyTerm ((Except as)) = "(" ++ intercalate "!" (map prettyTerm as) ++ ")"
 prettyTerm ((Scope as)) = "\\{" ++ intercalate ";" (map prettyTerm as) ++ "}"
 prettyTerm ((Unique _ as)) = "$" ++ prettyTerm as
 prettyTerm ((Call a b)) = "(" ++ prettyTerm a ++ " " ++ prettyTerm b ++ ")"
 prettyTerm ((Has a b)) = "(" ++ prettyTerm a ++ "@" ++ prettyTerm b ++ ")"
-prettyTerm ((Bind a b)) = "(" ++ prettyTerm a ++ ":" ++ prettyTerm b ++ ")"
-prettyTerm (Recursive id b) = "(" ++ id ++ ":" ++ prettyTerm b ++ ")"
+prettyTerm ((Def  a b)) = "(" ++ prettyTerm a ++ ":" ++ prettyTerm b ++ ")"
+prettyTerm (Recursive id b) = "(" ++ id ++ "~" ++ prettyTerm b ++ ")"
 prettyTerm ((Refine a b)) = "(" ++ prettyTerm a ++ " % " ++ prettyTerm b ++ ")"
 prettyTerm ((Select a [id])) = prettyTerm a ++ "." ++ id
 prettyTerm ((Select a ids)) = prettyTerm a ++ "." ++ "[" ++ intercalate "," ids ++ "]"
