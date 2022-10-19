@@ -21,7 +21,7 @@ spec = do
       it "Should parse one all" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Literals.2_all"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal All]
+        val `shouldBe` Scope [Reference "All"]
       it "Should parse one wildcard" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Literals.4_wildcard"
         let (Right (val, env), log) = res
@@ -29,7 +29,7 @@ spec = do
       it "Should parse multiple literals" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Literals.5_multiple"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal (Thing "a"),Literal (Thing "b"),Literal (Thing "c"),Literal All]
+        val `shouldBe` Scope [Literal (Thing "a"),Literal (Thing "b"),Literal (Thing "c"),Reference "All"]
     describe "Reference" $ do
       it "Should parse a reference" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.References.1_reference"
@@ -70,10 +70,10 @@ spec = do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.2_many_elem"
         let (Right (val, env), log) = res
         val `shouldBe` Scope [Tuple [Literal (Thing "1"),Literal (Thing "2")]]
-      it "Should parse recursive sets" $ do
+      it "Should parse recursive tuples" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Tuple [Literal (Thing "1"),Literal (Thing "2")]]
+        val `shouldBe` Scope [Tuple [Literal (Thing "1"),Literal (Thing "2"),Tuple []]]
       it "Should ignore ws" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.4_ws"
         let (Right (val, env), log) = res
@@ -167,15 +167,19 @@ spec = do
       it "Should parse Unique" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.1_basic"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Unique Unset (Literal $ Thing "2")]
+        val `shouldBe` Scope [UniqueRef (Literal $ Thing "2")]
       it "Should parse Either second" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.2_either"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Unique Unset (Either [Literal (Thing "2"),Literal (Thing "3")])]
+        val `shouldBe` Scope [Either [UniqueRef (Literal (Thing "2")),Literal (Thing "3")]]
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Unique Unset (Literal (Thing "2"))]
+        val `shouldBe` Scope [UniqueRef (UniqueRef (Literal (Thing "2")))]
+      it "Should parse eq" $ do
+        res <- runMountain $ dotImportFile "Tests.Parser.Uniques.4_is"
+        let (Right (val, env), log) = res
+        val `shouldBe` Scope [Call (Call (Reference "is") (UniqueRef (Reference "x"))) (UniqueRef (Literal (Int 3)))]
     describe "Call" $ do
       it "Should parse Call" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.1_basic"

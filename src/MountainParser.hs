@@ -14,10 +14,11 @@ import qualified Data.Map as M
 import Control.Monad.Combinators.Expr
 
 import Data.Text ( Text, pack, unpack, unpack, replace)
-import Data.Void
+import Data.Void ( Void )
 import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Char ( isSpace )
 import Data.List ( intercalate, foldl', sort, isPrefixOf )
+import Data.Functor ( ($>) )
 
 import Debug.Trace (trace)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
@@ -104,8 +105,7 @@ reservedIds = [
   "Char",
   "String",
   "Int",
-  "Float",
-  "All"]
+  "Float"]
 
 restrictedIdChars :: [Char]
 restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
@@ -133,15 +133,10 @@ pMountainLiteral = choice [
   pChar,
   pString,
   try pFloat,
-  pInt,
-  pBigType]
+  pInt]
 
 pThing :: Parser MountainLiteral
 pThing = symbol "#" *> (Thing <$> pId)
-
-pBigType :: Parser MountainLiteral
-pBigType =
-    try (symbol "All") *> return All
 
 pChar :: Parser MountainLiteral
 pChar = Char <$> between (symbol "\'") (symbol "\'") (try escaped <|> normalChar)
@@ -183,6 +178,14 @@ pFloat = Float <$> L.signed spaceConsumer L.float
 -- ### StructureData  ###
 -- ######################
 
+pUniqueRef :: (Show a) => Parser a -> Parser (Structure a)
+pUniqueRef pa = do
+  astrix <- optional $ symbol "*"
+  term <- pStructureData pa
+  case astrix of
+    Nothing -> return term
+    Just _ -> return $ UniqueRef term
+
 pStructureData :: (Show a) => Parser a -> Parser (Structure a)
 pStructureData pa = choice [
     try $ pLiteral pa,
@@ -200,7 +203,7 @@ pLiteral :: Parser a -> Parser (Structure a)
 pLiteral pa = Literal <$> pa
 
 pWildcard :: Parser (Structure a)
-pWildcard = symbol "?" *> return Wildcard
+pWildcard = symbol "?" Data.Functor.$> Wildcard
 
 pReference :: Parser (Structure a)
 pReference = Reference <$> pId
@@ -224,7 +227,8 @@ emptyHash :: Hash
 emptyHash = Hash B.empty
 
 pUnique :: (Show a) => Parser a -> Parser (Structure a)
-pUnique pa = Unique Unset <$> (symbol "$" *> pStructure pa)
+pUnique pa =
+  Unique Unset <$> (symbol "$" *> pStructure pa)
 
 pEnvDecl :: (Show a) => Parser a -> Parser (M.Map Id (Structure a))
 pEnvDecl pa = do
@@ -279,13 +283,13 @@ pCall pa = do
 pCallInfix :: (Show a) => Parser a -> Parser (Structure a -> Structure a)
 pCallInfix pa = do
   struct <- between (symbol "`") (symbol "`") (pSelectHide pa)
-  res <- getInput 
+  res <- getInput
   return $ Call struct
 
 pCallNormal :: (Show a) => Parser a -> Parser (Structure a -> Structure a)
 pCallNormal pa = do
   struct <- try (pSelectHide pa)
-  res <- getInput 
+  res <- getInput
   return (`Call` struct)
 
 pSelectHideExt :: (Show a) => Structure a -> Parser (Structure a)
@@ -306,7 +310,7 @@ pSelectHideExt base = do
 
 pSelectHide :: (Show a) => Parser a -> Parser (Structure a)
 pSelectHide pa = do
-  struct1 <- pStructureData pa
+  struct1 <- pUniqueRef pa
   res <- optional $ pSelectHideExt struct1
   case res of
     Nothing -> return struct1
@@ -337,7 +341,14 @@ defaultEnv = MountainEnv {
       parser=parseFile,
       repository=basePath,
       file_ext=fileExt},
-    environment=[]
+    environment=[M.fromList [
+      ("is", Literal Is),
+      ("assert", Literal Assert),
+      ("assertFail", Literal AssertFail),
+      ("print", Literal Print),
+      ("All", Literal All)
+    ]],
+    unique_hashes=M.empty
   }
 
 dotImportFile :: String -> MountainContextT IO MountainTerm
@@ -358,7 +369,7 @@ prettyLiteral (Int i) = show i
 prettyLiteral (Char c) = show c
 prettyLiteral (String s) = show s
 prettyLiteral (Float f) = show f
-prettyLiteral All = "All"
+prettyLiteral x = show x
 
 prettyTerm :: (Show a) => Structure a -> String
 prettyTerm ((Literal a)) = show a
@@ -372,6 +383,7 @@ prettyTerm ((Either as)) = "(" ++ intercalate "|" (map prettyTerm as) ++ ")"
 prettyTerm ((Each as)) = "(" ++ intercalate "&" (map prettyTerm as) ++ ")"
 prettyTerm ((Except as)) = "(" ++ intercalate "!" (map prettyTerm as) ++ ")"
 prettyTerm ((Scope as)) = "\\{" ++ intercalate ";" (map prettyTerm as) ++ "}"
+prettyTerm ((UniqueRef as)) = "*" ++ prettyTerm as
 prettyTerm ((Unique _ as)) = "$" ++ prettyTerm as
 prettyTerm ((Call a b)) = "(" ++ prettyTerm a ++ " " ++ prettyTerm b ++ ")"
 prettyTerm ((Has a b)) = "(" ++ prettyTerm a ++ "@" ++ prettyTerm b ++ ")"
@@ -388,7 +400,7 @@ prettyTerm ((Context env a)) = do
   "(<" ++ intercalate "," terms ++ ">  => " ++ prettyTerm a ++ ")"
 
 prettyMountainEnv :: MountainEnv -> String
-prettyMountainEnv (MountainEnv _ e) = show $ map prettyEnv e
+prettyMountainEnv (MountainEnv _ e _) = show $ map prettyEnv e
 
 prettyEnv :: (Show a) => Env (Structure a) -> String
 prettyEnv xs = do
@@ -401,3 +413,36 @@ instance (Show a) => Show (Log a) where
     let pterm = prettyTerm term
     let res = "Step [" ++  intercalate "," (map prettyEnv env) ++ "] => " ++ pterm
     res
+
+prettyMountain :: MountainTerm -> String
+prettyMountain ((Literal a)) = prettyLiteral a
+prettyMountain Wildcard = "?"
+prettyMountain ((Reference id)) = id
+prettyMountain ((Import a)) = "import " ++ prettyMountain a
+prettyMountain ((Set as)) = "{" ++ intercalate "," (map prettyMountain as) ++ "}"
+prettyMountain ((Tuple as)) = "(" ++ intercalate "," (map prettyMountain as) ++ ")"
+prettyMountain ((Function as)) = "(" ++ intercalate "->" (map prettyMountain as) ++ ")"
+prettyMountain ((Either as)) = "(" ++ intercalate "|" (map prettyMountain as) ++ ")"
+prettyMountain ((Each as)) = "(" ++ intercalate "&" (map prettyMountain as) ++ ")"
+prettyMountain ((Except as)) = "(" ++ intercalate "!" (map prettyMountain as) ++ ")"
+prettyMountain ((Scope as)) = "\\{" ++ intercalate ";" (map prettyMountain as) ++ "}"
+prettyMountain ((UniqueRef as)) = "*" ++ prettyMountain as
+prettyMountain ((Unique _ as)) = "$" ++ prettyMountain as
+prettyMountain ((Call a b)) = "(" ++ prettyMountain a ++ " " ++ prettyMountain b ++ ")"
+prettyMountain ((Has a b)) = "(" ++ prettyMountain a ++ "@" ++ prettyMountain b ++ ")"
+prettyMountain ((Def  a b)) = "(" ++ prettyMountain a ++ ":" ++ prettyMountain b ++ ")"
+prettyMountain (Recursive id b) = "(" ++ id ++ "~" ++ prettyMountain b ++ ")"
+prettyMountain ((Refine a b)) = "(" ++ prettyMountain a ++ " % " ++ prettyMountain b ++ ")"
+prettyMountain ((Select a [id])) = prettyMountain a ++ "." ++ id
+prettyMountain ((Select a ids)) = prettyMountain a ++ "." ++ "[" ++ intercalate "," ids ++ "]"
+prettyMountain ((Hide a [id])) = prettyMountain a ++ ".-" ++ id
+prettyMountain ((Hide a ids)) = prettyMountain a ++ ".-" ++ "[" ++ intercalate "," ids ++ "]"
+prettyMountain ((Context env a)) = do
+  let env_as_list = M.toList env
+  let terms = map (\(a,b) -> show a ++ ":" ++ prettyMountain b) env_as_list
+  "(<" ++ intercalate "," terms ++ ">=>" ++ prettyMountain a ++ ")"
+
+prettyLog :: [MountainLog] -> String
+prettyLog (Step structure env:xs) = do
+  prettyMountain structure ++ "\n" ++ prettyLog xs
+prettyLog [] = "END"

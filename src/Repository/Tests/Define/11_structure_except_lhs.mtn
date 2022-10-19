@@ -1,0 +1,2 @@
+res = ((x ! y) = 3);
+assert (res `is` (x:3 ! y:3));

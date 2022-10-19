@@ -1,0 +1,3 @@
+assert (1 `is` 1);
+assertFail (assert (1 `is` 2));
+assert (2 `is` 2)

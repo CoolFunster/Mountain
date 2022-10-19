@@ -29,6 +29,7 @@ data Structure a =
     Literal a
   | Wildcard
   | Reference Id
+  | UniqueRef (Structure a)
   | Set [Structure a] -- TODO MAKE THIS AN ACTUAL SET
   | Tuple [Structure a]
   | Function [Structure a]
@@ -59,7 +60,10 @@ data Error a =
   BadCall (Structure a) (Structure a) |
   BadHas (Structure a) (Structure a) |
   BadDef (Structure a) (Structure a) |
-  BadSelect (Structure a) [Id]
+  BadSelect (Structure a) [Id] |
+  BadAssert |
+  NoFailure (Structure a) |
+  BadUniqueToken String Hash
   deriving (Show, Eq)
 
 data Log a =
@@ -103,6 +107,7 @@ instance Functor Structure where
   fmap f (Literal x) = Literal (f x)
   fmap f Wildcard = Wildcard
   fmap f (Reference id) = Reference id
+  fmap f (UniqueRef t) = UniqueRef (fmap f t)
   fmap f (Import x) = Import (fmap f x)
   fmap f (Set x) = Set $ map (fmap f) x
   fmap f (Either x) = Either $ map (fmap f) x
@@ -137,6 +142,7 @@ transform transformer input_structure = do
         Wildcard -> Wildcard
         (Set ic) -> Set $ map recurse ic
         (Unique h ic) -> Unique h $ recurse ic
+        (UniqueRef ic) -> UniqueRef $ recurse ic
         (Function xs) -> Function $ map recurse xs
         (Each xs) -> Each $ map recurse xs
         (Tuple xs) -> Tuple $ map recurse xs
@@ -165,6 +171,7 @@ check f c s = do
         Wildcard -> b
         (Set ic) -> f (b:map recurse ic)
         (Unique h ic) -> f [b,recurse ic]
+        (UniqueRef ic) -> f [b, recurse ic]
         (Function xs) -> f (b:map recurse xs)
         (Each xs) -> f (b:map recurse xs)
         (Tuple xs) -> f (b:map recurse xs)
@@ -222,6 +229,7 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
   hash Wildcard = hashStr "?"
   hash (Reference id) = seqHash [hashStr "Reference", hashStr id]
   hash (Unique h x) = seqHash [hashStr "Unique", h, hash x]
+  hash (UniqueRef x) = seqHash [hashStr "UniqueRef", hash x]
   hash (Import a) = seqHash [hashStr "Import", hash a]
   hash (Set xs) = seqHash [hashStr "Set", sumHash (map hash xs)]
   hash (Either xs) = seqHash [hashStr "Either", sumHash (map hash xs)]
@@ -255,6 +263,10 @@ data MountainLiteral =
   | String String
   | Int Int
   | Float Float
+  | Is
+  | Assert
+  | AssertFail
+  | Print
   | All
   deriving (Eq, Show)
 
@@ -265,7 +277,7 @@ instance Hashable MountainLiteral where
   hash (String s) = hashStr $ "_" ++ s
   hash (Int i) = hashStr $ "_" ++ show i
   hash (Float f) = hashStr $ "_" ++ show f
-  hash All = hashStr "All"
+  hash x = hashStr "other"
 
 type MountainTerm = Structure MountainLiteral
 
@@ -281,16 +293,16 @@ instance Eq MountainOptions where
 instance Show MountainOptions where
   show (Options _ r f) = show (r,f)
 
+type MountainTokens = M.Map String Hash
+
 data MountainEnv = MountainEnv {
     options :: MountainOptions,
-    environment :: [Env MountainTerm]
+    environment :: [Env MountainTerm],
+    unique_hashes :: MountainTokens
   } deriving (Eq, Show)
 
 toList :: MountainEnv -> [[(Id, MountainTerm)]]
-toList (MountainEnv _ env) = map M.toList env
-
-dummyEnv :: MountainEnv
-dummyEnv = MountainEnv (Options (const $ return empty) "" "") []
+toList (MountainEnv _ env _) = map M.toList env
 
 type MountainError = Error MountainLiteral
 
@@ -317,17 +329,17 @@ isValid c = do
 pushEnv :: (Monad m) => Env MountainTerm -> MountainContextT m ()
 pushEnv new_env = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b = env
-  put $ MountainEnv a (new_env : b)
+  let MountainEnv a b c = env
+  put $ MountainEnv a (new_env : b) c
 
 popEnv :: (Monad m) => MountainContextT m (Env MountainTerm)
 popEnv = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b = env
+  let MountainEnv a b c = env
   case b of
     [] -> return M.empty
     (x:xs) -> do
-      put $ MountainEnv a xs
+      put $ MountainEnv a xs c
       return x
 
 hasDef :: (Monad m) => Id -> MountainContextT m Bool
@@ -347,7 +359,7 @@ maybeGetDef id = do
 getDef :: (Monad m) => Id -> MountainContextT m MountainTerm
 getDef id = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b = env
+  let MountainEnv a b c = env
   case b of
     [] -> throwError $ UnboundId id
     (x:_) -> do
@@ -367,30 +379,48 @@ getDef id = do
 putDef :: (Monad m) => Id -> MountainTerm -> MountainContextT m ()
 putDef id v = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b = env
+  let MountainEnv a b c = env
   case b of
-    [] -> put $ MountainEnv a [M.singleton id v]
-    (m:ms) -> put $ MountainEnv a (M.insert id v m:ms)
+    [] -> put $ MountainEnv a [M.singleton id v] c
+    (m:ms) -> put $ MountainEnv a (M.insert id v m:ms) c
 
 unionEnv :: (Monad m) => Env MountainTerm -> MountainContextT m ()
 unionEnv new_env = do
   (env :: MountainEnv) <- get
-  let MountainEnv a b = env
+  let MountainEnv a b c = env
   case b of
-    [] -> put $ MountainEnv a [new_env]
-    (m:ms) -> put $ MountainEnv a (M.union new_env m:ms)
+    [] -> put $ MountainEnv a [new_env] c
+    (m:ms) -> put $ MountainEnv a (M.union new_env m:ms) c
 
 getOptions :: (Monad m) => MountainContextT m MountainOptions
 getOptions = do
   (env :: MountainEnv) <- get
-  let MountainEnv opt _ = env
+  let MountainEnv opt _ _ = env
   return opt
 
 getEnv :: (Monad m) => MountainContextT m [Env MountainTerm]
 getEnv = do
   (env :: MountainEnv) <- get
-  let MountainEnv _ e = env
+  let MountainEnv _ e _ = env
   return e
+
+setToken :: (Monad m) => String -> Hash -> MountainContextT m ()
+setToken s h = do
+  (env :: MountainEnv) <- get
+  let MountainEnv a b tokens = env
+  put $ MountainEnv a b (M.insert s h tokens)
+
+checkToken :: (Monad m) => String -> Hash -> MountainContextT m ()
+checkToken s h = do
+  (env :: MountainEnv) <- get
+  let MountainEnv a b tokens = env
+  let res = M.lookup s tokens
+  case res of
+    Just t -> if t == h 
+      then return ()
+      else throwError $ BadUniqueToken s h  
+    Nothing -> error $ "no token initialized for " ++ s    
+  put $ MountainEnv a b (M.insert s h tokens)
 
 getBoundIds :: [Id] -> MountainContextT IO ([MountainTerm], [Id])
 getBoundIds = foldr get_bound_ids (return ([],[]))
@@ -410,6 +440,7 @@ normalize :: MountainTerm -> MountainTerm
 normalize l@(Literal _) = l
 normalize Wildcard = Wildcard
 normalize r@(Reference _) = r
+normalize us@(UniqueRef s) = UniqueRef (normalize s)
 normalize i@(Import (Import a)) = normalize $ Import a
 normalize i@(Import a) = Import (normalize a)
 normalize s@(Set xs) = Set (map normalize xs)
@@ -417,7 +448,7 @@ normalize e@(Tuple []) = e
 normalize e@(Tuple [a]) = normalize a
 normalize e@(Tuple (x:xs)) = do
   case normalize (Tuple xs) of
-    Tuple [] -> normalize x
+    Tuple [] -> Tuple [normalize x, Tuple []]
     Tuple new_xs -> Tuple (normalize x:new_xs)
     other -> Tuple [normalize x, other]
 normalize e@(Function []) = e
@@ -510,10 +541,15 @@ normalize c@(Context env c2@(Context env2 a)) = do
   case normalize c2 of
     Context new_env new_a -> Context (M.union new_env env) new_a
     other -> Context env other
-normalize c@(Context env a) =
-  if M.null env
-    then normalize a
-    else Context (M.map normalize env) (normalize a)
+normalize c@(Context env a)
+  | M.null env = normalize a
+  | isEmptyType a = normalize a
+  | otherwise = Context (M.map normalize env) (normalize a)
+
+isEmptyType :: Structure MountainLiteral -> Bool
+isEmptyType (Tuple []) = True
+isEmptyType (Set []) = True
+isEmptyType _ = False
 
 step :: MountainTerm -> MountainContextT IO MountainTerm
 step t = normalize . fst . uniquify <$> step' t
@@ -547,11 +583,8 @@ step t = normalize . fst . uniquify <$> step' t
     step' (Tuple xs) = do
       res <- _stepSeqNoError xs
       return $ Tuple res
-    step' (Scope inner) = do
-      res <- _stepSeqNoError inner
-      if res == inner
-        then stepScope inner
-        else return $ Scope res
+    step' (Scope inner) = stepScope inner
+    step' c@(Call (Literal AssertFail) y) = assertFail y
     step' c@(Call x y) = do
       res <- _stepSeqNoError [x,y]
       let [x', y'] = res
@@ -587,6 +620,7 @@ step t = normalize . fst . uniquify <$> step' t
         else return $ Select res ids
     -- step' (Hide a ids) = stepHide a ids
     step' (Unique h a) = Unique h <$> step a
+    step' (UniqueRef a) = UniqueRef <$> step a
     step' c@(Context env s) = do
       pushEnv env
       res <- step s
@@ -702,6 +736,8 @@ define c@(Context env x) b@(Reference n) = do
     else do
       putDef n c
       return b
+define a@(Context env r@(Reference n)) b@(Unique _ _) = throwError $ BadDef a b
+define a@(Context env r@(Reference n)) b@(UniqueRef _) = throwError $ BadDef a b
 define (Context env r@(Reference n)) b = do
   let res = M.lookup n env
   case res of
@@ -712,10 +748,6 @@ define (Context env r@(Reference n)) b = do
 define a@(Context _ _) b@(Def x y) = do
   res <- define x y
   return $ Def a res
-define a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Def`) inner
-define a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Def`) inner
-define (Context env a@(Except inner)) b = return $ Except $ map ((`Def` b) . Context env) inner
-define a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Def`) inner
 define a@(Context _ _) b@(Context env x) = do
   pushEnv env
   res <- define a x
@@ -829,6 +861,11 @@ define (Context env a@(Tuple _)) b = throwError $ BadDef a b
 define (Context env a@(Each inner)) b = return $ Each $ map ((`Def` b) . Context env) inner
 define (Context env a@(Either inner)) b = return $ Either $ map ((`Def` b) . Context env) inner
 define (Context env a@(Scope _)) b = error "Scopes should be normalized away in binds"
+define a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Def`) inner
+define a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Def`) inner
+define (Context env a@(Except inner1)) (Except inner2) = do
+  return $ Except $ zipWith (Def . Context env) inner1 inner2
+define a@(Context _ _) b@(Except inner) = return $ Except $ map (a `Def`) inner
 define (Context env a@(Call x y)) b@(Call x2 y2) = do
   resx <- define x x2
   resy <- define y y2
@@ -838,7 +875,21 @@ define a@(Context env (Refine _ _)) b = throwError $ NotImplemented "Refined bin
 define (Context env (Has typ x)) b = define (Context env x) (Has (Context env typ) b)
 define a@(Context env (Select x ids)) b = throwError $ NotImplemented "binding on selects" $ Def a b
 define a@(Context env (Hide x ids)) b = throwError $ NotImplemented "binding on hides" $ Def a b
-define a@(Context env (Unique h x)) b@(Unique h2 y) = do
+define a@(Context env (UniqueRef (Reference n))) b@(Unique h y) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Def r' b
+    Nothing -> do
+      putDef n b
+      return b
+define a@(Context env (UniqueRef (Reference n))) b@(UniqueRef y) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Def r' b
+    Nothing -> do
+      putDef n b
+      return b
+define a@(Context env (Unique h x)) b@(Unique h2 y) =
   if h /= h2
     then throwError $ BadDef a b
     else do
@@ -850,6 +901,30 @@ define a@(Context env (Unique h x)) b@(Unique h2 y) = do
 define a@(Context env (Unique h x)) other = throwError $ BadDef a other
 define (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
 define a b = define (Context M.empty a) b
+
+is :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
+is a b = if a == b then return (Literal $ Bool True) else return (Literal $ Bool False)
+
+assert :: MountainTerm -> MountainContextT IO MountainTerm
+assert (Literal (Bool True)) = return $ Tuple []
+assert (Literal (Bool False)) = throwError BadAssert
+assert other = throwError $ BadCall (Reference "assert") other
+
+assertFail :: MountainTerm -> MountainContextT IO MountainTerm
+assertFail x = do
+  res <- step x
+  if res == x
+    then throwError $ NoFailure x
+    else return $ Call (Literal AssertFail) res
+  `catchError` (\e -> return unit)
+
+mPrint :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
+mPrint (Unique h (Literal (Thing "Console"))) (Literal (String s)) = do
+  _ <- checkToken "Console" h
+  _ <- lift $ print s
+  new_token <- lift randHash
+  return $ Unique new_token (Literal (Thing "Console"))
+mPrint a b = throwError $ BadCall a b
 
 has :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
     -- TODO: maybe a scope for the big has and small has so they don't overlap
@@ -1062,21 +1137,35 @@ select s@(Set xs) ids = return $ Either $ map (`Select` ids) xs
 select s@(Either xs) ids = return $ Either $ map (`Select` ids) xs
 select s@(Each xs) ids = return $ Each $ map (`Select` ids) xs
 select s@(Except xs) ids = return $ Except $ map (`Select` ids) xs
-select (Tuple _) [] = return unit
 select s@(Tuple []) ids = throwError $ BadSelect s ids
 select (Tuple (b@(Def (Reference n) xb):xs)) ids = do
   let new_ids = filter (/= n) ids
   if n `elem` ids
-    then do
-      return $ Tuple [Def (Reference n) xb,Select (Tuple xs) new_ids]
-    else return $ Scope [b,Select (Tuple xs) new_ids]
+    then
+      case new_ids of
+        [] -> return $ Tuple [Def (Reference n) xb]
+        other -> return $ Tuple [Def (Reference n) xb,Select (Tuple xs) other]
+    else 
+      case new_ids of
+        [] -> return $ Scope [b,Tuple xs]
+        other -> return $ Scope [b,Select (Tuple xs) other]
 select (Tuple (x@(Tuple (Literal (Thing n):_)):xs)) ids = do
   let new_ids = filter (/= n) ids
   if n `elem` ids
     then do
-      return $ Tuple [x,Select (Tuple xs) new_ids]
-    else return $ Scope [x,Select (Tuple xs) new_ids]
+      case new_ids of
+        [] -> return $ Tuple [x,Tuple xs]
+        other -> return $ Tuple [x,Select (Tuple xs) new_ids]
+    else 
+      case new_ids of
+        [] -> return $ Scope [x,Tuple xs]
+        other -> return $ Scope [x,Select (Tuple xs) new_ids]
 select (Tuple (x:xs)) ids = return $ Scope [x,Select (Tuple xs) ids]
+select a@(UniqueRef x) ids = do
+  res <- select x ids
+  case res of
+    (Select x' ids) -> return $ Select (UniqueRef x') ids
+    other -> return $ UniqueRef other
 select a@(Unique h x) ids = do
   res <- select x ids
   case res of
@@ -1085,6 +1174,9 @@ select a@(Unique h x) ids = do
 select r@(Reference n) ids = return $ Select r ids
 
 stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
+stepCall (Literal Assert) b = assert b
+stepCall (Call (Literal Is) a) b = is a b
+stepCall (Call (Literal Print) a) b = mPrint a b
 stepCall a@(Function []) b = throwError $ BadCall a b
 stepCall a@(Function (x:xs)) b = do
   pushEnv M.empty
@@ -1124,10 +1216,16 @@ dotPathAsDir [] = []
 dotPathAsDir ('.':xs) = '/':dotPathAsDir xs
 dotPathAsDir (x:xs) = x:dotPathAsDir xs
 
+dirAsDotPath :: String -> FilePath
+dirAsDotPath [] = []
+dirAsDotPath ('/':xs) = '.':dirAsDotPath xs
+dirAsDotPath (x:xs) = x:dirAsDotPath xs
+
 setUnsetUniques :: MountainTerm -> IO MountainTerm
 setUnsetUniques (Literal x) = return $ Literal x
 setUnsetUniques Wildcard = return Wildcard
 setUnsetUniques (Set ic) = Set <$> mapM setUnsetUniques ic
+setUnsetUniques u@(UniqueRef x) = return u
 setUnsetUniques u@(Unique Unset (Reference _)) = return u
 setUnsetUniques (Unique Unset ic) = do
   id_ <- randHash
@@ -1157,6 +1255,7 @@ uniquify (Set ic) = do
   let (new_ic, hash) = unzip $ map uniquify ic
   let new_hash = sumHash hash
   (Unique new_hash (Set new_ic), new_hash)
+uniquify u@(UniqueRef x) = (u, Nil)
 uniquify (Unique Unset ic) = error "unset unique"
 uniquify u@(Unique h (Literal _)) = (u,h)
 uniquify u@(Unique h (Reference _)) = (u,h)
@@ -1263,3 +1362,4 @@ stepImport something = error $ "what is this import case? " ++ show something
 
 validate :: MountainTerm -> Bool
 validate _ = True
+-- UniqueRefs must only have literals

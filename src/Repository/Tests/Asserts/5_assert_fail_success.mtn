@@ -1,0 +1,1 @@
+assertFail (assertFail (2 = 2));

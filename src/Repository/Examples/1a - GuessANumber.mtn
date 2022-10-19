@@ -30,7 +30,7 @@ Main :: function (c, p_arg, k_arg) -> {
 
   return (
     result >> |
-      $Nothing -> (print "Game Over!\n")
+      *Nothing -> (print "Game Over!\n")
       (c, _, _) -> (print "You win!!!\n")
     |,
     0

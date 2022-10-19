@@ -1,6 +1,6 @@
-name:                MTPL
+name:                Mountain
 version:             0.1.0.0
-github:              "githubuser/MTPL"
+github:              "pmukundan/Mountain"
 license:             BSD3
 author:              "Priam Mukundan"
 maintainer:          "mpriam@gmail.com"
@@ -8,7 +8,6 @@ copyright:           "2021 Priam Mukundan"
 
 extra-source-files:
 - README.md
-- ChangeLog.md
 
 # Metadata used when publishing your package
 # synopsis:            Short description of your package
@@ -17,13 +16,14 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/MTPL#readme>
+description:         Please see the README on GitHub at <https://github.com/githubuser/Mountain#readme>
 
 dependencies:
 - base >= 4.7 && < 5
 - hspec
 - hspec-megaparsec
 - hspec-discover
+- hspec-core
 - QuickCheck
 - algebraic-graphs
 - containers
@@ -40,12 +40,13 @@ dependencies:
 - bytestring
 - cryptonite
 - memory
+- split
 
 library:
   source-dirs: src
 
 executables:
-  MTPL-exe:
+  mountain:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -53,13 +54,13 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - MTPL
+    - Mountain
     when:        
     - condition: false        
-      other-modules: Paths_MTPL
+      other-modules: Paths_Mountain
 
 tests:
     spec:
       defaults: hspec/hspec@master
       dependencies:
-      - MTPL
+      - Mountain

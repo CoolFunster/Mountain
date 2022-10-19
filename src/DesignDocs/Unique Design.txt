@@ -1,0 +1,168 @@
+Unique type design:
+  The core idea here is that there are unique objects in our world. Uniqueness is the idea that If i have two identical apples, for example, 
+  i can tell them apart because they have some inherent property that separates them; a "first" apple and a "second" apple. I've assigned them
+  some id which makes them unique with respect to each other. If i do something destructive to the first apple, then i can tell i'm left with
+  the second one, and vice versa.
+
+  These types let us model side effects like IO and Files and much more. 
+
+  unique types refer to two terms in mountain.
+    Unique Builtins
+    Unique Pointers (terms which point to those objects)
+
+  Unique Builtins
+    These represent actual unique objects. The key property of Unique Builtins is that no two of them are the same.
+
+    So for our apple example, the following holds
+    $#apple = $#apple    //will throw a bad binding in the language
+    $#apple `is` $#apple // False
+
+    Even though they're both exactly the same thing, the fact they're unique makes equality false
+
+    Examples
+      $3 -> unique integer 3
+      $"abc" -> unique string abc
+      $True -> unique Bool true
+      $#something -> unique Thing something
+      $? -> any unique object
+
+  to properly create them you must use the builtin unique function, which only works on the builtin types:
+  loosely, unique = Builtin -> $Builtin
+
+  You cannot write $... as it is not parseable. They are injected by builtins into the language
+
+  Unique builtins cannot be bound to references. 
+  x = $3 // throws a bad binding error
+
+  you'll also notice that with these rules you can't really do anything to manipulate them
+  ($3 -> "something")($3) // Bad binding
+  (x:$3, ?) // Bad Binding
+  (x -> x) ($3) // Bad Binding
+
+  So how do we do anything with Unique builtins?
+
+  We can create things that refer to unique builtins and manipulate those references.
+  Unique References
+    Written like *...literal...
+
+    Examples
+      *3 -> Can point at a $3
+      *"abc" -> Can point at a $"abc"
+      *True -> Can point at a $True
+      *#something -> Can point at a $#something
+      *x -> Can point at any unique builtin
+
+  To preserve the uniqueness properties of the unique builtin, pointers follow the one rule:
+  Unique pointers may only be bound and used once
+
+  These references are bindable to each other
+  *3 = *3 //is *3
+  *x = *3 // <x:*3> => ()
+
+
+  So now we can do the things we were trying to do:
+  (*3 -> "something")($3) // "something"
+  (*x:$3, ?) // (*x:$3, ?)
+  
+
+  When we bind a unique builtin to a unique pointer we bind the reference x to the unique type
+  \{*x = $3;x} == $3
+  (*x -> x)($3) // ($3) 
+
+  Once it is used, the reference is unset, so if it is used again it will throw an unbound ref error
+  \{*x = $3; x; x;} // This throws an UnsetRef error on the second x
+
+  Structures in the language become unique by having unique bindings or references
+  within them. The one exception are functions, which never are treated uniquely
+
+  There are two more functions which are crucial to know
+  ordinary = *? -> ? 
+  borrow = *x -> (x, ordinary x) // only function in the language that can use a unique pointer twice
+
+  To actually do something with the unique type, you might have to call ordinary and unique on the objects
+  uIncrement = (*x:*3) -> unique (+ 1 (ordinary x))
+
+
+  Unique types
+
+  So what type has unique bindings?
+
+  (unique Int) @ *x
+
+  for them to have meaning, the bindings must manage the token mappings to real resources
+  Each binding must keep track of the current unique token bound to the resource
+  it must check that the correct token is passed in and will throw a BadUniqueToken
+  error if a bad token is passed in.
+
+  Unique objects can only be defined to unique names
+  $x = $3 .... <x:$3> => () // 
+  x = $3  .... throw error, can't bind onto regular references
+  $x = 3  .... throw error, can't bind nonunique onto unique 
+
+  $? = $3 .... ()
+  $3 = $3 .... $3
+  y = x   .... <y:$3> => () // this 
+
+  x:$?  ... <x:$..> => ()
+
+Case Study, console:
+  library has print = ($#Console, String) -> $#Console
+  so someone could write a foo like
+  muahaha = () -> print ($#Console, "hello")
+  will return an unset $#Console. If this is ever used in any way in a binding an error will be thrown
+
+Case Study, console 2:
+  main = (Console, List(String)) -> (Console, Int) @ (
+    ($c, ?) -> \{
+      $c = print ($c, "hello world");
+      ($c, 0)
+    }
+  )
+
+  Case Study, What about builtins?:
+  unique = x -> $x
+  ordinary = $x -> x 
+
+  print (unique #Console) // throws error because internal token mapping is bad
+
+  point: binding terms.
+    Unique objects can only be bound to unique references
+    $x = $3 .... <x:$3> => () // 
+    x = $3  .... throw error, can't bind onto regular references
+    $x = 3  .... throw error, can't bind nonunique onto unique 
+
+    $? = $3 .... ()
+    y = x   .... <y:$3> => () // this 
+
+  Case Study, muahaha borrow unique:
+
+  ($console) -> \{
+    ($console, y) = borrow $console;
+    print (unique y, "hello world")
+  }
+
+  so then this will throw an error because the created unique token isn't the right token
+  to access the console
+
+Case Study, 
+    so lets say we create a unique array
+
+    $(Tuple Int) @ $(3,4,5)
+
+    point: unique is the only function that can set unique hashes on $ objects
+    point: print and show. show shows literally the mountain object, print formats strings out
+           print will also take in a file handle
+
+Case Study, regular functions
+
+  test_foo = x -> (x,x)
+
+  point : unique types can't be passed to regular refs. They're separate.
+
+Case Study, recursion
+  repeat ~ (k, Int@n) -> (k,repeat (n,k`-`1))
+  unique repeat `is`  repeat ~ (k, Int@n) -> unique (k,repeat (n,k`-`1))
+
+  point: unique (a -> b) `is` a -> unique b
+  point: 
+    ordinary (a -> b) = (a | asPtr a) -> b (ordinary a)

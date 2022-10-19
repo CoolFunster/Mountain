@@ -1,0 +1,4 @@
+x = 1;
+assert (x `is` 1);
+x = 2;
+assert (x `is` 2)

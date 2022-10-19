@@ -1,0 +1,22 @@
+Tuples
+
+Tuples are ordered groups of items
+
+(a,b,c) `is` (a, (b, (c)))
+
+c == (c)
+
+(2,()) /= 2
+
+(a,b) = 2
+
+
+maybe we don't normalize Tuples
+
+asList (1,2,3) = (1,(2,(3,())))
+asTuple (1,(2,(3,()))) = (1,2,3)
+
+
+functions are normalizable since
+
+a -> (b -> (c -> d))
