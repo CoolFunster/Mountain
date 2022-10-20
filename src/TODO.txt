@@ -12,7 +12,8 @@ Current Job
   -- Unique Types 
 
 Backlog
-  - make uniquerefs always *
+  - make accessing uniquerefs always *
+  - bindings are not recursive (unless using a recursive thing)
   - disallow unbound references
   - Make binding structural (remove auto unrolling)
   - Create a separate recursive type

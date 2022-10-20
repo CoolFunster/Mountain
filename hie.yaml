@@ -1,10 +1,10 @@
 cradle:
   stack:
     - path: "./src"
-      component: "MTPL:lib"
+      component: "Mountain:lib"
 
     - path: "./app/Main.hs"
-      component: "MTPL:exe:MTPL-exe"
+      component: "Mountain:exe:Mountain-exe"
 
     - path: "./test"
-      component: "MTPL:test:spec"
+      component: "Mountain:test:spec"

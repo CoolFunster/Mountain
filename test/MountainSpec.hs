@@ -44,23 +44,17 @@ spec = do
     describe "Import" $ do
       it "Should import nats" $ do
         res <- runMountain $ dotImportFile "Tests.Import.1_import_nat"
-        nat_import <- runMountain $ dotImportFile "Tests.Import.1_test_nat"
-        let (res', log) = res
-        let (Right (nat_import', _), log) = nat_import
-        case res' of
-          Left e -> error (show e)
-          Right (val, env) -> do
-            val `shouldBe` Scope [Import (Def (Reference "Nat") (Select (Reference "Tests") ["Import","1_test_nat"])),Reference "Nat"]
-            res <- runMountain $ stepMany 20 val
-            let (Right (val, env), log) = res
-            let (Scope [x]) = nat_import'
-            val `shouldBe` x
+        let val = Import (Reference "Tests.Import.1_import_nat")
+        res <- runMountain $ stepMany 20 val
+        print res
+        let (Right (val, env), log) = res
+        print log
+        val `shouldBe` UniqueRef (Literal (Thing "x"))
       it "Should set unique values" $ do
-        let val = Scope [Import (Def (Reference "n") (Select (Reference "Tests") ["Import","2_unique"])),Reference "n"]
+        let val = Scope [Import (Def (UniqueRef (Reference "n")) (Select (Reference "Tests") ["Import","2_unique"])),Reference "n"]
         res <- runMountain $ stepMany 20 val
         let (Right (val, env), log) = res
-        let (UniqueRef x) = val
-        x `shouldBe` Literal (Thing "x")
+        val `shouldBe` UniqueRef (Literal (Thing "x"))
     describe "Step" $ do
       it "should keep sets in a context" $ do
         let nat = fromRight (error "bad nat parsing") $ parseString "Nat = {zero:#Z | succ:(#S, Nat)}"
@@ -258,6 +252,40 @@ spec = do
         res <- runMountain $ stepMany 20 term
         let (Left e, log) = res
         e `shouldBe` BadSelect (Function [Def (Reference "y") (Reference "a"),Reference "b"]) ["y"]
+    describe "Uniquify" $ do
+      it "should handle tuples" $ do
+        hash <- randHash
+        let res = Tuple [Unique hash (Literal $ Thing "x"), Literal $ Thing "y"]
+        let res' = cleanup res
+        res' `shouldBe` Unique hash (Tuple [Unique hash (Literal (Thing "x")),Literal (Thing "y")])
+      it "should handle this case" $ do
+        hash <- randHash
+        let res = Call (Scope [Function [Tuple [UniqueRef (Reference "c"),Wildcard],Call (Reference "print") (Tuple [Reference "c",Literal (String "Hello World")])]]) (Unique hash (Tuple [Unique hash (Literal (Thing "Console")),Tuple []]))
+        let res' = cleanup res
+        res' `shouldBe` Call (Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "c"),Wildcard]),Call (Reference "print") (Tuple [Reference "c",Literal (String "Hello World")])]]) (Unique hash (Tuple [Unique hash (Literal (Thing "Console")),Tuple []]))
+    describe "UniquifyRefs" $ do
+      it "should handle tuples" $ do
+        let parse_str = "(*x,y)"
+        let res = fromRight (error "404") $ parseString parse_str
+        uniquifyRefs res `shouldBe` (Scope [UniqueRef (Tuple [UniqueRef (Reference "x"),Reference "y"])],False)
+      it "should handle tuples2" $ do
+        let parse_str = "(*3,4)"
+        let res = fromRight (error "404") $ parseString parse_str
+        let res' = uniquifyRefs res
+        res' `shouldBe` (Scope [UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)])],False)
+      it "should handle functions" $ do
+        let parse_str = "(*x,y) -> x"
+        let res = fromRight (error "404") $ parseString parse_str
+        uniquifyRefs res `shouldBe` (Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "x"),Reference "y"]),Reference "x"]],False)
+      it "should handle this case" $ do
+        let parse_str = "(*c, ?) -> print (c, \"Hello World\")"
+        let res = fromRight (error "404") $ parseString parse_str
+        uniquifyRefs res `shouldBe` (Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "c"),Wildcard]),Call (Reference "print") (Tuple [Reference "c",Literal (String "Hello World")])]],False)
+      it "should handle this case 2" $ do
+        let parse_str = "*(*x,?) = (*3, 4)"
+        let res = fromRight (error "404") $ parseString parse_str
+        print $ prettyMountain $ fst $ uniquifyRefs res
+        uniquifyRefs res `shouldBe` (Scope [Def (UniqueRef (Tuple [UniqueRef (Reference "x"),Wildcard])) (UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)]))],False)
     describe "Tests" $ do
       describe "Define" $ do
         it "should handle unbound references in tuples" $ do

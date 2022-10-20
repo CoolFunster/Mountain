@@ -38,7 +38,7 @@ getTests base rel = do
 
 spec :: Spec
 spec = do
-  let base_test_dot_path = "Tests.Define"
+  let base_test_dot_path = "Tests.CurTest"
   describe ("Mountain." ++ base_test_dot_path) $ do
     let Options _ bp ext = options defaultEnv
     res <- runIO $ getTests (bp ++ dotPathAsDir base_test_dot_path) ""
@@ -50,7 +50,8 @@ spec = do
         res <- runMountain $ stepMany 30 term
         case res of
           (Left e, log) -> do
-            error $ (show e) ++ "\n\n" ++ prettyLog log
+            error $ show e ++ "\n\n" ++ prettyLog log
           (Right (val, env), log) -> do
+            putStrLn $ prettyLog log
             val `shouldBe` unit
             toList env `shouldBe` toList defaultEnv
