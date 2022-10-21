@@ -387,7 +387,7 @@ prettyTerm ((Hide a ids)) = prettyTerm a ++ ".-" ++ "[" ++ intercalate "," ids +
 prettyTerm ((Context env a)) = do
   let env_as_list = M.toList env
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyTerm b) env_as_list
-  "(<" ++ intercalate "," terms ++ ">  => " ++ prettyTerm a ++ ")"
+  "(<" ++ intercalate ";" terms ++ ">  => " ++ prettyTerm a ++ ")"
 
 prettyMountainEnv :: MountainEnv -> String
 prettyMountainEnv (MountainEnv _ e _) = show $ map prettyEnv e
@@ -396,7 +396,7 @@ prettyEnv :: (Show a) => Env (Structure a) -> String
 prettyEnv xs = do
   let env_as_list = M.toList xs
   let terms = map (\(a,b) -> a ++ ":" ++ prettyTerm b) env_as_list
-  "<" ++ intercalate "," terms ++ ">"
+  "<" ++ intercalate ";" terms ++ ">"
 
 instance (Show a) => Show (Log a) where
   show (Step term env) = do
@@ -430,7 +430,7 @@ prettyMountain ((Hide a ids)) = prettyMountain a ++ ".-" ++ "[" ++ intercalate "
 prettyMountain ((Context env a)) = do
   let env_as_list = M.toList env
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyMountain b) env_as_list
-  "(<" ++ intercalate "," terms ++ ">=>" ++ prettyMountain a ++ ")"
+  "(<" ++ intercalate ";" terms ++ ">=>" ++ prettyMountain a ++ ")"
 
 prettyLog :: [MountainLog] -> String
 prettyLog (Step structure env:xs) = do

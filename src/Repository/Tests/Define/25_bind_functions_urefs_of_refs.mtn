@@ -1,0 +1,2 @@
+res = (*x -> x) = (*y -> *y);
+assert (res `is` (*y -> *y))

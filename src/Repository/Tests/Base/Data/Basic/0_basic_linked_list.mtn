@@ -1,0 +1,6 @@
+import l:Base.Data.Basic.LinkedList;
+
+
+expected_res = linkedList:(LinkedList~(type->((empty:())|(full:(type,Tuple)))));
+
+assert (l.linkedList `is`  expected_res)

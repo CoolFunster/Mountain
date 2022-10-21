@@ -264,6 +264,10 @@ spec = do
         res <- runMountain $ dotImportFile "Tests.Parser.Contexts.3_recursive"
         let (Right (val, env), log) = res
         val `shouldBe` Scope [Context (fromList [("x",Literal (Int 1))]) (Context (fromList [("y",Literal (Int 2))]) (Tuple [Reference "x",Reference "y"]))]
+      it "Should handle multiple terms" $ do
+        res <- runMountain $ dotImportFile "Tests.Parser.Contexts.4_multiple"
+        let (Right (val, env), log) = res
+        val `shouldBe` Scope [Context (fromList [("x",Literal (Int 1)),("y",Literal (Int 2))]) (Tuple [Reference "x",Reference "y"])]
       
       -- it "Should parse recursive selects" $ do
       --   res <- runMountain $ dotImportFile "Tests.Parser.Context.3_recursive"

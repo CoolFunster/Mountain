@@ -1,0 +1,2 @@
+res = (z:*x -> z) = (n:*y -> n);
+assert (res `is` (n:*y -> n))

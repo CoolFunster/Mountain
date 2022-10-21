@@ -1,0 +1,12 @@
+LinkedList ~ type -> (
+    empty: ()
+  | full: (type, Tuple)
+);
+
+
+Push = x -> old -> (x,old);
+
+(
+  linkedList:LinkedList,
+  push:Push
+)

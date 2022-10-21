@@ -233,6 +233,43 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
     let hashed_env = hashStr $ show hash_env
     seqHash [hashStr "Context",  hashed_env, hash a]
 
+freeReferences :: Structure a -> S.Set Id
+freeReferences (Literal x)= S.empty
+freeReferences Wildcard = S.empty
+freeReferences (Reference id) = S.singleton id
+freeReferences (Unique h x) = S.empty
+freeReferences (UniqueRef x) = freeReferences x
+freeReferences (Import a) = S.empty
+freeReferences (Function (Def (Reference id) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Function xs)))
+freeReferences (Function (Def (UniqueRef (Reference id)) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Function xs)))
+freeReferences (Function (x:xs)) = S.union (freeReferences x) (freeReferences (Function xs))
+freeReferences (Function []) = S.empty
+freeReferences (Tuple (Def (Reference id) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Function xs)))
+freeReferences (Tuple (Def (UniqueRef (Reference id)) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Function xs)))
+freeReferences (Tuple (x:xs)) = S.union (freeReferences x) (freeReferences (Tuple xs))
+freeReferences (Tuple []) = S.empty
+freeReferences (Set xs) = S.unions $ map freeReferences xs
+freeReferences (Either xs) = S.unions $ map freeReferences xs
+freeReferences (Each xs) = S.unions $ map freeReferences xs
+freeReferences (Except xs) = S.unions $ map freeReferences xs
+freeReferences (Call a b) = S.union (freeReferences a) (freeReferences b)
+freeReferences (Refine a b) = S.union (freeReferences a) (freeReferences b)
+freeReferences (Has a b) = S.union (freeReferences a) (freeReferences b)
+freeReferences (Def a b) = S.difference (freeReferences b) (freeReferences a)
+freeReferences (Recursive id b) = S.delete id (freeReferences b)
+freeReferences (Select x ids) = freeReferences x -- todo, something more precise?
+freeReferences (Hide x ids) = freeReferences x -- todo, something more precise?
+freeReferences (Scope (Def (Reference id) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Scope xs)))
+freeReferences (Scope (Def (UniqueRef (Reference id)) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Scope xs)))
+freeReferences (Scope (x:xs)) = S.union (freeReferences x) (freeReferences (Scope xs))
+freeReferences (Scope []) = S.empty
+freeReferences (Context env a) = do
+  let freeRefsInEnv = foldr (S.union . freeReferences) S.empty env
+  S.difference (S.union (freeReferences a) freeRefsInEnv) (S.fromList (M.keys env))
+--   let hash_env = M.map hash env
+--   let hashed_env = hashStr $ show hash_env
+--   seqHash [hashStr "Context",  hashed_env, hash a] 
+
 -- ############################# --
 --    Mountain  Stuff            --
 -- ############################# --
@@ -534,7 +571,15 @@ normalize c@(Context env c2@(Context env2 a)) = do
 normalize c@(Context env a)
   | M.null env = normalize a
   | isEmptyType a = normalize a
-  | otherwise = Context (M.map normalize env) (normalize a)
+  | otherwise = do
+    let res = S.union (freeReferences a) (foldr (S.union . freeReferences) S.empty env)
+    let new =
+          foldr (\id new_env -> case M.lookup id env of
+                Nothing -> new_env
+                Just struc -> M.insert id struc new_env
+              ) M.empty res
+    Context (M.map normalize new) (normalize a)
+
 
 isEmptyType :: Structure MountainLiteral -> Bool
 isEmptyType (Tuple []) = True
@@ -614,9 +659,7 @@ step t = do
       pushEnv env
       res <- step s
       newEnv <- popEnv
-      if res == s && newEnv == env
-        then return s
-        else return (Context newEnv res)
+      return (Context newEnv res)
 
 _stepSeqNoError :: [MountainTerm] -> MountainContextT IO [MountainTerm]
 _stepSeqNoError [] = return []
@@ -700,6 +743,9 @@ define (Context env r@(Has a b)) Wildcard = return $ Def (Context env r) (Has Wi
 define (Context env r@(Recursive id b)) Wildcard = return $ Def (Context env r) (Recursive id Wildcard)
 define (Context env r@(Select b ids)) Wildcard = return $ Def (Context env r) (Select Wildcard ids)
 define (Context env r@(Hide b ids)) Wildcard = return $ Def (Context env r) (Hide Wildcard ids)
+define (Context env a) (Reference n) = do
+  res <- getDef n
+  define (Context env a) res
 define a@(Context env z@(Def x y)) b = return $ Def (Context env x) (Def (Context env y) b)
 define a@(Context env r@(Recursive id x)) b = throwError $ BadDef a b
 define (Context env r@(Reference n)) b@(Def x y) = do
@@ -709,8 +755,16 @@ define (Context env r@(Reference n)) b@(Def x y) = do
     Nothing -> do
       res <- define x y
       return $ Def (Context env r) res
-define a@(Context env r@(Reference n)) b@(Unique _ _) = throwError $ BadDef a b
-define a@(Context env r@(Reference n)) b@(UniqueRef _) = throwError $ BadDef a b
+define a@(Context env r@(Reference n)) b@(Unique _ _) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Def r' b
+    Nothing -> throwError $ BadDef a b
+define a@(Context env r@(Reference n)) b@(UniqueRef _) = do
+  let res = M.lookup n env
+  case res of
+    Just r' -> return $ Def r' b
+    Nothing -> throwError $ BadDef a b
 define (Context env r@(Reference n)) b = do
   let res = M.lookup n env
   case res of
@@ -745,92 +799,79 @@ define (Context env a@(Set [r@(Reference n)])) b@(Set elems2) = do
 define a@(Context env x@(Set elems)) b@(Set elems2) = return $ Def (Context env (Either elems)) (Either elems2)
 define (Context env a@(Set elems)) b = throwError $ BadDef a b
 define (Context env a@(Function [])) b@(Function []) = return b
-define a@(Context env (Function _)) b@(Function (ib@(Def ya yb):ys)) = do
+define a@(Context env (Function (Wildcard:xs))) b@(Function (ib@(Def (Reference n) yb):ys)) = do
+  pushEnv (M.singleton n yb)
+  res <- define (Context env (Function xs)) (Function ys)
+  popEnv
+  case res of
+    Def (Function xs') (Function ys') -> return $ Def (Context env (Function (Wildcard: xs'))) (Function (ib:ys))
+    Def (Context env' (Function xs')) (Function ys') -> return $ Def (Context (M.union env' env) (Function (Wildcard: xs'))) (Function (ib:ys))
+    Function ys' -> return b
+    other -> error "should only get the above back"
+define a@(Context env (Function (x:xs))) b@(Function (ib@(Def (Reference n) yb):ys)) = do
   pushEnv M.empty
-  res <- define ya yb
-  env' <- popEnv
-  return $ Def a (Context env' (Function (res:ys)))
-define a@(Context env (Function (x@(Def xa Wildcard):xs))) b@(Function (y:ys)) = do
-  pushEnv env
-  res <- define (Context env xa) y
+  res <- define (Context env x) yb
   new_env <- popEnv
-  case normalize res of
-    b'@(Def (Context env x') y') -> do
-      let final_env = M.union new_env env
-      return $ Def (Context final_env (Function (Def x' Wildcard:xs))) (Function (y':ys))
-    b'@(Def x' y') ->
-      return $ Def (Context new_env (Function (Def x' Wildcard:xs))) (Function (y':ys))
-    other ->
-      return $ Def (Context new_env (Function (Wildcard:xs))) (Function (other:ys))
-define a@(Context env (Function (x@(Def xa xb):xs))) b@(Function (y:ys)) = do
-  res <- define (Context env (Function (xb:xs))) (Function (y:ys))
-  case normalize res of
-    b'@(Def (Context env (Function (x':xs'))) y') -> do
-      return $ Def (Context env (Function (Def xa x':xs'))) y'
-    b'@(Def (Function (x':xs')) y') -> do
-      return $ Def (Function (Def xa x':xs')) y'
-    other -> return other
-define (Context env a@(Function (Wildcard:xs))) b@(Function (y:ys)) = do
-  -- normalized here because Function [x] == x
-  res <- define (Context env (normalize $ Function xs)) (normalize $ Function ys)
-  case normalize res of
-    b'@(Def (Context new_env xs') ys') ->
-      return $ Def (Context new_env $ Function [Wildcard,xs']) (Function [y, ys'])
-    b'@(Def xs' ys') ->
-      return $ Def (Function [Wildcard,xs']) (Function [y, ys'])
-    other -> return (Function [y,other])
-define (Context env a@(Function (x:xs))) b@(Function (y:ys)) = do
+  unionEnv new_env
+  case res of
+    Def (Context env' x') yb' -> return $ Def (Context (M.unions [env', new_env, env]) (Function (x': xs))) b
+    Def x' yb' -> return $ Def (Context (M.unions [new_env, env]) (Function (x': xs))) b
+    other -> return $ Def (Context (M.union new_env env) (Function (Wildcard:xs))) b
+define a@(Context env (Function (Wildcard:xs))) b@(Function (y:ys)) = do
+  res <- define (Context env (Function xs)) (Function ys)
+  case res of
+    Def (Context env' (Function xs')) (Function ys') -> return $ Def (Context (M.union env' env) (Function (Wildcard: xs'))) b
+    Def (Function xs') (Function ys') -> return $ Def (Context env (Function (Wildcard: xs'))) b
+    Function ys' -> return b
+    other -> error "should only get the above back"
+define a@(Context env f@(Function (Def (Reference nx) x:xs))) b@(Function (y:ys)) = do
+  let new_env' = M.union (M.singleton nx x) env
+  return $ Def (Context new_env' (Function (x:xs))) b
+define a@(Context env (Function (x:xs))) b@(Function (y:ys)) = do
+  pushEnv M.empty
   res <- define (Context env x) y
-  case normalize res of
-    b'@(Def (Context env x') y') ->
-      return $ Def (Function (x':xs)) (Function (y':ys))
-    b'@(Def x' y') ->
-      return $ Def (Function (Wildcard:xs)) (Function (y':ys))
-    other -> return $ Def (Function (Wildcard:xs)) (Function (other:ys))
+  new_env <- popEnv
+  unionEnv new_env
+  case res of
+      Def (Context env' x') y' -> return $ Def (Context (M.unions [env', new_env, env]) (Function (x':xs))) b
+      Def x' y' -> return $ Def (Context (M.union new_env env) (Function (x':xs))) b
+      other -> return $ Def (Context (M.union new_env env) (Function (Wildcard:xs))) b
 define (Context env a@(Function _)) b = throwError $ BadDef a b
 define (Context env a@(Tuple [])) b@(Tuple []) = return b
-define a@(Context env (Tuple _)) b@(Tuple (ib@(Def ya yb):ys)) = do
+define a@(Context env (Tuple (Wildcard:xs))) b@(Tuple (ib@(Def (Reference n) yb):ys)) = do
+  pushEnv (M.singleton n yb)
+  res <- define (Context env (Tuple xs)) (Tuple ys)
+  popEnv
+  case res of
+    Def (Tuple xs') (Tuple ys') -> return $ Def (Context env (Tuple (Wildcard: xs'))) (Tuple (ib:ys))
+    Def (Context env' (Tuple xs')) (Tuple ys') -> return $ Def (Context (M.union env' env) (Tuple (Wildcard: xs'))) (Tuple (ib:ys))
+    Tuple ys' -> return b
+    other -> error "should only get the above back"
+define a@(Context env (Tuple (x:xs))) b@(Tuple (ib@(Def (Reference n) yb):ys)) = do
   pushEnv M.empty
-  res <- define ya yb
-  env' <- popEnv
-  return $ Def a (Context env' (Tuple (res:ys)))
-define a@(Context env (Tuple (x@(Def xa Wildcard):xs))) b@(Tuple (y:ys)) = do
-  pushEnv env
-  res <- define (Context env xa) y
+  res <- define (Context env x) yb
   new_env <- popEnv
-  case normalize res of
-    b'@(Def (Context env x') y') -> do
-      let final_env = M.union new_env env
-      return $ Def (Context final_env (Tuple (Def x' Wildcard:xs))) (Tuple (y':ys))
-    b'@(Def x' y') ->
-      return $ Def (Context new_env (Tuple (Def x' Wildcard:xs))) (Tuple (y':ys))
-    other ->
-      return $ Def (Context new_env (Tuple (Wildcard:xs))) (Tuple (other:ys))
-define a@(Context env (Tuple (x@(Def xa xb):xs))) b@(Tuple (y:ys)) = do
-  res <- define (Context env (Tuple (xb:xs))) (Tuple (y:ys))
-  case normalize res of
-    b'@(Def (Context env (Tuple (x':xs'))) y') -> do
-      return $ Def (Context env (Tuple (Def xa x':xs'))) y'
-    b'@(Def (Tuple (x':xs')) y') -> do
-      return $ Def (Tuple (Def xa x':xs')) y'
-    other -> return other
-define (Context env a@(Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
-  -- normalized here because Tuple [x] == x
-  res <- define (Context env (normalize $ Tuple xs)) (normalize $ Tuple ys)
-  case normalize res of
-    b'@(Def (Context new_env xs') ys') ->
-      return $ Def (Context new_env $ Tuple [Wildcard,xs']) (Tuple [y, ys'])
-    b'@(Def xs' ys') ->
-      return $ Def (Tuple [Wildcard,xs']) (Tuple [y, ys'])
-    other -> return (Tuple [y,other])
-define (Context env a@(Tuple (x:xs))) b@(Tuple (y:ys)) = do
+  unionEnv new_env
+  return $ Def (Context (M.union new_env env) (Tuple (Wildcard:xs))) b
+define a@(Context env (Tuple (Wildcard:xs))) b@(Tuple (y:ys)) = do
+  res <- define (Context env (Tuple xs)) (Tuple ys)
+  case res of
+    Def (Context env' (Tuple xs')) (Tuple ys') -> return $ Def (Context (M.union env' env) (Tuple (Wildcard: xs'))) (Tuple (y:ys'))
+    Def (Tuple xs') (Tuple ys') -> return $ Def (Context env (Tuple (Wildcard: xs'))) (Tuple (y:ys'))
+    Tuple ys' -> return b
+    other -> error "should only get the above back"
+define a@(Context env f@(Tuple (Def (Reference nx) x:xs))) b@(Tuple (y:ys)) = do
+  let new_env' = M.union (M.singleton nx x) env
+  return $ Def (Context new_env' (Tuple (x:xs))) b
+define a@(Context env (Tuple (x:xs))) b@(Tuple (y:ys)) = do
+  pushEnv M.empty
   res <- define (Context env x) y
-  case normalize res of
-    b'@(Def (Context env x') y') ->
-      return $ Def (Tuple (x':xs)) (Tuple (y':ys))
-    b'@(Def x' y') ->
-      return $ Def (Tuple (Wildcard:xs)) (Tuple (y':ys))
-    other -> return $ Def (Tuple (Wildcard:xs)) (Tuple (other:ys))
+  new_env <- popEnv
+  unionEnv new_env
+  case res of
+      Def (Context env' x') y' -> return $ Def (Context (M.unions [env', new_env, env]) (Tuple (x':xs))) (Tuple (y':ys))
+      Def x' y' -> return $ Def (Context (M.union new_env env) (Tuple (x':xs))) (Tuple (y':ys))
+      other -> return $ Def (Context (M.union new_env env) (Tuple (Wildcard:xs))) (Tuple (other:ys))
 define (Context env a@(Tuple _)) b = throwError $ BadDef a b
 define (Context env a@(Each inner)) b = return $ Each $ map ((`Def` b) . Context env) inner
 define (Context env a@(Either inner)) b = return $ Either $ map ((`Def` b) . Context env) inner
@@ -874,7 +915,7 @@ define a@(Context env (UniqueRef x)) b@(UniqueRef y) = do
   case res of
     Def (Context env' x') y' -> return $ Def (Context (M.union env' env) (UniqueRef x')) (UniqueRef y')
     Def x' y' -> return $ Def (Context env (UniqueRef x')) (UniqueRef y')
-    other -> return other
+    other -> return unit
 define a@(Context env (UniqueRef x)) b = throwError $ BadDef a b
 define a@(Context env (Unique h x)) b@(Unique h2 y) =
   if h /= h2
@@ -1219,8 +1260,8 @@ stepDepCtx f (UniqueRef (Reference id):xs) = do
   fxs' <- stepDepCtx f xs
   popEnv
   case fxs' of
-    Function xs' -> return $ Function (Reference id:xs')
-    Tuple xs' -> return $ Tuple (Reference id:xs')
+    Function xs' -> return $ Function (UniqueRef (Reference id):xs')
+    Tuple xs' -> return $ Tuple (UniqueRef (Reference id):xs')
     _ -> error "should not reach"
 stepDepCtx f (x:xs) = do
   res <- step x
@@ -1340,6 +1381,16 @@ uniquify = fst . uniquify'
     uniquify' (Hide a ids) = do
       let (new_ic, has_uref) = uniquify' a
       (Hide new_ic ids, has_uref)
+    uniquify' (Context env (Function xs)) = do
+      let env_as_list = M.toList env
+      let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
+            \(id,term) (cur_list, urefs) -> do {
+                let (new_term, has_uref) = uniquify' term
+              ; ((id, new_term):cur_list, has_uref:urefs)
+            }
+      let (new_map_list, urefs) :: ([(Id,MountainTerm)], [Bool]) = foldr inner_foo ([],[]) env_as_list
+      let xs' = map (fst . uniquify') xs
+      (Context env (Function xs'), False)
     uniquify' (Context env a) = do
       let env_as_list = M.toList env
       let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
@@ -1397,3 +1448,6 @@ stepImport something = error $ "what is this import case? " ++ show something
 validate :: MountainTerm -> Bool
 validate _ = True
 -- UniqueRefs must only have literals
+-- Tuples and Functions may not do structural binding, only direct ref binding
+--    which means only ref/uref binding within the context
+-- No nested ref binding within functions/tuples

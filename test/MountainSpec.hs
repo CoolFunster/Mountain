@@ -3,6 +3,7 @@ module MountainSpec (spec) where
 
 import Data.Either
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import Data.Map.Strict (fromList)
 import Debug.Trace
 
@@ -78,6 +79,13 @@ spec = do
           Left e -> error (show e ++ "\n\n" ++ show log)
           Right (val, env) -> do
             val `shouldBe` Either [Literal (Thing "1"),Literal (Thing "2")]
+      it "shouldn't ordinary unique refs" $ do
+        res <- runMountain $ stepMany 10 (Scope [Function [UniqueRef (Reference "x"),UniqueRef (Reference "x")]])
+        let (res', log) = res
+        case res' of
+          Left e -> error (show e ++ "\n\n" ++ show log)
+          Right (val, env) -> do
+            val `shouldBe` Function [UniqueRef (Reference "x"),UniqueRef (Reference "x")]
     -- describe "has" $ do
     --   it "(things) equal things don't have each other" $ do
     --       res <- runMountain $ stepMany 20 (Has a a)
@@ -191,6 +199,7 @@ spec = do
         let example = "(x:#a, y:#b).y"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
+        print res
         let (Right (val, env), log) = res
         val `shouldBe` Literal (Thing "b")
         toList env `shouldBe` toList defaultEnv
@@ -199,6 +208,7 @@ spec = do
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
         let (Right (val, env), log) = res
+        print log
         val `shouldBe` Tuple [Def (Reference "x") (Literal (Thing "a")),Def (Reference "y") (Literal (Thing "b"))]
         toList env `shouldBe` toList defaultEnv
       it "should throw error on bad selection" $ do
@@ -241,6 +251,12 @@ spec = do
         res <- runMountain $ stepMany 20 term
         let (Left e, log) = res
         e `shouldBe` BadSelect (Function [Def (Reference "y") (Literal (Thing "a")),Literal (Thing "b")]) ["y"]
+    describe "Cleanup" $ do
+      it "should handle contexts" $ do
+        let example = "<x:#2;y:#3> => y"
+        let Right term = parseString example
+        let res = cleanup term
+        res `shouldBe` Scope [Context (fromList [("y",Literal (Thing "3"))]) (Reference "y")]
     describe "Uniquify" $ do
       it "should handle tuples" $ do
         hash <- randHash
@@ -274,6 +290,23 @@ spec = do
         let parse_str = "*(*x,?) = (*3, 4)"
         let res = fromRight (error "404") $ parseString parse_str
         uniquify res `shouldBe` Scope [Def (UniqueRef (Tuple [UniqueRef (Reference "x"),Wildcard])) (UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)]))]
+    describe "FreeReferences" $ do
+      it "should handle contexts" $ do
+        let parse_str = "<x:#1;y:#2> => (x, #2)"
+        let res = fromRight (error "404") $ parseString parse_str
+        freeReferences res `shouldBe` S.empty
+      it "should handle contexts 2" $ do
+        let parse_str = "<x:#1;y:z> => (x, #2)"
+        let res = fromRight (error "404") $ parseString parse_str
+        freeReferences res `shouldBe` S.singleton "z"
+      it "should handle contexts 3" $ do
+        let parse_str = "<x:#1;y:z> => (a, #2)"
+        let res = fromRight (error "404") $ parseString parse_str
+        freeReferences res `shouldBe` S.fromList ["z", "a"]
+      it "should handle contexts 4" $ do
+        let parse_str = "<x:#1;y:#2> => (a, #2)"
+        let res = fromRight (error "404") $ parseString parse_str
+        freeReferences res `shouldBe` S.fromList ["a"]
     describe "Tests" $ do
       describe "Define" $ do
         it "should directly define to recursive functions" $ do
@@ -305,13 +338,19 @@ spec = do
           let res = fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), _) = res
-          val `shouldBe` Function [Literal (Thing "a"),Reference "a"]
+          val `shouldBe` Function [Def (Reference "a") (Literal (Thing "a")),Reference "a"]
         it "Should handle simple contexts on the lhs of bind" $ do
           let parse_str = "(z:a -> z) = #a -> #a; a"
           let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), log) = res
           val `shouldBe` a
+        it "Should handle simple contexts on the lhs of bind 2" $ do
+          let parse_str = "(z:a -> z) = #a -> #b; a"
+          let res = normalize $ fromRight (error "404") $ parseString parse_str
+          res <- runMountain $ stepMany 20 res
+          let (Left e, log) = res
+          e `shouldBe` BadDef (Literal (Thing "a")) (Literal (Thing "b"))
         it "Should keep inner var of lhs of define unbound" $ do
           let parse_str = "(z:a -> z) = #a -> #a; z"
           let res = normalize $ fromRight (error "404") $ parseString parse_str
@@ -324,13 +363,12 @@ spec = do
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), log) = res
           val `shouldBe` a
-        it "Should handle contexts on both sides" $ do
-          let parse_str = "(a:#x -> b:#y -> (a,b)) = (a1:#x -> b1:#y -> (a1,b1)); a"
+        it "Should handle contexts on rhs of bind sides" $ do
+          let parse_str = "(#x -> #x) = (a1:#x -> a1)"
           let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
-          print res
           let (Right (val, env), log) = res
-          val `shouldBe` a
+          val `shouldBe` Function [Def (Reference "a1") (Literal (Thing "x")),Reference "a1"]
           toList env `shouldBe` toList defaultEnv
         it "Should throw error on unbound def" $ do
           let parse_str = "a = a; a"
