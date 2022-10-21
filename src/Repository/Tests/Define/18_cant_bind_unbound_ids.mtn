@@ -1,0 +1,1 @@
+assertFail ((a,b) = x)

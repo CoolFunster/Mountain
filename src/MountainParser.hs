@@ -48,13 +48,13 @@ parseFile fp = do
   result <- parseFileWith (pInnerScope pMountainLiteral) fp
   case result of
     Left err_str -> error err_str
-    Right term -> return $ normalize (Scope term)
+    Right term -> return (Scope term)
 
 parseStringWith :: Parser a -> [Char] -> Either String a
 parseStringWith cat_parser input_str = _baseParse cat_parser "String" (pack input_str)
 
 parseString :: [Char] -> Either String MountainTerm
-parseString = parseStringWith (normalize . Scope <$> pInnerScope pMountainLiteral)
+parseString = parseStringWith (Scope <$> pInnerScope pMountainLiteral)
 
 parseTextWith :: Parser a -> Text -> Either String a
 parseTextWith cat_parser = _baseParse cat_parser "String"
@@ -251,16 +251,6 @@ pContext pa = do
 -- ### Structure Ops  ###
 -- ######################
 
-
-replaceDefsWithRec :: Structure a -> Structure a
-replaceDefsWithRec (Def a b) = do
-  if isRecursive (Def a b)
-    then do
-      let Reference n = a
-      Recursive n b
-    else Def a b
-replaceDefsWithRec _ = error "used on something else"
-
 pStructureOp :: (Show a) => Parser a -> Parser (Structure a)
 pStructureOp pa = makeExprParser (pCall pa) [
     [binaryR (pWrapWS ":") Def],
@@ -271,7 +261,7 @@ pStructureOp pa = makeExprParser (pCall pa) [
     [binaryL (pWrapWS "%") Refine],
     [binaryL (pWrapWS "~") (\(Reference n) rhs -> Recursive n rhs)],
     [binaryR (pWrapWS "@") Has],
-    [binaryR (pWrapWS "=") (\x y -> replaceDefsWithRec $ Def x y)]
+    [binaryR (pWrapWS "=") Def]
   ]
 
 pCall :: (Show a) => Parser a -> Parser (Structure a)

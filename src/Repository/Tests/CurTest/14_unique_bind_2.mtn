@@ -1,0 +1,3 @@
+(*x,*y) = (*3, *4);
+assert (x `is` *3);
+assert (y `is` *4);

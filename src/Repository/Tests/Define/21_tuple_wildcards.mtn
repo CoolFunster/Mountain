@@ -1,0 +1,3 @@
+(a,b) = ?;
+assert (a `is` ?);
+assert (b `is` ?);

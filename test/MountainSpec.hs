@@ -28,28 +28,24 @@ spec = do
     let a_c = Function [a, c]
     let a_d = Function [a, d]
     describe "Recursive" $ do
-        it "Simple recursion should be identified" $ do
-          let simple_rec = Def (Reference "x") (Function [Literal $ Thing "a", Reference "x"])
-          isRecursive simple_rec `shouldBe` True
-        it "should not remove binding on finished rec" $ do
-          let simple_rec = Scope [Recursive "x" (Function [Literal $ Thing "a", Reference "x"])]
-          res <- runMountain $ stepMany 10 simple_rec
-          let (Right (val, env), log) = res
-          val `shouldBe` Recursive "x" (Function [Literal (Thing "a"),Reference "x"])
-        it "should step other parts of rec cat" $ do
-          let need_eval_rec = Recursive "x" (Function [Call (Function [a,b]) a, Reference "x"])
-          res <- runMountain $ stepMany 10 need_eval_rec
-          let (Right (val, env), log) = res
-          val `shouldBe` Recursive "x" (Function [Literal (Thing "b"),Reference "x"])
+      it "should not remove binding on finished rec" $ do
+        let simple_rec = Scope [Recursive "x" (Function [Literal $ Thing "a", Reference "x"])]
+        res <- runMountain $ stepMany 10 simple_rec
+        let (Right (val, env), log) = res
+        val `shouldBe` Recursive "x" (Function [Literal (Thing "a"),Reference "x"])
+      it "should step other parts of rec cat" $ do
+        let need_eval_rec = Recursive "x" (Function [Call (Function [a,b]) a, Reference "x"])
+        res <- runMountain $ stepMany 10 need_eval_rec
+        let (Right (val, env), log) = res
+        val `shouldBe` Recursive "x" (Function [Literal (Thing "b"),Reference "x"])
     describe "Import" $ do
       it "Should import nats" $ do
         res <- runMountain $ dotImportFile "Tests.Import.1_import_nat"
         let val = Import (Reference "Tests.Import.1_import_nat")
         res <- runMountain $ stepMany 20 val
-        print res
+        -- print res
         let (Right (val, env), log) = res
-        print log
-        val `shouldBe` UniqueRef (Literal (Thing "x"))
+        val `shouldBe` Recursive "Nat" (Set [Either [Def (Reference "zero") (Literal (Thing "Z")),Def (Reference "succ") (Tuple [Literal (Thing "S"),Reference "Nat"])]])
       it "Should set unique values" $ do
         let val = Scope [Import (Def (UniqueRef (Reference "n")) (Select (Reference "Tests") ["Import","2_unique"])),Reference "n"]
         res <- runMountain $ stepMany 20 val
@@ -57,7 +53,7 @@ spec = do
         val `shouldBe` UniqueRef (Literal (Thing "x"))
     describe "Step" $ do
       it "should keep sets in a context" $ do
-        let nat = fromRight (error "bad nat parsing") $ parseString "Nat = {zero:#Z | succ:(#S, Nat)}"
+        let nat = fromRight (error "bad nat parsing") $ parseString "Nat ~ {zero:#Z | succ:(#S, Nat)}"
         res <- runMountain $ stepMany 10 nat
         let (res', log) = res
         case res' of
@@ -74,7 +70,7 @@ spec = do
           Right (val, env) -> do
             val `shouldBe` Literal (Thing "1")
       it "should join contexts in eithers" $ do
-        let term = fromRight (error "404") $ parseString "(<x:#1> => x) | (<x:#2> => x)"
+        let term = normalize $ fromRight (error "404") $ parseString "(<x:#1> => x) | (<x:#2> => x)"
         term `shouldBe` Scope [Either [Context (fromList [("x",Literal (Thing "1"))]) (Reference "x"),Context (fromList [("x",Literal (Thing "2"))]) (Reference "x")]]
         res <- runMountain $ stepMany 10 term
         let (res', log) = res
@@ -82,114 +78,107 @@ spec = do
           Left e -> error (show e ++ "\n\n" ++ show log)
           Right (val, env) -> do
             val `shouldBe` Either [Literal (Thing "1"),Literal (Thing "2")]
-    describe "has" $ do
-      it "(things) equal things don't have each other" $ do
-          res <- runMountain $ stepMany 20 (Has a a)
-          let (res', log) = res
-          res' `shouldBe` Left (BadHas a a )
-      it "(Set) set of thing has the thing" $ do
-          res <- runMountain $ stepMany 20 (Has (Set [a]) a)
-          let (Right (val, env), log) = res
-          val `shouldBe` Literal (Thing "a")
-      it "(Set) set of thing a does not have thing b" $ do
-          res <- runMountain $ stepMany 20 (Has (Set [a]) b)
-          let (Left e, log) = res
-          e `shouldBe` BadDef a b
-      it "(Set) should have only its elements" $ do
-          res <- runMountain $ stepMany 20 (Has (Set [a,b]) a)
-          let (Right (val, env), log) = res
-          val `shouldBe` a
-          toList env `shouldBe` toList defaultEnv
+    -- describe "has" $ do
+    --   it "(things) equal things don't have each other" $ do
+    --       res <- runMountain $ stepMany 20 (Has a a)
+    --       let (res', log) = res
+    --       res' `shouldBe` Left (BadHas a a )
+    --   it "(Set) set of thing has the thing" $ do
+    --       res <- runMountain $ stepMany 20 (Has (Set [a]) a)
+    --       let (Right (val, env), log) = res
+    --       val `shouldBe` Literal (Thing "a")
+    --   it "(Set) set of thing a does not have thing b" $ do
+    --       res <- runMountain $ stepMany 20 (Has (Set [a]) b)
+    --       let (Left e, log) = res
+    --       e `shouldBe` BadDef a b
+    --   it "(Set) should have only its elements" $ do
+    --       res <- runMountain $ stepMany 20 (Has (Set [a,b]) a)
+    --       let (Right (val, env), log) = res
+    --       val `shouldBe` a
+    --       toList env `shouldBe` toList defaultEnv
 
-          res <- runMountain $ stepMany 20 (Has (Set [a,b]) b)
-          let (Right (val, env), log) = res
-          val `shouldBe` b
-          toList env `shouldBe` toList defaultEnv
-      it "(Set) should have eithers" $ do
-          res <- runMountain $ stepMany 20 (Has (Set [a,b]) (Either [a,b]))
-          let (Right (val, env), log) = res
-          val `shouldBe` Either [a,b]
-          toList env `shouldBe` toList defaultEnv
-      it "(Set,Either) Eithers of Sets should distribute" $ do
-          let env = defaultEnv
-          let val = Has (Either [Set [a], Set [b]]) b
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Either [
-            Has (Set [Literal (Thing "a")]) (Literal (Thing "b")),
-            Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` toList defaultEnv
-      it "(Set,Each) Eaches of Sets should distribute" $ do
-          let env = defaultEnv
-          let val = Has (Each [Set [a], Set [b]]) b
-          result <- stepAndResult env val
-          let Right (val, env) = result
-          val `shouldBe` Each [
-            Has (Set [Literal (Thing "a")]) (Literal (Thing "b")),
-            Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
-          toList env `shouldBe` toList defaultEnv
-      it "(Tuples) should unwrap types" $ do
-          res <- runMountain $ stepMany 20 $ Has (Tuple [Set [a]]) a
-          let (Right (val, env), log) = res
-          val `shouldBe` a
-          toList env `shouldBe` toList defaultEnv
-      it "(Tuples) should unwrap values" $ do
-          let a' = Tuple [a]
-          let env = defaultEnv
-          result <- stepAndResult env (Has (Set [a]) a')
-          let Right (val, env) = result
-          val `shouldBe` Has (Set [Literal (Thing "a")]) (Literal (Thing "a"))
-      it "(Functions) properly checks simple function" $ do
-          res <- runMountain $ stepMany 20 (Has (Function [Set [a], Set [b]]) (Function [a, b]))
-          let (Right (val, env), log) = res
-          val `shouldBe` Function [a, b]
-          toList env `shouldBe` toList defaultEnv
-      it "(references) should supply type var" $ do
-        result <- runMountain $ stepMany 20 $ Has (Reference "x") a
-        let (Right (val, env), log) = result
-        val `shouldBe` Literal (Thing "a")
-        toList env `shouldBe` toList defaultEnv
-      it "(functions) should handle simple functions 1" $ do
-        let example = "(a -> a)@(#a -> #a)"
-        let Right term = parseString example
-        res <- runMountain $ stepMany 20 term
-        let (Right (val, env), log) = res
-        val `shouldBe` Function [a,a]
-        toList env `shouldBe` toList defaultEnv
-      it "(functions) should handle simple functions 2" $ do
-        let example = "(a -> a)@(#1 -> #2)"
-        let Right term = parseString example
-        res <- runMountain $ stepMany 20 term
-        let (Left val, log) = res
-        val `shouldBe` BadDef (Literal $ Thing "1") (Literal $ Thing "2")
-      it "(functions) should handle inner contexts rhs" $ do
-        let example = "(a -> a) @ (x:#z -> x)"
-        let Right term = parseString example
-        res <- runMountain $ stepMany 20 term
-        let (Right (val, env), log) = res
-        val `shouldBe` Function [Def (Reference "x") (Literal (Thing "z")),Literal (Thing "z")]
-        toList env `shouldBe` toList defaultEnv
-      it "(functions) should handle inner contexts lhs" $ do
-        let example = "(z:a -> z) @ (#z -> #z)"
-        let Right term = parseString example
-        res <- runMountain $ stepMany 20 term
-        let (Right (val, env), log) = res
-        val `shouldBe` Function [Literal (Thing "z"),Literal (Thing "z")]
-        toList env `shouldBe` toList defaultEnv
-      it "(functions) should handle inner contexts both lhs rhs" $ do
-        let example = "(z:a -> z) @ (x:#r -> x)"
-        let Right term = parseString example
-        res <- runMountain $ stepMany 20 term
-        let (Right (val, env), log) = res
-        val `shouldBe` Function [Def (Reference "x") (Literal (Thing "r")),Literal (Thing "r")]
-        toList env `shouldBe` toList defaultEnv
-      it "(References) should leave unbindables alone" $ do
-        let example = "(a,b) = x"
-        let Right term = parseString example
-        res <- runMountain $ stepMany 20 term
-        let (Right (val, env), log) = res
-        val `shouldBe` Tuple [Reference "a",Reference "b"]
-        toList env `shouldBe` toList defaultEnv
+    --       res <- runMountain $ stepMany 20 (Has (Set [a,b]) b)
+    --       let (Right (val, env), log) = res
+    --       val `shouldBe` b
+    --       toList env `shouldBe` toList defaultEnv
+    --   it "(Set) should have eithers" $ do
+    --       res <- runMountain $ stepMany 20 (Has (Set [a,b]) (Either [a,b]))
+    --       let (Right (val, env), log) = res
+    --       val `shouldBe` Either [a,b]
+    --       toList env `shouldBe` toList defaultEnv
+    --   it "(Set,Either) Eithers of Sets should distribute" $ do
+    --       let env = defaultEnv
+    --       let val = Has (Either [Set [a], Set [b]]) b
+    --       result <- stepAndResult env val
+    --       let Right (val, env) = result
+    --       val `shouldBe` Either [
+    --         Has (Set [Literal (Thing "a")]) (Literal (Thing "b")),
+    --         Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
+    --       toList env `shouldBe` toList defaultEnv
+    --   it "(Set,Each) Eaches of Sets should distribute" $ do
+    --       let env = defaultEnv
+    --       let val = Has (Each [Set [a], Set [b]]) b
+    --       result <- stepAndResult env val
+    --       let Right (val, env) = result
+    --       val `shouldBe` Each [
+    --         Has (Set [Literal (Thing "a")]) (Literal (Thing "b")),
+    --         Has (Set [Literal (Thing "b")]) (Literal (Thing "b"))]
+    --       toList env `shouldBe` toList defaultEnv
+    --   it "(Tuples) should unwrap types" $ do
+    --       res <- runMountain $ stepMany 20 $ Has (Tuple [Set [a]]) a
+    --       let (Right (val, env), log) = res
+    --       val `shouldBe` a
+    --       toList env `shouldBe` toList defaultEnv
+    --   it "(Tuples) should unwrap values" $ do
+    --       let a' = Tuple [a]
+    --       let env = defaultEnv
+    --       result <- stepAndResult env (Has (Set [a]) a')
+    --       let Right (val, env) = result
+    --       val `shouldBe` Has (Set [Literal (Thing "a")]) (Literal (Thing "a"))
+    --   it "(Functions) properly checks simple function" $ do
+    --       res <- runMountain $ stepMany 20 (Has (Function [Set [a], Set [b]]) (Function [a, b]))
+    --       let (Right (val, env), log) = res
+    --       val `shouldBe` Function [a, b]
+    --       toList env `shouldBe` toList defaultEnv
+    --   it "(references) should supply type var" $ do
+    --     result <- runMountain $ stepMany 20 $ Has (Reference "x") a
+    --     let (Right (val, env), log) = result
+    --     val `shouldBe` Literal (Thing "a")
+    --     toList env `shouldBe` toList defaultEnv
+    --   it "(functions) should handle simple functions 1" $ do
+    --     let example = "(a -> a)@(#a -> #a)"
+    --     let Right term = parseString example
+    --     res <- runMountain $ stepMany 20 term
+    --     let (Right (val, env), log) = res
+    --     val `shouldBe` Function [a,a]
+    --     toList env `shouldBe` toList defaultEnv
+    --   it "(functions) should handle simple functions 2" $ do
+    --     let example = "(a -> a)@(#1 -> #2)"
+    --     let Right term = parseString example
+    --     res <- runMountain $ stepMany 20 term
+    --     let (Left val, log) = res
+    --     val `shouldBe` BadDef (Literal $ Thing "1") (Literal $ Thing "2")
+    --   it "(functions) should handle inner contexts rhs" $ do
+    --     let example = "(a -> a) @ (x:#z -> x)"
+    --     let Right term = parseString example
+    --     res <- runMountain $ stepMany 20 term
+    --     let (Right (val, env), log) = res
+    --     val `shouldBe` Function [Def (Reference "x") (Literal (Thing "z")),Literal (Thing "z")]
+    --     toList env `shouldBe` toList defaultEnv
+    --   it "(functions) should handle inner contexts lhs" $ do
+    --     let example = "(z:a -> z) @ (#z -> #z)"
+    --     let Right term = parseString example
+    --     res <- runMountain $ stepMany 20 term
+    --     let (Right (val, env), log) = res
+    --     val `shouldBe` Function [Literal (Thing "z"),Literal (Thing "z")]
+    --     toList env `shouldBe` toList defaultEnv
+    --   it "(functions) should handle inner contexts both lhs rhs" $ do
+    --     let example = "(z:a -> z) @ (x:#r -> x)"
+    --     let Right term = parseString example
+    --     res <- runMountain $ stepMany 20 term
+    --     let (Right (val, env), log) = res
+    --     val `shouldBe` Function [Def (Reference "x") (Literal (Thing "r")),Literal (Thing "r")]
+    --     toList env `shouldBe` toList defaultEnv
     describe "Select" $ do
       it "should select first elem from a tuple" $ do
         let example = "(x:#a, y:#b).x"
@@ -240,24 +229,24 @@ spec = do
         val `shouldBe` a
         toList env `shouldBe` toList defaultEnv
       it "should handle structure binds of refs" $ do
-        let example = "((x,y):a, y:x).y"
+        let example = "((x,y):(#a, #b), y:#x).y"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
         let (Right (val, env), log) = res
-        val `shouldBe` Reference "x"
+        val `shouldBe` Literal (Thing "x")
         toList env `shouldBe` toList defaultEnv
       it "should throw error on functions" $ do
-        let example = "(y:a -> b).y"
+        let example = "(y:#a -> #b).y"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
         let (Left e, log) = res
-        e `shouldBe` BadSelect (Function [Def (Reference "y") (Reference "a"),Reference "b"]) ["y"]
+        e `shouldBe` BadSelect (Function [Def (Reference "y") (Literal (Thing "a")),Literal (Thing "b")]) ["y"]
     describe "Uniquify" $ do
       it "should handle tuples" $ do
         hash <- randHash
         let res = Tuple [Unique hash (Literal $ Thing "x"), Literal $ Thing "y"]
         let res' = cleanup res
-        res' `shouldBe` Unique hash (Tuple [Unique hash (Literal (Thing "x")),Literal (Thing "y")])
+        res' `shouldBe` UniqueRef (Tuple [Unique hash (Literal (Thing "x")),Literal (Thing "y")])
       it "should handle this case" $ do
         hash <- randHash
         let res = Call (Scope [Function [Tuple [UniqueRef (Reference "c"),Wildcard],Call (Reference "print") (Tuple [Reference "c",Literal (String "Hello World")])]]) (Unique hash (Tuple [Unique hash (Literal (Thing "Console")),Tuple []]))
@@ -267,49 +256,41 @@ spec = do
       it "should handle tuples" $ do
         let parse_str = "(*x,y)"
         let res = fromRight (error "404") $ parseString parse_str
-        uniquifyRefs res `shouldBe` (Scope [UniqueRef (Tuple [UniqueRef (Reference "x"),Reference "y"])],False)
+        uniquify res `shouldBe` Scope [UniqueRef (Tuple [UniqueRef (Reference "x"),Reference "y"])]
       it "should handle tuples2" $ do
         let parse_str = "(*3,4)"
         let res = fromRight (error "404") $ parseString parse_str
-        let res' = uniquifyRefs res
-        res' `shouldBe` (Scope [UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)])],False)
+        let res' = uniquify res
+        res' `shouldBe` Scope [UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)])]
       it "should handle functions" $ do
         let parse_str = "(*x,y) -> x"
         let res = fromRight (error "404") $ parseString parse_str
-        uniquifyRefs res `shouldBe` (Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "x"),Reference "y"]),Reference "x"]],False)
+        uniquify res `shouldBe` Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "x"),Reference "y"]),Reference "x"]]
       it "should handle this case" $ do
         let parse_str = "(*c, ?) -> print (c, \"Hello World\")"
         let res = fromRight (error "404") $ parseString parse_str
-        uniquifyRefs res `shouldBe` (Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "c"),Wildcard]),Call (Reference "print") (Tuple [Reference "c",Literal (String "Hello World")])]],False)
+        uniquify res `shouldBe` Scope [Function [UniqueRef (Tuple [UniqueRef (Reference "c"),Wildcard]),Call (Reference "print") (Tuple [Reference "c",Literal (String "Hello World")])]]
       it "should handle this case 2" $ do
         let parse_str = "*(*x,?) = (*3, 4)"
         let res = fromRight (error "404") $ parseString parse_str
-        print $ prettyMountain $ fst $ uniquifyRefs res
-        uniquifyRefs res `shouldBe` (Scope [Def (UniqueRef (Tuple [UniqueRef (Reference "x"),Wildcard])) (UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)]))],False)
+        uniquify res `shouldBe` Scope [Def (UniqueRef (Tuple [UniqueRef (Reference "x"),Wildcard])) (UniqueRef (Tuple [UniqueRef (Literal (Int 3)),Literal (Int 4)]))]
     describe "Tests" $ do
       describe "Define" $ do
-        it "should handle unbound references in tuples" $ do
-          let parse_str = "\\{ (x,y) = (k,b); (x,y)}"
-          let res = fromRight (error "404") $ parseString parse_str
-          res <- runMountain $ stepMany 10 $ res
-          let (Right (val, env), log) = res
-          val `shouldBe` Tuple [Reference "k", Reference "b"]
         it "should directly define to recursive functions" $ do
-          let parse_str = "\\{ x = #a -> x; x}"
+          let parse_str = "\\{ z = x ~ #a -> x; z}"
           let res = fromRight (error "404") $ parseString parse_str
-          res <- runMountain $ stepMany 5 res
+          res <- runMountain $ stepMany 20 res
           let (Right (val, env), log) = res
           val `shouldBe`  Recursive "x" (Function [Literal (Thing "a"),Reference "x"])
         it "should only define structurally" $ do
-          let parse_str = "#a -> #a -> y = (x = #a -> x); y"
+          let parse_str = "#a -> #a -> y = (x ~ #a -> x); y"
           let res = fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
-          print res
           let (Left e, log) = res
           e `shouldBe` BadDef (Context M.empty (Function [Literal (Thing "a"),Literal (Thing "a"),Reference "y"])) (Recursive "x" (Function [Literal (Thing "a"),Reference "x"]))
         it "should handle left binds" $ do
           let parse_str = "(x = ?) = #a; x"
-          let res = fromRight (error "404") $ parseString parse_str
+          let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), _) = res
           val `shouldBe` Literal (Thing "a")
@@ -324,36 +305,36 @@ spec = do
           let res = fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), _) = res
-          val `shouldBe` Function [Literal (Thing "a"),Literal (Thing "a")]
+          val `shouldBe` Function [Literal (Thing "a"),Reference "a"]
         it "Should handle simple contexts on the lhs of bind" $ do
           let parse_str = "(z:a -> z) = #a -> #a; a"
-          let res = fromRight (error "404") $ parseString parse_str
+          let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), log) = res
           val `shouldBe` a
         it "Should keep inner var of lhs of define unbound" $ do
           let parse_str = "(z:a -> z) = #a -> #a; z"
-          let res = fromRight (error "404") $ parseString parse_str
+          let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
-          let (Right (val, env), log) = res
-          val `shouldBe` Reference "z"
+          let (Left e, log) = res
+          e `shouldBe` UnboundId "z"
         it "Should handle simple contexts on the lhs of bind" $ do
           let parse_str = "(z:a -> z) = #a -> #a; a"
-          let res = fromRight (error "404") $ parseString parse_str
+          let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
           let (Right (val, env), log) = res
           val `shouldBe` a
         it "Should handle contexts on both sides" $ do
-          let parse_str = "(a:#x -> b:#y -> (a,b)) = (a1:#x -> b1:#y -> (a1,b1)); #a"
-          let res = fromRight (error "404") $ parseString parse_str
+          let parse_str = "(a:#x -> b:#y -> (a,b)) = (a1:#x -> b1:#y -> (a1,b1)); a"
+          let res = normalize $ fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
+          print res
           let (Right (val, env), log) = res
           val `shouldBe` a
           toList env `shouldBe` toList defaultEnv
-        it "Should define references onto itself without doing anything else" $ do
+        it "Should throw error on unbound def" $ do
           let parse_str = "a = a; a"
           let res = fromRight (error "404") $ parseString parse_str
           res <- runMountain $ stepMany 20 res
-          let (Right (val, env), log) = res
-          val `shouldBe` Reference "a"
-          toList env `shouldBe` toList defaultEnv
+          let (Left e, log) = res
+          e `shouldBe` UnboundId "a"

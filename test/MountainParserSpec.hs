@@ -65,7 +65,7 @@ spec = do
       it "Should parse a basic tuple of one elem" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.1_basic_set"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal (Thing "1")]
+        val `shouldBe` Scope [Tuple [Literal (Thing "1")]]
       it "Should parse a basic set of many elem" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.2_many_elem"
         let (Right (val, env), log) = res
@@ -73,7 +73,7 @@ spec = do
       it "Should parse recursive tuples" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Tuple [Literal (Thing "1"),Literal (Thing "2"),Tuple []]]
+        val `shouldBe` Scope [Tuple [Literal (Thing "1"),Tuple [Literal (Thing "2")],Tuple [Tuple []]]]
       it "Should ignore ws" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Tuples.4_ws"
         let (Right (val, env), log) = res
@@ -86,11 +86,11 @@ spec = do
       it "Should parse a chain of functions" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Functions.2_chain"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Function [Literal (Thing "1"),Literal (Thing "2"), Literal (Thing "3"), Literal (Thing "4")]]
+        val `shouldBe` Scope [Function [Literal (Thing "1"),Function [Literal (Thing "2"),Function [Literal (Thing "3"),Literal (Thing "4")]]]]
       it "Should parse a mix of values within a function" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Functions.3_mixed"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Import (Function [Literal (Thing "4"),Tuple [Literal (Thing "1"),Literal (Thing "2")],Set [Literal (Thing "3")],Reference "x"])]
+        val `shouldBe` Scope [Import (Function [Literal (Thing "4"),Function [Tuple [Literal (Thing "1"),Literal (Thing "2")],Function [Set [Literal (Thing "3")],Reference "x"]]])]
     describe "Either" $ do
       it "Should parse an either" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eithers.1_basic"
@@ -99,7 +99,7 @@ spec = do
       it "Should parse an either chain" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eithers.2_chain"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Either [Literal (Thing "1"),Literal (Thing "2"), Literal (Thing "3"), Literal (Thing "4")]]
+        val `shouldBe` Scope [Either [Literal (Thing "1"),Either [Literal (Thing "2"),Either [Literal (Thing "3"),Literal (Thing "4")]]]]
       it "Should parse eithers smaller than functions" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eithers.3_eithers_and_fns"
         let (Right (val, env), log) = res
@@ -107,7 +107,7 @@ spec = do
       it "Should parse tupled function inside" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eithers.4_parenthesis"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Either [Literal (Thing "1"),Function [Literal (Thing "2"),Literal (Thing "3")],Literal (Thing "4")]]
+        val `shouldBe` Scope [Either [Literal (Thing "1"),Either [Tuple [Function [Literal (Thing "2"),Literal (Thing "3")]],Literal (Thing "4")]]]
     describe "Each" $ do
       it "Should parse an every" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eachs.1_basic"
@@ -116,7 +116,7 @@ spec = do
       it "Should parse an either chain" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eachs.2_chain"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Each [Literal (Thing "1"),Literal (Thing "2"), Literal (Thing "3"), Literal (Thing "4")]]
+        val `shouldBe` Scope [Each [Literal (Thing "1"),Each [Literal (Thing "2"),Each [Literal (Thing "3"),Literal (Thing "4")]]]]
       it "Should parse eithers smaller than functions" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eachs.3_eachs_and_fns"
         let (Right (val, env), log) = res
@@ -124,7 +124,7 @@ spec = do
       it "Should parse tupled function inside" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eachs.4_parenthesis"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Each [Literal (Thing "1"),Function [Literal (Thing "2"),Literal (Thing "3")],Literal (Thing "4")]]
+        val `shouldBe` Scope [Each [Literal (Thing "1"),Each [Tuple [Function [Literal (Thing "2"),Literal (Thing "3")]],Literal (Thing "4")]]]
       it "Should prioritize eachs over eithers" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Eachs.5_each_and_either"
         let (Right (val, env), log) = res
@@ -133,19 +133,19 @@ spec = do
       it "Should parse a basic Scope" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Scopes.1_basic"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal (Thing "1")]
+        val `shouldBe` Scope [Scope [Literal (Thing "1")]]
       it "Should parse a multiple term scope" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Scopes.2_many_elem"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal (Thing "1"),Literal (Thing "2")]
+        val `shouldBe` Scope [Scope [Literal (Thing "1"),Literal (Thing "2")]]
       it "Should parse nested scopes" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Scopes.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal (Thing "1"),Literal (Thing "2")]
+        val `shouldBe` Scope [Scope [Literal (Thing "1"),Scope [Literal (Thing "2")],Scope [Scope []]]]
       it "Should parse ws" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Scopes.4_ws"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Literal (Thing "1"),Literal (Thing "2"),Literal (Thing "3")]
+        val `shouldBe` Scope [Scope [Literal (Thing "1"),Literal (Thing "2"),Literal (Thing "3")]]
     describe "Refined" $ do
       it "Should parse refine" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Refines.1_basic"
@@ -158,7 +158,7 @@ spec = do
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Refines.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Refine (Literal (Thing "1")) (Each [Literal (Thing "2"),Literal (Thing "3")])]
+        val `shouldBe` Scope [Refine (Refine (Literal (Thing "1")) (Literal (Thing "2"))) (Literal (Thing "3"))]
       it "Should parse ws" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Refines.4_ws"
         let (Right (val, env), log) = res
@@ -175,7 +175,7 @@ spec = do
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [UniqueRef (UniqueRef (Literal (Thing "2")))]
+        val `shouldBe` Scope [UniqueRef (Tuple [UniqueRef (Literal (Thing "2"))])]
       it "Should parse eq" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Uniques.4_is"
         let (Right (val, env), log) = res
@@ -184,7 +184,7 @@ spec = do
       it "Should parse Call" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.1_basic"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Call (Reference "a") (Reference "b"),Call (Reference "a") (Reference "b")]
+        val `shouldBe` Scope [Call (Reference "a") (Tuple [Reference "b"]),Call (Reference "a") (Reference "b")]
       it "Should parse Either first, call second" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.2_either"
         let (Right (val, env), log) = res
@@ -192,11 +192,11 @@ spec = do
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Call (Reference "x") (Call (Reference "y") (Reference "z"))]
+        val `shouldBe` Scope [Call (Reference "x") (Tuple [Call (Reference "y") (Tuple [Reference "z"])])]
       it "Should parse call seq" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.4_sequence"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Call (Call (Call (Call (Call (Reference "x") (Reference "y")) (Reference "z")) (Reference "a")) (Reference "b")) (Reference "c")]
+        val `shouldBe` Scope [Call (Call (Call (Call (Call (Reference "x") (Tuple [Reference "y"])) (Tuple [Reference "z"])) (Tuple [Reference "a"])) (Tuple [Reference "b"])) (Tuple [Reference "c"])]
       it "Should handle infix" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Calls.5_infix"
         let (Right (val, env), log) = res
@@ -217,7 +217,7 @@ spec = do
       it "Should parse nested" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Hass.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Has (Each [Reference "x",Reference "y"]) (Reference "z")]
+        val `shouldBe` Scope [Has (Reference "x") (Has (Reference "y") (Reference "z"))]
     describe "Define" $ do
       it "Should parse Def colon and equal" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Define.1_basic"
@@ -250,7 +250,7 @@ spec = do
       it "Should parse recursive selects" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Select.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Select (Reference "x") ["y","z"]]
+        val `shouldBe` Scope [Select (Select (Reference "x") ["y"]) ["z"]]
     describe "Contexts" $ do
       it "Should parse Contexts" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Contexts.1_basic"
@@ -263,7 +263,7 @@ spec = do
       it "Should handle recursive contexts" $ do
         res <- runMountain $ dotImportFile "Tests.Parser.Contexts.3_recursive"
         let (Right (val, env), log) = res
-        val `shouldBe` Scope [Context (fromList [("x",Literal (Int 1)),("y",Literal (Int 2))]) (Tuple [Reference "x",Reference "y"])]
+        val `shouldBe` Scope [Context (fromList [("x",Literal (Int 1))]) (Context (fromList [("y",Literal (Int 2))]) (Tuple [Reference "x",Reference "y"]))]
       
       -- it "Should parse recursive selects" $ do
       --   res <- runMountain $ dotImportFile "Tests.Parser.Context.3_recursive"

@@ -6,6 +6,7 @@ import Mountain
       stepMany,
       toList,
       unit,
+      normalize,
       MountainEnv(options),
       MountainOptions(Options) )
 import MountainParser
@@ -38,7 +39,8 @@ getTests base rel = do
 
 spec :: Spec
 spec = do
-  let base_test_dot_path = "Tests.CurTest"
+  let base_test_dot_path = "Tests.Define"
+  -- let base_test_dot_path = "Tests.CurTest"
   describe ("Mountain." ++ base_test_dot_path) $ do
     let Options _ bp ext = options defaultEnv
     res <- runIO $ getTests (bp ++ dotPathAsDir base_test_dot_path) ""
@@ -47,11 +49,11 @@ spec = do
       it (base_test_dot_path ++ dotPath) $ do
         let example = "import " ++ base_test_dot_path ++ dotPath
         let Right term = parseString example
-        res <- runMountain $ stepMany 30 term
+        res <- runMountain $ stepMany 30 (normalize term)
         case res of
           (Left e, log) -> do
             error $ show e ++ "\n\n" ++ prettyLog log
           (Right (val, env), log) -> do
-            putStrLn $ prettyLog log
+            -- putStrLn $ prettyLog log
             val `shouldBe` unit
             toList env `shouldBe` toList defaultEnv

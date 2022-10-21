@@ -29,6 +29,7 @@ data Structure a =
     Literal a
   | Wildcard
   | Reference Id
+  | Unique Hash (Structure a)
   | UniqueRef (Structure a)
   | Set [Structure a] -- TODO MAKE THIS AN ACTUAL SET
   | Tuple [Structure a]
@@ -39,7 +40,6 @@ data Structure a =
   | Scope [Structure a]
   | Import (Structure a)
   | Refine (Structure a) (Structure a)
-  | Unique Hash (Structure a)
   | Call (Structure a) (Structure a)
   | Has (Structure a) (Structure a)
   | Def (Structure a) (Structure a)
@@ -202,23 +202,6 @@ replace old new input_s =
         else Recurse
   in
     transform (replaceOldWithNew old) input_s
-
--- TODO handle tuples and functions in a dep context with subtle binds
--- probably via star
--- TODO isRecursive should handle Contexts
-isRecursive :: Structure a -> Bool
-isRecursive (Def (Reference n) s) =
-  let
-    hasRefOfn :: Structure a -> (Bool, ShouldRecurse (Structure a))
-    hasRefOfn r@(Reference k) = (n == k, Result r)
-    hasRefOfn b@(Def (Reference k) v) =
-      if n == k
-        then (False, Result b)
-        else (False, Recurse)
-    hasRefOfn k = (False, Recurse)
-  in
-    checkAny hasRefOfn s
-isRecursive _ = False
 
 -- ############################# --
 -- Basic Structure functionality --
@@ -446,7 +429,11 @@ normalize l@(Literal _) = l
 normalize Wildcard = Wildcard
 normalize r@(Reference _) = r
 normalize (UniqueRef (UniqueRef s)) = normalize (UniqueRef s)
-normalize (UniqueRef s) = UniqueRef (normalize s)
+normalize (UniqueRef s) = do
+  let s' = normalize s
+  if s' == s
+    then UniqueRef s'
+    else normalize $ UniqueRef s'
 normalize i@(Import (Import a)) = normalize $ Import a
 normalize i@(Import a) = Import (normalize a)
 normalize s@(Set xs) = Set (map normalize xs)
@@ -513,9 +500,6 @@ normalize b@(Def x a@(Def y z)) =
     else Def (normalize x) (normalize a)
 normalize b@(Def x y)
   | x == y = normalize y
-  | isRecursive b = do
-    let Reference n = x
-    normalize $ Recursive n y
   | otherwise = Def (normalize x) (normalize y)
 normalize s@(Select s2@(Select _ _) id1) = do
   case normalize s2 of
@@ -558,7 +542,7 @@ isEmptyType (Set []) = True
 isEmptyType _ = False
 
 cleanup :: MountainTerm -> MountainTerm
-cleanup = normalize . fst . uniquifyRefs . normalize . fst . uniquify
+cleanup = normalize . uniquify . normalize
 
 step :: MountainTerm -> MountainContextT IO MountainTerm
 step t = do
@@ -568,12 +552,8 @@ step t = do
     step' :: MountainTerm -> MountainContextT IO MountainTerm
     step' l@(Literal _) = return l
     step' Wildcard = return Wildcard
-    step' r@(Reference n) = getDef n `catchError` const (return r)
-    step' (Import n) = do
-      res <- step' n
-      if res == n
-        then stepImport n
-        else return $ Import res
+    step' r@(Reference n) = getDef n
+    step' (Import n) = stepImport n
     step' (Set xs) = do
       res <- _stepSeqNoError xs
       return $ Set res
@@ -583,17 +563,13 @@ step t = do
       if res /= a
         then return res
         else return $ _joinContexts Either xs
-    step' d@(Except _) = throwError $ NotImplemented "Excepterence" d
-    step' (Function xs) = do
-      res <- _stepSeqNoError xs
-      return $ Function res
+    step' d@(Except _) = throwError $ NotImplemented "Except" d
+    step' (Function xs) = stepDepCtx Function xs
     step' (Each []) = throwError EmptyEach
     step' (Each xs) = do
       res <- _stepSeqNoError xs
       return $ Each res
-    step' (Tuple xs) = do
-      res <- _stepSeqNoError xs
-      return $ Tuple res
+    step' (Tuple xs) = stepDepCtx Tuple xs
     step' (Scope inner) = stepScope inner
     step' c@(Call (Literal AssertFail) y) = assertFail y
     step' c@(Call x y) = do
@@ -607,21 +583,19 @@ step t = do
       let [x',y'] = res
       return $ Refine x' y'
     step' c@(Has x y) = do
-      res <- _stepSeqNoError [x,y]
-      let [x', y'] = res
-      if x' == x && y' == y
-        then has x y
-        else return $ Has x' y'
+      throwError $ NotImplemented "Has" c
+      -- res <- _stepSeqNoError [x,y]
+      -- let [x', y'] = res
+      -- if x' == x && y' == y
+      --   then has x y
+      --   else return $ Has x' y'
     step' b@(Def x y) = do
-      res <- _stepSeqNoError [y]
-      let [y'] = res
+      y' <- step y
       return $ Def x y'
     step' r@(Recursive n x) = do
-      -- we don't want it to unroll here, but in specific other places
       pushEnv (M.singleton n (Reference n))
-      res <- _stepSeqNoError [x]
+      x' <- step x
       popEnv
-      let [x'] = res
       return $ Recursive n x'
     step' h@(Hide _ _) = throwError $ NotImplemented "hides" h
     step' (Select a ids) = do
@@ -714,17 +688,20 @@ evaluate t = do
     else evaluate res
 
 define :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-define a@(Context env z@(Def x y)) b = return $ Def (Context env x) (Def (Context env y) b)
+define (Context env a@(Set xs)) Wildcard = return $ Def (Context env a) (Set $ map (const Wildcard) xs)
+define (Context env a@(Tuple xs)) Wildcard = return $ Def (Context env a) (Tuple $ map (const Wildcard) xs)
+define (Context env a@(Function xs)) Wildcard = return $ Def (Context env a) (Function $ map (const Wildcard) xs)
+define (Context env r@(Refine a b)) Wildcard = return $ Def (Context env r) (Refine Wildcard Wildcard)
+define (Context env r@(Unique h b)) Wildcard = return $ Def (Context env r) (Unique h Wildcard)
+define (Context env r@(UniqueRef a)) Wildcard = return $ Def (Context env r) (UniqueRef Wildcard)
 define (Context env r@(Recursive id x)) r2@(Recursive id2 y) = return $ Def (Context env (unroll r)) (Context (M.singleton id2 (Reference id)) y)
+define (Context env r@(Call a b)) Wildcard = return $ Def (Context env r) (Call Wildcard Wildcard)
+define (Context env r@(Has a b)) Wildcard = return $ Def (Context env r) (Has Wildcard Wildcard)
+define (Context env r@(Recursive id b)) Wildcard = return $ Def (Context env r) (Recursive id Wildcard)
+define (Context env r@(Select b ids)) Wildcard = return $ Def (Context env r) (Select Wildcard ids)
+define (Context env r@(Hide b ids)) Wildcard = return $ Def (Context env r) (Hide Wildcard ids)
+define a@(Context env z@(Def x y)) b = return $ Def (Context env x) (Def (Context env y) b)
 define a@(Context env r@(Recursive id x)) b = throwError $ BadDef a b
-define (Context env r@(Reference n)) b@(Recursive x y) = do
-  let res = M.lookup n env
-  case res of
-    Just r' -> return $ Def r' b
-    Nothing -> do
-      putDef n b
-      return b
-define a@(Context _ _) b@(Recursive _ _) = throwError $ BadDef a b
 define (Context env r@(Reference n)) b@(Def x y) = do
   let res = M.lookup n env
   case res of
@@ -732,25 +709,6 @@ define (Context env r@(Reference n)) b@(Def x y) = do
     Nothing -> do
       res <- define x y
       return $ Def (Context env r) res
-define (Context env r@(Reference n)) b@(Reference m) = do
-  let res = M.lookup n env
-  case res of
-    Just r' -> return $ Def r' b
-    Nothing ->
-      if n == m
-        then return (Reference m)
-        else do
-          putDef n b
-          return b
-define c@(Context env x) b@(Reference n) = do
-  res <- hasDef n
-  if res
-    then do
-      def <- getDef n
-      return $ Def c def
-    else do
-      putDef n c
-      return b
 define a@(Context env r@(Reference n)) b@(Unique _ _) = throwError $ BadDef a b
 define a@(Context env r@(Reference n)) b@(UniqueRef _) = throwError $ BadDef a b
 define (Context env r@(Reference n)) b = do
@@ -760,6 +718,7 @@ define (Context env r@(Reference n)) b = do
     Nothing -> do
       putDef n b
       return b
+define a@(Context _ _) b@(Recursive _ _) = throwError $ BadDef a b
 define a@(Context _ _) b@(Def x y) = do
   res <- define x y
   return $ Def a res
@@ -771,7 +730,7 @@ define a@(Context _ _) b@(Context env x) = do
     Def a' b' -> return $ Def a' (Context new_env b')
     other -> return $ Context new_env other
 define a@(Context _ _) (Import b) = return $ Import (Def a b) -- TODO change to make imports define afterwards
-define (Context env a@(Import _)) b = error "imports should be stepped before binding"
+define a@(Context env (Import _)) b = throwError $ BadDef a b
 define (Context env Wildcard) b = return b
 define (Context env a@(Literal x)) b@(Literal y) =
   if x == y
@@ -875,7 +834,7 @@ define (Context env a@(Tuple (x:xs))) b@(Tuple (y:ys)) = do
 define (Context env a@(Tuple _)) b = throwError $ BadDef a b
 define (Context env a@(Each inner)) b = return $ Each $ map ((`Def` b) . Context env) inner
 define (Context env a@(Either inner)) b = return $ Either $ map ((`Def` b) . Context env) inner
-define (Context env a@(Scope _)) b = error "Scopes should be normalized away in binds"
+define a@(Context env (Scope _)) b = throwError $ BadDef a b
 define a@(Context _ _) b@(Either inner) = return $ Either $ map (a `Def`) inner
 define a@(Context _ _) b@(Each inner) = return $ Each $ map (a `Def`) inner
 define (Context env a@(Except inner1)) (Except inner2) = do
@@ -908,13 +867,14 @@ define a@(Context env (UniqueRef (Reference n))) b@(UniqueRef y) = do
 define a@(Context env (UniqueRef x)) b@(Unique h y) = do
   res <- define (Context env x) y
   case res of
-    Def (Context env x') y' -> return $ Def (Context env (UniqueRef x')) (Unique h y')
+    Def (Context env' x') y' -> return $ Def (Context (M.union env' env) (UniqueRef x')) (Unique h y')
     other -> return unit
 define a@(Context env (UniqueRef x)) b@(UniqueRef y) = do
   res <- define (Context env x) y
   case res of
-    Def (Context env x') y' -> return $ Def (Context env (UniqueRef x')) (UniqueRef y')
-    other -> return unit
+    Def (Context env' x') y' -> return $ Def (Context (M.union env' env) (UniqueRef x')) (UniqueRef y')
+    Def x' y' -> return $ Def (Context env (UniqueRef x')) (UniqueRef y')
+    other -> return other
 define a@(Context env (UniqueRef x)) b = throwError $ BadDef a b
 define a@(Context env (Unique h x)) b@(Unique h2 y) =
   if h /= h2
@@ -1219,26 +1179,79 @@ stepCall a@(Each []) b = throwError $ BadCall a b
 stepCall a@(Each xs) b = return $ Each $ map (`Call` b) xs
 stepCall a b = return $ Call a b
 
+stepDepCtx :: ([MountainTerm] -> MountainTerm) -> [MountainTerm] -> MountainContextT IO MountainTerm
+stepDepCtx f [] = return $ f []
+stepDepCtx f (r@(Recursive id y):xs) = do
+  res <- step r
+  if res == r
+    then do
+      pushEnv (M.singleton id (Reference id))
+      fxs' <- stepDepCtx f xs
+      popEnv
+      case fxs' of
+        Function xs' -> return $ Function (res:xs')
+        Tuple xs' -> return $ Tuple (res:xs')
+        _ -> error "should not reach"
+    else return $ f (res:xs)
+stepDepCtx f (r@(Def (Reference id) y):xs) = do
+  res <- step r
+  if res == r
+    then do
+      pushEnv (M.singleton id (Reference id))
+      fxs' <- stepDepCtx f xs
+      popEnv
+      case fxs' of
+        Function xs' -> return $ Function (res:xs')
+        Tuple xs' -> return $ Tuple (res:xs')
+        _ -> error "should not reach"
+    else return $ f (res:xs)
+stepDepCtx f (b@(Def x y):xs) = return $ f (b:xs) -- TODO free vars the def and bind results to themselves
+stepDepCtx f (Reference id:xs) = do
+  pushEnv (M.singleton id (Reference id))
+  fxs' <- stepDepCtx f xs
+  popEnv
+  case fxs' of
+    Function xs' -> return $ Function (Reference id:xs')
+    Tuple xs' -> return $ Tuple (Reference id:xs')
+    _ -> error "should not reach"
+stepDepCtx f (UniqueRef (Reference id):xs) = do
+  pushEnv (M.singleton id (Reference id))
+  fxs' <- stepDepCtx f xs
+  popEnv
+  case fxs' of
+    Function xs' -> return $ Function (Reference id:xs')
+    Tuple xs' -> return $ Tuple (Reference id:xs')
+    _ -> error "should not reach"
+stepDepCtx f (x:xs) = do
+  res <- step x
+  if res == x
+    then do
+      fxs' <- stepDepCtx f xs
+      case fxs' of
+        Function xs' -> return $ Function (res:xs')
+        Tuple xs' -> return $ Tuple (res:xs')
+        _ -> error "should not reach"
+    else return $ f (res:xs)
+
 stepScope :: [MountainTerm] -> MountainContextT IO MountainTerm
 stepScope [] = throwError EmptyScope
 stepScope (r@(Recursive id y):xs) = do
-  res <- step y
-  if res == y
-    then 
+  res <- step r
+  if res == r
+    then
       case xs of
         [] -> return r
         _ -> return $ Context (M.singleton id r) $ Scope xs
     else return $ Scope (Recursive id y:xs)
 stepScope (b@(Def x y):xs) = do
-  res <- _stepSeqNoError [x,y]
-  let [x', y'] = res
-  if x' == x && y' == y
+  y' <- step y
+  if y' == y
     then do
       pushEnv M.empty
       res <- define x y
       new_env <- popEnv
       return $ Context new_env $ Scope (res : xs)
-    else return $ Scope (Def x' y':xs)
+    else return $ Scope (Def x y':xs)
 stepScope (x:xs) = do
   res <- step x
   if res == x
@@ -1257,192 +1270,89 @@ dirAsDotPath [] = []
 dirAsDotPath ('/':xs) = '.':dirAsDotPath xs
 dirAsDotPath (x:xs) = x:dirAsDotPath xs
 
-setUnsetUniques :: MountainTerm -> IO MountainTerm
-setUnsetUniques (Literal x) = return $ Literal x
-setUnsetUniques Wildcard = return Wildcard
-setUnsetUniques (Set ic) = Set <$> mapM setUnsetUniques ic
-setUnsetUniques u@(UniqueRef x) = return u
-setUnsetUniques u@(Unique Unset (Reference _)) = return u
-setUnsetUniques (Unique Unset ic) = do
-  id_ <- randHash
-  Unique id_ <$> setUnsetUniques ic
-setUnsetUniques (Unique h ic) = Unique h <$> setUnsetUniques ic
-setUnsetUniques (Function xs) = Function <$> mapM setUnsetUniques xs
-setUnsetUniques (Each xs) = Each <$> mapM setUnsetUniques xs
-setUnsetUniques (Tuple xs) = Tuple <$> mapM setUnsetUniques xs
-setUnsetUniques (Either xs) = Either <$> mapM setUnsetUniques xs
-setUnsetUniques (Except xs) = Either <$> mapM setUnsetUniques xs
-setUnsetUniques (Refine b p) = Refine <$> setUnsetUniques b <*> setUnsetUniques p
-setUnsetUniques (Call b a) = Call <$> setUnsetUniques b <*> setUnsetUniques a
-setUnsetUniques (Import i_c) = Import <$> setUnsetUniques i_c
-setUnsetUniques (Has b s) = Has <$> setUnsetUniques b <*> setUnsetUniques s
-setUnsetUniques (Scope xs) = Scope <$> mapM setUnsetUniques xs
-setUnsetUniques (Def a b) = Def <$> setUnsetUniques a <*> setUnsetUniques b
-setUnsetUniques (Recursive id b) = Recursive id <$> setUnsetUniques b
-setUnsetUniques (Reference id) = return $ Reference id
-setUnsetUniques (Select a ids) = Select <$> setUnsetUniques a <*> return ids
-setUnsetUniques (Hide a ids) = Hide <$> setUnsetUniques a <*> return ids
-setUnsetUniques (Context env a) = Context <$> mapM setUnsetUniques env <*> setUnsetUniques a
-
-
-
-uniquify :: MountainTerm -> (MountainTerm, Hash)
-uniquify (Literal x) = (Literal x, Nil)
-uniquify Wildcard = (Wildcard, Nil)
-uniquify (Set ic) = do
-  let (new_ic, hash) = unzip $ map uniquify ic
-  let new_hash = sumHash hash
-  (Unique new_hash (Set new_ic), new_hash)
-uniquify u@(UniqueRef x) = (u, Nil)
-uniquify (Unique Unset ic) = error "unset unique"
-uniquify u@(Unique h (Literal _)) = (u,h)
-uniquify u@(Unique h (Reference _)) = (u,h)
-uniquify u@(Unique h (Tuple [])) = (u,h)
-uniquify u@(Unique h x) = uniquify x
-uniquify (Function xs) = do
-  let (new_ic, hash) = unzip $ map uniquify xs
-  let unduped = (map head . filter (\x -> length x == 1) . group . sort) hash
-  let final_hash = seqHash $ filter (`elem` unduped) hash
-  (Unique final_hash (Function new_ic), final_hash)
-uniquify (Each xs) = do
-  let (new_ic, hash) = unzip $ map uniquify xs
-  let new_hash = sumHash hash
-  (Unique new_hash (Each new_ic), new_hash)
-uniquify (Tuple xs) = do
-  let (new_ic, hash) = unzip $ map uniquify xs
-  let new_hash = seqHash hash
-  (Unique new_hash (Tuple new_ic), new_hash)
-uniquify (Either xs) = do
-  let (new_ic, hash) = unzip $ map uniquify xs
-  let new_hash = sumHash hash
-  (Unique new_hash (Either new_ic), new_hash)
-uniquify (Except xs) = do
-  let (new_ic, hash) = unzip $ map uniquify xs
-  let new_hash = sumHash hash
-  (Unique new_hash (Set new_ic), new_hash)
-uniquify (Refine a b) = do
-  let (a', hash_a) = uniquify a
-  let (b', hash_b) = uniquify b
-  (Refine (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
-uniquify (Call a b) = do
-  let (a', hash_a) = uniquify a
-  let (b', hash_b) = uniquify b
-  (Call (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
-uniquify i@(Import i_c) = (i, Nil)
-uniquify (Has a b) = do
-  let (a', hash_a) = uniquify a
-  let (b', hash_b) = uniquify b
-  (Has (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
-uniquify (Scope xs) = do
-  let (new_ic, hash) = unzip $ map uniquify xs
-  let new_hash = seqHash hash
-  (Unique new_hash (Scope new_ic), new_hash)
-uniquify (Def a b) = do
-  let (a', hash_a) = uniquify a
-  let (b', hash_b) = uniquify b
-  (Def (Unique hash_a a') (Unique hash_b b'), seqHash [hash_a, hash_b])
-uniquify (Recursive id b) = do
-  let (b', hash_b) = uniquify b
-  (Unique hash_b (Recursive id b'), hash_b)
-uniquify (Reference id) = (Reference id, Nil)
-uniquify (Select a ids) = do
-  let (new_ic, hash) = uniquify a
-  (Select new_ic ids, hash)
-uniquify (Hide a ids) = do
-  let (new_ic, hash) = uniquify a
-  (Hide new_ic ids, hash)
-uniquify (Context env a) = do
-  let env_as_list = M.toList env
-  let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Hash]) -> ([(Id, MountainTerm)], [Hash]) =
-        \(id,term) (cur_list, cur_hashes) -> do {
-            let (new_term, hash) = uniquify term
-          ; ((id, new_term):cur_list, hash:cur_hashes)
-        }
-  let (new_map_list, hashes) :: ([(Id,MountainTerm)], [Hash]) = foldr inner_foo ([],[]) env_as_list
-  let (a', hash) = uniquify a
-  let final_hash = sumHash (hash:hashes)
-  (Unique final_hash (Context (M.fromList new_map_list) a'), final_hash)
-
-uniquifyRefs :: MountainTerm -> (MountainTerm, Bool)
-uniquifyRefs (Literal x) = (Literal x, False)
-uniquifyRefs Wildcard = (Wildcard, False)
-uniquifyRefs u@(UniqueRef (Reference _)) = (u, True)
-uniquifyRefs u@(UniqueRef Wildcard) = (u, True)
-uniquifyRefs u@(UniqueRef (Literal _)) = (u, True)
-uniquifyRefs u@(UniqueRef some_structure) = uniquifyRefs some_structure
-uniquifyRefs (Unique Unset ic) = error "unset unique"
-uniquifyRefs u@(Unique h _) = (u, False)
-uniquifyRefs (Function xs) = do
-  let (new_ic, _) = unzip $ map uniquifyRefs xs
-  (Function new_ic, False)
-uniquifyRefs s@(Set ic) = do
-  let (new_ic, has_unique_ref) = unzip $ map uniquifyRefs ic
-  if or has_unique_ref
-    then (UniqueRef (Set new_ic), True)
-    else (Set new_ic, False)
-uniquifyRefs s@(Each xs) = do
-  let (new_ic, has_unique_ref) = unzip $ map uniquifyRefs xs
-  if or has_unique_ref
-    then (UniqueRef (Each new_ic), True)
-    else (Each new_ic, False)
-uniquifyRefs s@(Tuple xs) = do
-  let (new_ic, has_unique_ref) = unzip $ map uniquifyRefs xs
-  if or has_unique_ref
-    then (UniqueRef (Tuple new_ic), True)
-    else (Tuple new_ic, False)
-uniquifyRefs s@(Either xs) = do
-  let (new_ic, has_unique_ref) = unzip $ map uniquifyRefs xs
-  if or has_unique_ref
-    then (UniqueRef (Either new_ic), True)
-    else (Either new_ic, False)
-uniquifyRefs s@(Except xs) = do
-  let (new_ic, has_unique_ref) = unzip $ map uniquifyRefs xs
-  if or has_unique_ref
-    then (UniqueRef (Except new_ic), True)
-    else (Except new_ic, False)
-uniquifyRefs (Refine a b) = do
-  let (a', has_uref_a) = uniquifyRefs a
-  let (b', has_uref_b) = uniquifyRefs b
-  (Refine a' b', has_uref_a || has_uref_b)
-uniquifyRefs (Call a b) = do
-  let (a', has_uref_a) = uniquifyRefs a
-  let (b', has_uref_b) = uniquifyRefs b
-  (Call a' b', has_uref_a || has_uref_b)
-uniquifyRefs i@(Import i_c) = (i, False)
-uniquifyRefs (Has a b) = do
-  let (a', has_uref_a) = uniquifyRefs a
-  let (b', has_uref_b) = uniquifyRefs b
-  (Has a' b', has_uref_a || has_uref_b)
-uniquifyRefs (Scope xs) = do
-  let (new_ic, _) = unzip $ map uniquifyRefs xs
-  (Scope new_ic, False)
-uniquifyRefs (Def a b) = do
-  let (a', has_uref_a) = uniquifyRefs a
-  let (b', has_uref_b) = uniquifyRefs b
-  (Def a' b', has_uref_a || has_uref_b)
-uniquifyRefs (Recursive id b) = do
-  let (b', has_uref) = uniquifyRefs b
-  (Recursive id b', has_uref)
-uniquifyRefs (Reference id) = (Reference id, False)
-uniquifyRefs (Select a ids) = do
-  let (new_ic, has_uref) = uniquifyRefs a
-  (Select new_ic ids, has_uref)
-uniquifyRefs (Hide a ids) = do
-  let (new_ic, has_uref) = uniquifyRefs a
-  (Hide new_ic ids, has_uref)
-uniquifyRefs (Context env a) = do
-  let env_as_list = M.toList env
-  let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
-        \(id,term) (cur_list, urefs) -> do {
-            let (new_term, has_uref) = uniquifyRefs term
-          ; ((id, new_term):cur_list, has_uref:urefs)
-        }
-  let (new_map_list, urefs) :: ([(Id,MountainTerm)], [Bool]) = foldr inner_foo ([],[]) env_as_list
-  let (a', uref) = uniquifyRefs a
-  let has_any_urefs = or (uref:urefs)
-  if has_any_urefs
-    then (UniqueRef (Context (M.fromList new_map_list) a'), True)
-    else ((Context (M.fromList new_map_list) a'), False)
+uniquify :: MountainTerm -> MountainTerm
+uniquify = fst . uniquify'
+  where
+    uniquify' :: MountainTerm -> (MountainTerm, Bool)
+    uniquify' (Literal x) = (Literal x, False)
+    uniquify' Wildcard = (Wildcard, False)
+    uniquify' u@(UniqueRef (Reference _)) = (u, True)
+    uniquify' u@(UniqueRef Wildcard) = (u, True)
+    uniquify' u@(UniqueRef (Literal _)) = (u, True)
+    uniquify' u@(UniqueRef some_structure) = uniquify' some_structure
+    uniquify' (Unique Unset ic) = error "unset unique"
+    uniquify' u@(Unique h _) = (u,True)
+    uniquify' (Function xs) = do
+      let (new_ic, _) = unzip $ map uniquify' xs
+      (Function new_ic, False)
+    uniquify' s@(Set ic) = do
+      let (new_ic, has_unique_ref) = unzip $ map uniquify' ic
+      if or has_unique_ref
+        then (UniqueRef (Set new_ic), True)
+        else (Set new_ic, False)
+    uniquify' s@(Each xs) = do
+      let (new_ic, has_unique_ref) = unzip $ map uniquify' xs
+      if or has_unique_ref
+        then (UniqueRef (Each new_ic), True)
+        else (Each new_ic, False)
+    uniquify' s@(Tuple xs) = do
+      let (new_ic, has_unique_ref) = unzip $ map uniquify' xs
+      if or has_unique_ref
+        then (UniqueRef (Tuple new_ic), True)
+        else (Tuple new_ic, False)
+    uniquify' s@(Either xs) = do
+      let (new_ic, has_unique_ref) = unzip $ map uniquify' xs
+      if or has_unique_ref
+        then (UniqueRef (Either new_ic), True)
+        else (Either new_ic, False)
+    uniquify' s@(Except xs) = do
+      let (new_ic, has_unique_ref) = unzip $ map uniquify' xs
+      if or has_unique_ref
+        then (UniqueRef (Except new_ic), True)
+        else (Except new_ic, False)
+    uniquify' (Refine a b) = do
+      let (a', has_uref_a) = uniquify' a
+      let (b', has_uref_b) = uniquify' b
+      (Refine a' b', has_uref_a || has_uref_b)
+    uniquify' (Call a b) = do
+      let (a', has_uref_a) = uniquify' a
+      let (b', has_uref_b) = uniquify' b
+      (Call a' b', has_uref_a || has_uref_b)
+    uniquify' i@(Import i_c) = (i, False)
+    uniquify' (Has a b) = do
+      let (a', has_uref_a) = uniquify' a
+      let (b', has_uref_b) = uniquify' b
+      (Has a' b', has_uref_a || has_uref_b)
+    uniquify' (Scope xs) = do
+      let (new_ic, _) = unzip $ map uniquify' xs
+      (Scope new_ic, False)
+    uniquify' (Def a b) = do
+      let (a', has_uref_a) = uniquify' a
+      let (b', has_uref_b) = uniquify' b
+      (Def a' b', has_uref_a || has_uref_b)
+    uniquify' (Recursive id b) = do
+      let (b', has_uref) = uniquify' b
+      (Recursive id b', has_uref)
+    uniquify' (Reference id) = (Reference id, False)
+    uniquify' (Select a ids) = do
+      let (new_ic, has_uref) = uniquify' a
+      (Select new_ic ids, has_uref)
+    uniquify' (Hide a ids) = do
+      let (new_ic, has_uref) = uniquify' a
+      (Hide new_ic ids, has_uref)
+    uniquify' (Context env a) = do
+      let env_as_list = M.toList env
+      let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
+            \(id,term) (cur_list, urefs) -> do {
+                let (new_term, has_uref) = uniquify' term
+              ; ((id, new_term):cur_list, has_uref:urefs)
+            }
+      let (new_map_list, urefs) :: ([(Id,MountainTerm)], [Bool]) = foldr inner_foo ([],[]) env_as_list
+      let (a', uref) = uniquify' a
+      let has_any_urefs = or (uref:urefs)
+      if has_any_urefs
+        then (UniqueRef (Context (M.fromList new_map_list) a'), True)
+        else (Context (M.fromList new_map_list) a', False)
 
 stepImport :: MountainTerm -> MountainContextT IO MountainTerm
 stepImport r@(Reference n) = do
@@ -1453,8 +1363,7 @@ stepImport r@(Reference n) = do
   if not file_exist
     then throwError $ BadImport r
     else do
-      res <- lift $ parser full_path
-      lift $ setUnsetUniques res
+      lift $ parser full_path
 stepImport (Def n@(UniqueRef (Reference _)) i) = do
   res <- stepImport i
   return $ case res of

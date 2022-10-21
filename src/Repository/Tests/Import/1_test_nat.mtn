@@ -1,4 +1,4 @@
-Nat = {
+Nat ~ {
     zero:#Z 
   | succ:(#S, Nat)
 }
