@@ -21,14 +21,9 @@ main = do
       parser=parseFile,
       repository=basePath,
       file_ext=fileExt},
-    environment=[M.fromList [
-      ("is", Literal Is),
-      ("assert", Literal Assert),
-      ("assertFail", Literal AssertFail),
-      ("print", Literal Print),
-      ("All", Literal All),
-      ("console", Unique initial_console_hash (Literal $ Thing "Console")),
-      ("args", Tuple $ map (Literal . String) $ mountain_args)
+    environment=[M.fromList $ envList ++ [
+      ("console", Unique initial_console_hash (Extern $ Thing "Console")),
+      ("args", Tuple $ map (Extern . String) $ mountain_args)
     ]],
     unique_hashes=M.singleton "Console" initial_console_hash
   }

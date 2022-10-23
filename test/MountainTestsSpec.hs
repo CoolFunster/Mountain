@@ -54,6 +54,6 @@ spec = do
           (Left e, log) -> do
             error $ show e ++ "\n\n" ++ prettyLog log
           (Right (val, env), log) -> do
-            -- putStrLn $ prettyLog log
+            putStrLn $ prettyLog log
             val `shouldBe` unit
             toList env `shouldBe` toList defaultEnv

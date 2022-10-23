@@ -9,11 +9,12 @@ dev tooling
 - autocomplete
 
 Current Job
-  - disallow unbound references
+  Mountain literals (helps with testing in language)
 
 Backlog
   - bindings are not recursive (unless using a recursive thing)
   - In define, when looking up refs, one needs to delete them if they are unique
+  - Fix dependent context with unique references
   - Make binding structural (remove auto unrolling)
   - Create a separate recursive type
       has unroll, and relabel
@@ -48,6 +49,7 @@ Backlog
   improve parser error messages
 
 Completed:
+  -disallow unbound references
   -ignore trailing commas/semicolons
   -Rename Category to structure
   -Dependent Access

@@ -26,11 +26,12 @@ type Id = [Char]
 type Env a = M.Map Id a
 
 data Structure a =
-    Literal a
+    Extern a
   | Wildcard
   | Reference Id
   | Unique Hash (Structure a)
   | UniqueRef (Structure a)
+  | Literal (Structure a)
   | Set [Structure a] -- TODO MAKE THIS AN ACTUAL SET
   | Tuple [Structure a]
   | Function [Structure a]
@@ -104,10 +105,11 @@ bool = Set [nothing, unit]
 -- STRUCTURAL HELPERS --
 -- ################## --
 instance Functor Structure where
-  fmap f (Literal x) = Literal (f x)
+  fmap f (Extern x) = Extern (f x)
   fmap f Wildcard = Wildcard
   fmap f (Reference id) = Reference id
   fmap f (UniqueRef t) = UniqueRef (fmap f t)
+  fmap f (Literal t) = Literal (fmap f t)
   fmap f (Import x) = Import (fmap f x)
   fmap f (Set x) = Set $ map (fmap f) x
   fmap f (Either x) = Either $ map (fmap f) x
@@ -138,11 +140,12 @@ transform transformer input_structure = do
     Recurse -> do
       let recurse = transform transformer
       case input_structure of
-        (Literal x) -> Literal x
+        (Extern x) -> Extern x
         Wildcard -> Wildcard
         (Set ic) -> Set $ map recurse ic
         (Unique h ic) -> Unique h $ recurse ic
         (UniqueRef ic) -> UniqueRef $ recurse ic
+        (Literal t) -> Literal $ recurse t
         (Function xs) -> Function $ map recurse xs
         (Each xs) -> Each $ map recurse xs
         (Tuple xs) -> Tuple $ map recurse xs
@@ -167,11 +170,12 @@ check f c s = do
     (b, Recurse) -> do
       let recurse = check f c
       case s of
-        (Literal x) -> b
+        (Extern x) -> b
         Wildcard -> b
         (Set ic) -> f (b:map recurse ic)
         (Unique h ic) -> f [b,recurse ic]
         (UniqueRef ic) -> f [b, recurse ic]
+        (Literal l) -> f [b, recurse l]
         (Function xs) -> f (b:map recurse xs)
         (Each xs) -> f (b:map recurse xs)
         (Tuple xs) -> f (b:map recurse xs)
@@ -208,11 +212,12 @@ replace old new input_s =
 -- ############################# --
 
 instance (Show a, Hashable a) => Hashable (Structure a) where
-  hash (Literal x)= hash x
+  hash (Extern x)= hash x
   hash Wildcard = hashStr "?"
   hash (Reference id) = seqHash [hashStr "Reference", hashStr id]
   hash (Unique h x) = seqHash [hashStr "Unique", h, hash x]
   hash (UniqueRef x) = seqHash [hashStr "UniqueRef", hash x]
+  hash (Literal l) = hash l
   hash (Import a) = seqHash [hashStr "Import", hash a]
   hash (Set xs) = seqHash [hashStr "Set", sumHash (map hash xs)]
   hash (Either xs) = seqHash [hashStr "Either", sumHash (map hash xs)]
@@ -234,11 +239,12 @@ instance (Show a, Hashable a) => Hashable (Structure a) where
     seqHash [hashStr "Context",  hashed_env, hash a]
 
 freeReferences :: Structure a -> S.Set Id
-freeReferences (Literal x)= S.empty
+freeReferences (Extern x)= S.empty
 freeReferences Wildcard = S.empty
 freeReferences (Reference id) = S.singleton id
 freeReferences (Unique h x) = S.empty
 freeReferences (UniqueRef x) = freeReferences x
+freeReferences (Literal x) = freeReferences x
 freeReferences (Import a) = S.empty
 freeReferences (Function (Def (Reference id) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Function xs)))
 freeReferences (Function (Def (UniqueRef (Reference id)) x:xs)) = S.delete id (S.union (freeReferences x) (freeReferences (Function xs)))
@@ -276,7 +282,7 @@ freeReferences (Context env a) = do
 
 -- hashing 
 -- TODO: ensure "Any, ?" are reserved keywords in parser
-data MountainLiteral =
+data MountainExtern =
     Thing String
   | Bool Bool
   | Char Char
@@ -287,10 +293,12 @@ data MountainLiteral =
   | Assert
   | AssertFail
   | Print
+  | Literalize
+  | UnLiteralize
   | All
   deriving (Eq, Show)
 
-instance Hashable MountainLiteral where
+instance Hashable MountainExtern where
   hash (Thing name) = hashStr $ "_" ++ name
   hash (Bool b) = hashStr $ "_" ++ show b
   hash (Char c) = hashStr [c]
@@ -299,7 +307,7 @@ instance Hashable MountainLiteral where
   hash (Float f) = hashStr $ "_" ++ show f
   hash x = hashStr "other"
 
-type MountainTerm = Structure MountainLiteral
+type MountainTerm = Structure MountainExtern
 
 data MountainOptions = Options {
   parser :: FilePath -> IO MountainTerm,
@@ -324,9 +332,9 @@ data MountainEnv = MountainEnv {
 toList :: MountainEnv -> [[(Id, MountainTerm)]]
 toList (MountainEnv _ env _) = map M.toList env
 
-type MountainError = Error MountainLiteral
+type MountainError = Error MountainExtern
 
-type MountainLog = Log MountainLiteral
+type MountainLog = Log MountainExtern
 
 -- This just lets me throw errors, write to a log, and manage bindings without explicitly writing all the boilerplate. 
 newtype MountainContextT m a = MountainContextT { getContext :: StateT MountainEnv (ExceptT MountainError (WriterT [MountainLog] m)) a}
@@ -462,7 +470,7 @@ getBoundIds = foldr get_bound_ids (return ([],[]))
           else return (cur_good, id:cur_bad)
 
 normalize :: MountainTerm -> MountainTerm
-normalize l@(Literal _) = l
+normalize l@(Extern _) = l
 normalize Wildcard = Wildcard
 normalize r@(Reference _) = r
 normalize (UniqueRef (UniqueRef s)) = normalize (UniqueRef s)
@@ -471,6 +479,7 @@ normalize (UniqueRef s) = do
   if s' == s
     then UniqueRef s'
     else normalize $ UniqueRef s'
+normalize (Literal l) = Literal l
 normalize i@(Import (Import a)) = normalize $ Import a
 normalize i@(Import a) = Import (normalize a)
 normalize s@(Set xs) = Set (map normalize xs)
@@ -581,7 +590,7 @@ normalize c@(Context env a)
     Context (M.map normalize new) (normalize a)
 
 
-isEmptyType :: Structure MountainLiteral -> Bool
+isEmptyType :: Structure MountainExtern -> Bool
 isEmptyType (Tuple []) = True
 isEmptyType (Set []) = True
 isEmptyType _ = False
@@ -595,10 +604,11 @@ step t = do
   return $ cleanup res
   where
     step' :: MountainTerm -> MountainContextT IO MountainTerm
-    step' l@(Literal _) = return l
+    step' l@(Extern _) = return l
     step' Wildcard = return Wildcard
     step' r@(Reference n) = getDef n
     step' (Import n) = stepImport n
+    step' (Literal l) = return $ Literal l
     step' (Set xs) = do
       res <- _stepSeqNoError xs
       return $ Set res
@@ -616,7 +626,7 @@ step t = do
       return $ Each res
     step' (Tuple xs) = stepDepCtx Tuple xs
     step' (Scope inner) = stepScope inner
-    step' c@(Call (Literal AssertFail) y) = assertFail y
+    step' c@(Call (Extern AssertFail) y) = assertFail y
     step' c@(Call x y) = do
       res <- _stepSeqNoError [x,y]
       let [x', y'] = res
@@ -731,6 +741,12 @@ evaluate t = do
     else evaluate res
 
 define :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
+define a@(Context env (Literal x)) other = do
+  res <- define x other
+  case res of
+    Def (Context env' x') other' -> return $ Def (Context (M.union env' env) (Literal x')) other'
+    Def x' other' -> return $ Def (Literal x') other'
+    s -> return s
 define (Context env a@(Set xs)) Wildcard = return $ Def (Context env a) (Set $ map (const Wildcard) xs)
 define (Context env a@(Tuple xs)) Wildcard = return $ Def (Context env a) (Tuple $ map (const Wildcard) xs)
 define (Context env a@(Function xs)) Wildcard = return $ Def (Context env a) (Function $ map (const Wildcard) xs)
@@ -786,11 +802,11 @@ define a@(Context _ _) b@(Context env x) = do
 define a@(Context _ _) (Import b) = return $ Import (Def a b) -- TODO change to make imports define afterwards
 define a@(Context env (Import _)) b = throwError $ BadDef a b
 define (Context env Wildcard) b = return b
-define (Context env a@(Literal x)) b@(Literal y) =
+define (Context env a@(Extern x)) b@(Extern y) =
   if x == y
     then return a
     else throwError $ BadDef a b
-define (Context env a@(Literal _)) b = throwError $ BadDef a b
+define (Context env a@(Extern _)) b = throwError $ BadDef a b
 define (Context env a@(Set [r@(Reference n)])) b@(Set elems2) = do
   let res = M.lookup n env
   case res of
@@ -927,15 +943,15 @@ define a@(Context env (Unique h x)) b@(Unique h2 y) =
         Def a' b' -> return $ Def (Unique h a') (Unique h2 b')
         other -> return $ Unique h2 other
 define a@(Context env (Unique h x)) other = throwError $ BadDef a other
-define (Context _ (Context _ _)) _ = error "nested contexts should have been normalized before binds"
+define a@(Context _ (Context _ _)) b = throwError $ BadDef a b
 define a b = define (Context M.empty a) b
 
 is :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-is a b = if a == b then return (Literal $ Bool True) else return (Literal $ Bool False)
+is a b = if a == b then return (Extern $ Bool True) else return (Extern $ Bool False)
 
 assert :: MountainTerm -> MountainContextT IO MountainTerm
-assert (Literal (Bool True)) = return $ Tuple []
-assert (Literal (Bool False)) = throwError BadAssert
+assert (Extern (Bool True)) = return $ Tuple []
+assert (Extern (Bool False)) = throwError BadAssert
 assert other = throwError $ BadCall (Reference "assert") other
 
 assertFail :: MountainTerm -> MountainContextT IO MountainTerm
@@ -943,16 +959,16 @@ assertFail x = do
   res <- step x
   if res == x
     then throwError $ NoFailure x
-    else return $ Call (Literal AssertFail) res
+    else return $ Call (Extern AssertFail) res
   `catchError` (\e -> return unit)
 
 mPrint :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-mPrint (Literal (String s)) (Unique h (Literal (Thing "Console"))) = do
+mPrint (Extern (String s)) (Unique h (Extern (Thing "Console"))) = do
   _ <- checkToken "Console" h
   _ <- lift $ print s
   new_token <- lift randHash
-  return $ Unique new_token (Literal (Thing "Console"))
-mPrint a b = return $ Call (Call (Literal Print) a) b
+  return $ Unique new_token (Extern (Thing "Console"))
+mPrint a b = return $ Call (Call (Extern Print) a) b
 
 has :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
     -- TODO: maybe a scope for the big has and small has so they don't overlap
@@ -1003,9 +1019,9 @@ has a@(Context _ _) r@(Reference n) = do
   def <- getDef n
   return $ Has a def
   `catchError` const (return (Has a r))
-has a@(Context env (Literal All)) b = return b
+has a@(Context env (Extern All)) b = return b
 has a@(Context env Wildcard) b = return b
-has a@(Context env (Literal (Thing _))) b = throwError $ BadHas (normalize a) b
+has a@(Context env (Extern (Thing _))) b = throwError $ BadHas (normalize a) b
 has a@(Context env (Import x)) b = error "imports should have been stepped before executing has"
 has (Context _ _) b@(Import x) = error "imports should have been stepped before executing has"
 has a@(Context env (Def x y)) b = return $ Has y b
@@ -1131,11 +1147,16 @@ unroll (Recursive id x) = Context (M.singleton id x) x
 unroll other = error "should be only used on recursive terms"
 
 select :: MountainTerm -> [Id] -> MountainContextT IO MountainTerm
-select l@(Literal (Thing id)) [x] =
+select (Literal x) ids = do
+  res <- select x ids
+  case res of
+    Select x ids -> return $ Select (Literal x) ids
+    other -> return $ Literal other
+select l@(Extern (Thing id)) [x] =
   if id == x
     then return l
     else throwError $ BadSelect l [x]
-select a@(Literal _) ids = throwError $ BadSelect a ids
+select a@(Extern _) ids = throwError $ BadSelect a ids
 select a@Wildcard ids = return $ Tuple $ map ((`Def` Wildcard) . Reference) ids
 select f@(Function _) ids = throwError $ BadSelect f ids
 select s@(Scope _) ids = error "should be stepped before selecting"
@@ -1177,7 +1198,7 @@ select (Tuple (b@(Def (Reference n) xb):xs)) ids = do
       case new_ids of
         [] -> return $ Scope [b,Tuple xs]
         other -> return $ Scope [b,Select (Tuple xs) other]
-select (Tuple (x@(Tuple (Literal (Thing n):_)):xs)) ids = do
+select (Tuple (x@(Tuple (Extern (Thing n):_)):xs)) ids = do
   let new_ids = filter (/= n) ids
   if n `elem` ids
     then do
@@ -1202,9 +1223,23 @@ select a@(Unique h x) ids = do
 select r@(Reference n) ids = return $ Select r ids
 
 stepCall :: MountainTerm -> MountainTerm -> MountainContextT IO MountainTerm
-stepCall (Literal Assert) b = assert b
-stepCall (Call (Literal Is) a) b = is a b
-stepCall (Call (Literal Print) a) b = mPrint a b
+stepCall (Literal a) b = do
+  res <- stepCall a b
+  case res of
+    Call a' b' -> return $ Call (Literal a') b'
+    other -> return other
+stepCall a@(Extern Literalize) b@(Literal _) = throwError $ BadCall a b
+stepCall (Extern Literalize) a = return $ Literal a
+stepCall (Extern UnLiteralize) (Literal a) = return a
+stepCall a@(Extern UnLiteralize) b = throwError $ BadCall a b
+stepCall a (Literal b) = do
+  res <- stepCall a b
+  case res of
+    Call a' b' -> return $ Call a' (Literal b')
+    other -> return other
+stepCall (Extern Assert) b = assert b
+stepCall (Call (Extern Is) a) b = is a b
+stepCall (Call (Extern Print) a) b = mPrint a b
 stepCall a@(Function []) b = throwError $ BadCall a b
 stepCall a@(Function (x:xs)) b = do
   pushEnv M.empty
@@ -1315,11 +1350,14 @@ uniquify :: MountainTerm -> MountainTerm
 uniquify = fst . uniquify'
   where
     uniquify' :: MountainTerm -> (MountainTerm, Bool)
-    uniquify' (Literal x) = (Literal x, False)
+    uniquify' (Extern x) = (Extern x, False)
     uniquify' Wildcard = (Wildcard, False)
+    uniquify' (Literal x) = do
+      let (a,b) = uniquify' x
+      (Literal a, b)
     uniquify' u@(UniqueRef (Reference _)) = (u, True)
     uniquify' u@(UniqueRef Wildcard) = (u, True)
-    uniquify' u@(UniqueRef (Literal _)) = (u, True)
+    uniquify' u@(UniqueRef (Extern _)) = (u, True)
     uniquify' u@(UniqueRef some_structure) = uniquify' some_structure
     uniquify' (Unique Unset ic) = error "unset unique"
     uniquify' u@(Unique h _) = (u,True)
@@ -1383,7 +1421,7 @@ uniquify = fst . uniquify'
       (Hide new_ic ids, has_uref)
     uniquify' (Context env (Function xs)) = do
       let env_as_list = M.toList env
-      let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
+      let inner_foo :: (Id, Structure MountainExtern) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
             \(id,term) (cur_list, urefs) -> do {
                 let (new_term, has_uref) = uniquify' term
               ; ((id, new_term):cur_list, has_uref:urefs)
@@ -1393,7 +1431,7 @@ uniquify = fst . uniquify'
       (Context env (Function xs'), False)
     uniquify' (Context env a) = do
       let env_as_list = M.toList env
-      let inner_foo :: (Id, Structure MountainLiteral) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
+      let inner_foo :: (Id, Structure MountainExtern) -> ([(Id, MountainTerm)], [Bool]) -> ([(Id, MountainTerm)], [Bool]) =
             \(id,term) (cur_list, urefs) -> do {
                 let (new_term, has_uref) = uniquify' term
               ; ((id, new_term):cur_list, has_uref:urefs)
@@ -1451,3 +1489,4 @@ validate _ = True
 -- Tuples and Functions may not do structural binding, only direct ref binding
 --    which means only ref/uref binding within the context
 -- No nested ref binding within functions/tuples
+-- no free variables in parsed categories

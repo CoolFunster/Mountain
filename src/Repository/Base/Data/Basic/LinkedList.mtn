@@ -1,6 +1,6 @@
 LinkedList ~ type -> (
     empty: ()
-  | full: (type, Tuple)
+  | full: (type, LinkedList)
 );
 
 
