@@ -638,12 +638,12 @@ step t = do
       let [x',y'] = res
       return $ Refine x' y'
     step' c@(Has x y) = do
-      throwError $ NotImplemented "Has" c
-      -- res <- _stepSeqNoError [x,y]
-      -- let [x', y'] = res
-      -- if x' == x && y' == y
-      --   then has x y
-      --   else return $ Has x' y'
+      -- throwError $ NotImplemented "Has" c
+      res <- _stepSeqNoError [x,y]
+      let [x', y'] = res
+      if x' == x && y' == y
+        then has x y
+        else return $ Has x' y'
     step' b@(Def x y) = do
       y' <- step y
       return $ Def x y'

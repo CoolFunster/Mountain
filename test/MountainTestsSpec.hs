@@ -39,7 +39,7 @@ getTests base rel = do
 
 spec :: Spec
 spec = do
-  let base_test_dot_path = "Tests.Base.Data.Basic"
+  let base_test_dot_path = "Tests.Has"
   -- let base_test_dot_path = "Tests.CurTest"
   describe ("Mountain." ++ base_test_dot_path) $ do
     let Options _ bp ext = options defaultEnv
@@ -54,6 +54,6 @@ spec = do
           (Left e, log) -> do
             error $ show e ++ "\n\n" ++ prettyLog log
           (Right (val, env), log) -> do
-            putStrLn $ prettyLog log
+            -- putStrLn $ prettyLog log
             val `shouldBe` unit
             toList env `shouldBe` toList defaultEnv

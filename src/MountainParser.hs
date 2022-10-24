@@ -250,17 +250,23 @@ pContext pa = do
 -- ### Structure Ops  ###
 -- ######################
 
+colonOp :: Parser String
+colonOp = (lexeme . try) (between (optional spaceConsumer) (optional spaceConsumer) $ symbol ":" <* notFollowedBy (symbol ":"))
+
 pStructureOp :: (Show a) => Parser a -> Parser (Structure a)
 pStructureOp pa = makeExprParser (pCall pa) [
-    [binaryR (pWrapWS ":") Def],
-    [binaryR (pWrapWS "&") (\lhs rhs -> Each [lhs,rhs])],
-    [binaryR (pWrapWS "|") (\lhs rhs -> Either [lhs,rhs])],
-    [binaryR (pWrapWS "!") (\lhs rhs -> Except [lhs,rhs])],
+    [
+      binaryR (pWrapWS "@") Has, 
+      binaryR (try $ pWrapWS ":" <* notFollowedBy (symbol ":")) Def],
+    -- calls
     [binaryR (pWrapWS "->") (\lhs rhs -> Function [lhs,rhs])],
+    [
+      binaryR (pWrapWS "&") (\lhs rhs -> Each [lhs,rhs]),
+      binaryR (pWrapWS "|") (\lhs rhs -> Either [lhs,rhs]),
+      binaryR (pWrapWS "!") (\lhs rhs -> Except [lhs,rhs])],
     [binaryL (pWrapWS "%") Refine],
     [binaryL (pWrapWS "~") (\(Reference n) rhs -> Recursive n rhs)],
-    [binaryR (pWrapWS "@") Has],
-    [binaryR (pWrapWS "=") Def]
+    [binaryR (pWrapWS "::") Has, binaryR (pWrapWS "=") Def]
   ]
 
 pCall :: (Show a) => Parser a -> Parser (Structure a)
@@ -299,19 +305,27 @@ pSelectHideExt base = do
 
 pSelectHide :: (Show a) => Parser a -> Parser (Structure a)
 pSelectHide pa = do
-  struct1 <- pUniqueRef pa
+  struct1 <- pStructureOp2 pa
   res <- optional $ pSelectHideExt struct1
   case res of
     Nothing -> return struct1
     Just x -> return x
 
-pUniqueRef :: (Show a) => Parser a -> Parser (Structure a)
-pUniqueRef pa = do
-  astrix <- optional $ symbol "*"
-  term <- pStructureData pa
-  case astrix of
-    Nothing -> return term
-    Just _ -> return $ UniqueRef term
+pStructureOp2 :: (Show a) => Parser a -> Parser (Structure a)
+pStructureOp2 pa = makeExprParser (pStructureData pa) [
+    [prefix  (symbol "*") UniqueRef],
+    [
+      binaryR (pWrapWS "@") Has, 
+      binaryR (try $ pWrapWS ":" <* notFollowedBy (symbol ":")) Def]
+  ]
+
+-- pUniqueRef :: (Show a) => Parser a -> Parser (Structure a)
+-- pUniqueRef pa = do
+--   astrix <- optional $ symbol "*"
+--   term <- pStructureData pa
+--   case astrix of
+--     Nothing -> return term
+--     Just _ -> return $ UniqueRef term
 
 -- ##################
 -- ### Structure  ###
