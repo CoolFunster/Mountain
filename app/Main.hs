@@ -22,12 +22,15 @@ main = do
       repository=basePath,
       file_ext=fileExt},
     environment=[M.fromList $ envList ++ [
-      ("console", Unique initial_console_hash (Extern $ Thing "Console")),
-      ("args", Tuple $ map (Extern . String) $ mountain_args)
+      -- ("console", Unique initial_console_hash (Extern $ Thing "Console")),
+      -- ("args", Tuple $ map (Extern . String) $ mountain_args)
     ]],
     unique_hashes=M.singleton "Console" initial_console_hash
   }
-  final_result <- runMountainContextT initial_env $ evaluate term_to_run
+  res <- runMountainContextT initial_env $ evaluate term_to_run
+  print res
+  let (Right (console_foo, env), _) = res
+  final_result <- runMountainContextT env $ evaluate (Call console_foo $ Tuple [Unique initial_console_hash (Extern $ Thing "Console"), Tuple $ map (Extern . String) $ mountain_args])
   let (term, log) = final_result
   case term of
     Right (_, _) -> return ()

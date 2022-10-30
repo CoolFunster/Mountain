@@ -12,6 +12,12 @@ Current Job
   Mountain literals (helps with testing in language)
 
 Backlog
+  - Coarse grained type checking 
+      (Int, String, Tuple, List, Float, Function, Recursive)
+  - Unique Coarse grained type checking 
+      (Int, String, Tuple, List, Float, Function, Recursive)
+  - List as a builtin of the language
+      - tuples should mean exactly what they are
   - bindings are not recursive (unless using a recursive thing)
   - In define, when looking up refs, one needs to delete them if they are unique
   - Fix dependent context with unique references
@@ -21,6 +27,7 @@ Backlog
   - Make Eithers/Each/Sets use Sets
       This makes certain errors go away like equality
       and makes some ops more efficient
+  - Allow ' in var names
 
   Linked List testing
     linked list (in progress)
