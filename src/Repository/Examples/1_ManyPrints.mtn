@@ -1,0 +1,4 @@
+(*c, ?) -> \{
+  *c = print "Hello World" c;
+  print "second print" c;
+}

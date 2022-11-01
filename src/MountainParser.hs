@@ -278,13 +278,11 @@ pCall pa = do
 pCallInfix :: (Show a) => Parser a -> Parser (Structure a -> Structure a)
 pCallInfix pa = do
   struct <- between (symbol "`") (symbol "`") (pSelectHide pa)
-  res <- getInput
   return $ Call struct
 
 pCallNormal :: (Show a) => Parser a -> Parser (Structure a -> Structure a)
 pCallNormal pa = do
   struct <- try (pSelectHide pa)
-  res <- getInput
   return (`Call` struct)
 
 pSelectHideExt :: (Show a) => Structure a -> Parser (Structure a)

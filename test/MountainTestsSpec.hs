@@ -39,7 +39,7 @@ getTests base rel = do
 
 spec :: Spec
 spec = do
-  let base_test_dot_path = "Tests.Define"
+  let base_test_dot_path = "Tests.CurTest"
   -- let base_test_dot_path = "Tests.CurTest"
   describe ("Mountain." ++ base_test_dot_path) $ do
     let Options _ bp ext = options defaultEnv

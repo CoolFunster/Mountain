@@ -1,0 +1,1 @@
+assertFail (assertIs (<x=3;y=4> => x) (<x=2> => x))

@@ -28,7 +28,6 @@ main = do
     unique_hashes=M.singleton "Console" initial_console_hash
   }
   res <- runMountainContextT initial_env $ evaluate term_to_run
-  print res
   let (Right (console_foo, env), _) = res
   final_result <- runMountainContextT env $ evaluate (Call console_foo $ Tuple [Unique initial_console_hash (Extern $ Thing "Console"), Tuple $ map (Extern . String) $ mountain_args])
   let (term, log) = final_result

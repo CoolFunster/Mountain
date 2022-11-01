@@ -199,7 +199,7 @@ spec = do
         let example = "(x:#a, y:#b).y"
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
-        print res
+        -- print res
         let (Right (val, env), log) = res
         val `shouldBe` Extern (Thing "b")
         toList env `shouldBe` toList defaultEnv
@@ -208,7 +208,7 @@ spec = do
         let Right term = parseString example
         res <- runMountain $ stepMany 20 term
         let (Right (val, env), log) = res
-        print log
+        -- print log
         val `shouldBe` Tuple [Def (Reference "x") (Extern (Thing "a")),Def (Reference "y") (Extern (Thing "b"))]
         toList env `shouldBe` toList defaultEnv
       it "should throw error on bad selection" $ do

@@ -1,4 +1,0 @@
-import SC:Body.SimpleConsole;
-
-SC.Main @ 
-  (*c, _) -> (SC.print (*c,"Hello World"))

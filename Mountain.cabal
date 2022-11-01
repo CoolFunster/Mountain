@@ -27,6 +27,8 @@ library
       Hash
       Mountain
       MountainParser
+      SimpleMountain.SimpleMountain
+      SimpleMountain.SimpleMountainParser
   other-modules:
       Paths_Mountain
   hs-source-dirs:
@@ -94,6 +96,8 @@ test-suite spec
       MountainParserSpec
       MountainSpec
       MountainTestsSpec
+      SimpleMountain.SimpleMountainParserSpec
+      SimpleMountain.SimpleMountainTestsSpec
       Paths_Mountain
   hs-source-dirs:
       test

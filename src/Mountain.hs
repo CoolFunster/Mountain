@@ -1307,7 +1307,9 @@ stepDepCtx f (x:xs) = do
         Function xs' -> return $ Function (res:xs')
         Tuple xs' -> return $ Tuple (res:xs')
         _ -> error "should not reach"
+      `catchError` (\e -> return $ f (x:xs))
     else return $ f (res:xs)
+  `catchError` (\e -> return $ f (x:xs))
 
 stepScope :: [MountainTerm] -> MountainContextT IO MountainTerm
 stepScope [] = throwError EmptyScope
