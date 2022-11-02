@@ -34,16 +34,6 @@ spec = parallel $ do
         it "Should parse close function" $ do
           let res = parseString "a->b"
           res `shouldBe` Right (Function (Var "a") (Var "b"))
-      describe "Tuple" $ do
-        it "should parse a parenthesized var" $ do
-          let res = parseString "(b)"
-          res `shouldBe` Right (Var "b")
-        it "should parse a parenthesized function" $ do
-          let res = parseString "(a -> b)"
-          res `shouldBe` Right (Function (Var "a") (Var "b"))
-        it "should parse a lefty function" $ do
-          let res = parseString "(a -> b) -> c"
-          res `shouldBe` Right (Function (Function (Var "a") (Var "b")) (Var "c"))
       describe "Extern" $ do
         it "Should parse is" $ do
           let res = parseString "is"
@@ -78,3 +68,10 @@ spec = parallel $ do
         it "Should parse a multiple context" $ do
           let res = parseString "<a=b;c=d> => a"
           res `shouldBe` Right (Context (fromList [("a",Var "b"), ("c", Var "d")]) (Var "a"))
+      describe "Import" $ do
+        it "should parse an import" $ do
+          let res = parseString "import x=a.b.c; x"
+          res `shouldBe` Right (Import "x" "a.b.c" (Var "x"))
+        it "should parse a spaced out import" $ do
+          let res = parseString "import   x    =   a.b.c   ; x"
+          res `shouldBe` Right (Import "x" "a.b.c" (Var "x"))

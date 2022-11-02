@@ -43,6 +43,9 @@ parseFileWith parser path_to_file = do
     let category = _baseParse parser path_to_file contents
     return category
 
+tryParseFile :: FilePath -> IO (Either String MountainTerm)
+tryParseFile = parseFileWith (pStructure pMountainExtern)
+
 parseFile :: FilePath -> IO MountainTerm
 parseFile fp = do
   result <- parseFileWith (pStructure pMountainExtern) fp
@@ -101,7 +104,8 @@ reservedIds = [
   "True",
   "False",
   "assert",
-  "assertFail"
+  "assertFail",
+  "import"
   -- "Char",
   -- "String",
   -- "Int",
@@ -110,7 +114,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "-=;`[]{}()<>#\""
+restrictedIdChars = "-=;`[]{}()<>#\".:"
 
 pId :: Parser Id
 pId = do
@@ -191,6 +195,7 @@ pSimpleExtern s l = symbol s $> l
 pStructureData :: (Show a) => Parser a -> Parser (Structure a)
 pStructureData pa = choice [
     try $ pExtern pa,
+    try $ pImport pa,
     pTuple pa,
     pContext pa,
     try $ pLet pa,
@@ -200,10 +205,21 @@ pStructureData pa = choice [
 pExtern :: Parser a -> Parser (Structure a)
 pExtern pa = Extern <$> pa
 
--- pWildcard :: Parser (Structure a)
--- pWildcard = symbol "?" Data.Functor.$> Wildcard
+pImport :: (Show a) => Parser a -> Parser (Structure a)
+pImport pa = do
+  _ <- symbol "import"
+  _ <- spaceConsumer
+  id <- pId
+  _ <- pWrapWS "="
+  path <- some (satisfy isValidChar)
+  _ <- pWrapWS ";"
+  followup <- pStructure pa
+  return $ Import id path followup
+  where
+    isValidChar :: Char -> Bool
+    isValidChar c = not (c == ';' || isSpace c)
 
-pVar :: Parser (Structure a)
+pVar :: (Show a) => Parser (Structure a)
 pVar = Var <$> pId
 
 pTuple :: (Show a) => Parser a -> Parser (Structure a)
@@ -239,9 +255,6 @@ pLet pa = do
 -- ######################
 -- ### Structure Ops  ###
 -- ######################
-
-colonOp :: Parser String
-colonOp = (lexeme . try) (between (optional spaceConsumer) (optional spaceConsumer) $ symbol ":" <* notFollowedBy (symbol ":"))
 
 pStructureOp :: (Show a) => Parser a -> Parser (Structure a)
 pStructureOp pa = makeExprParser (pCall pa) [
@@ -294,13 +307,6 @@ defaultState = MountainState {
     env=[M.fromList envList]
   }
 
--- dotImportFile :: String -> MountainContextT IO MountainTerm
--- dotImportFile fp = do
---   opt <- getOptions
---   let Options importer bp ext = opt
---   let file_path = bp ++ dotPathAsDir fp ++ ext
---   lift $ importer file_path
-
 runMountain :: MountainContextT IO MountainTerm -> IO (Either MountainError (MountainTerm, MountainState), [MountainLog])
 runMountain = runMountainContextT defaultState
 
@@ -328,6 +334,7 @@ prettyMountain (Var id) = id
 prettyMountain (Function x y) = prettyMountain x ++ "->" ++ prettyMountain y
 prettyMountain (Call a b) = "(" ++ prettyMountain a ++ ")(" ++ prettyMountain b ++ ")"
 prettyMountain (Let id a b) = "(" ++ id ++ "=" ++ prettyMountain a ++ ";" ++ prettyMountain b ++ ")"
+prettyMountain (Import id str t) = "import " ++ id ++ ":" ++ str
 prettyMountain (Context env a) = do
   let env_as_list = M.toList env
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyMountain b) env_as_list

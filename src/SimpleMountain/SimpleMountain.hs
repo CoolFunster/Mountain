@@ -11,6 +11,7 @@ import Control.Monad.Except
 import Control.Monad.Writer.Strict hiding (Any, All)
 import GHC.Base (Nat)
 import qualified Data.Set as S
+import System.Directory (doesFileExist)
 
 type Id = [Char]
 
@@ -23,6 +24,7 @@ data Structure a =
   | Call (Structure a) (Structure a)
   | Let Id (Structure a) (Structure a)
   | Context (Env (Structure a)) (Structure a)
+  | Import Id String (Structure a)
   deriving (Eq, Show)
 
 data Error a =
@@ -34,6 +36,8 @@ data Error a =
   | BadBind (Structure a) (Structure a)
   | BadAssert (Structure a)
   | BadAssertIs (Structure a) (Structure a)
+  | BadImport String
+  | ImportHasFreeVars String
   deriving (Show, Eq)
 
 data Log a =
@@ -171,6 +175,7 @@ freeVars (Function a b) = S.difference (freeVars b) (freeVars a)
 freeVars (Call a b) = S.union (freeVars a) (freeVars b)
 freeVars (Let id a b) = S.difference (S.union (freeVars a) (freeVars b)) (S.singleton id)
 freeVars (Context env a) = S.difference (freeVars a) (S.fromList (M.keys env))
+freeVars (Import id str x) = freeVars x -- because imports should not have any free vars
 
 validate :: (Monad m) => MountainTerm -> MountainContextT m MountainTerm
 validate t@(Extern _) = return t
@@ -180,6 +185,7 @@ validate (Function other b) = throwError $ BadFunctionDef other b
 validate (Call a b) = Call <$> validate a <*> validate b
 validate (Let id x y) = Let id <$> validate x <*> validate y
 validate (Context env a) = Context <$> mapM validate env <*> validate a
+validate (Import id str x) = Import id str <$> validate x
 
 -- normalize :: MountainTerm -> MountainTerm
 -- normalize t@(Extern _) = t
@@ -196,6 +202,16 @@ bind :: MountainTerm -> MountainTerm -> MountainContextT IO (Env MountainTerm)
 bind (Var id) t = return $ M.singleton id t
 bind (Function a b) (Function a' b') = M.union <$> bind a a' <*> bind b b'
 bind other t = throwError $ BadBind other t
+
+dotPathAsDir :: String -> FilePath
+dotPathAsDir [] = []
+dotPathAsDir ('.':xs) = '/':dotPathAsDir xs
+dotPathAsDir (x:xs) = x:dotPathAsDir xs
+
+dirAsDotPath :: String -> FilePath
+dirAsDotPath [] = []
+dirAsDotPath ('/':xs) = '.':dirAsDotPath xs
+dirAsDotPath (x:xs) = x:dirAsDotPath xs
 
 step :: MountainTerm -> MountainContextT IO MountainTerm
 step t@(Extern _) = return t
@@ -287,7 +303,7 @@ step t@(Context e s) = do
   pushEnv e
   res <- step s
   e' <- popEnv
-  prepruned <- 
+  prepruned <-
         case res of
               (Context another_e x) -> do
                 markChanged
@@ -316,6 +332,20 @@ step t@(Context e s) = do
               return $ Context pruned t
             else
               return $ Context pruned t
+step (Import id dot_path t) = do
+  opt <- getOptions
+  let Options parser repo file_ext = opt
+  let full_path = repo ++ dotPathAsDir dot_path ++ file_ext
+  file_exist <- lift $ doesFileExist full_path
+  if not file_exist
+    then throwError $ BadImport dot_path
+    else do
+      res <- lift $ parser full_path
+      if freeVars res /= S.empty
+        then throwError $ ImportHasFreeVars dot_path
+        else do
+          markChanged
+          return $ Let id res t
 
 evaluate :: Maybe Int -> MountainTerm -> MountainContextT IO MountainTerm
 evaluate (Just 0) x = return x

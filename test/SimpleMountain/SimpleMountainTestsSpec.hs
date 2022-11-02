@@ -32,17 +32,26 @@ spec :: Spec
 spec = do
   let test_dir = basePath ++ "Tests/"
   describe ("MountainTests " ++ test_dir) $ do
-    res <- runIO $ getTests basePath ""
+    res <- runIO $ getTests test_dir ""
     let res' = sort res
-    tests <- runIO $ mapM (\x -> parseFile (basePath ++ x)) res'
-    forM_ (zip res' tests) $ \(relPath, test) ->
+    forM_ res' $ \relPath -> do
+      parsed <- runIO $ tryParseFile (test_dir ++ relPath)
       it ("Test: " ++ relPath) $ do
-        res <- runMountain $ execute (Just 30) test
-        case res of
-          (Left e, log) -> do
+        case parsed of
+          Left e -> do
+            error e
+          Right test -> do
+            res <- runMountain $ execute (Just 30) test
+            case res of
+              (Left e, log) -> do
 
-            error $ show e ++ "\n\n" ++ prettyMountain test ++ "\n" ++ prettyLog log
-          (Right (val, env), log) -> do
-            -- putStrLn $ prettyLog log
-            val `shouldBe` Extern Unit
-            toList env `shouldBe` toList defaultState
+                error $ show e ++ "\n\n" ++ prettyMountain test ++ "\n" ++ prettyLog log
+              (Right (val, env), log) -> do
+                -- putStrLn $ prettyLog log
+                case val of
+                  Extern Unit -> do
+                    val `shouldBe` val
+                    toList env `shouldBe` toList defaultState
+                  other -> do
+                    print $ prettyMountain test ++ "\n" ++ prettyLog log
+                    val `shouldBe` Extern Unit

@@ -1,0 +1,2 @@
+import b = Basic.identity;
+assertIs (b(3)) (3)
