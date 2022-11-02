@@ -68,10 +68,3 @@ spec = parallel $ do
         it "Should parse a multiple context" $ do
           let res = parseString "<a=b;c=d> => a"
           res `shouldBe` Right (Context (fromList [("a",Var "b"), ("c", Var "d")]) (Var "a"))
-      describe "Import" $ do
-        it "should parse an import" $ do
-          let res = parseString "import x=a.b.c; x"
-          res `shouldBe` Right (Import "x" "a.b.c" (Var "x"))
-        it "should parse a spaced out import" $ do
-          let res = parseString "import   x    =   a.b.c   ; x"
-          res `shouldBe` Right (Import "x" "a.b.c" (Var "x"))

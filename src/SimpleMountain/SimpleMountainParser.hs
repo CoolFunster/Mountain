@@ -195,7 +195,6 @@ pSimpleExtern s l = symbol s $> l
 pStructureData :: (Show a) => Parser a -> Parser (Structure a)
 pStructureData pa = choice [
     try $ pExtern pa,
-    try $ pImport pa,
     pTuple pa,
     pContext pa,
     try $ pLet pa,
@@ -204,20 +203,6 @@ pStructureData pa = choice [
 
 pExtern :: Parser a -> Parser (Structure a)
 pExtern pa = Extern <$> pa
-
-pImport :: (Show a) => Parser a -> Parser (Structure a)
-pImport pa = do
-  _ <- symbol "import"
-  _ <- spaceConsumer
-  id <- pId
-  _ <- pWrapWS "="
-  path <- some (satisfy isValidChar)
-  _ <- pWrapWS ";"
-  followup <- pStructure pa
-  return $ Import id path followup
-  where
-    isValidChar :: Char -> Bool
-    isValidChar c = not (c == ';' || isSpace c)
 
 pVar :: (Show a) => Parser (Structure a)
 pVar = Var <$> pId
@@ -334,7 +319,6 @@ prettyMountain (Var id) = id
 prettyMountain (Function x y) = prettyMountain x ++ "->" ++ prettyMountain y
 prettyMountain (Call a b) = "(" ++ prettyMountain a ++ ")(" ++ prettyMountain b ++ ")"
 prettyMountain (Let id a b) = "(" ++ id ++ "=" ++ prettyMountain a ++ ";" ++ prettyMountain b ++ ")"
-prettyMountain (Import id str t) = "import " ++ id ++ ":" ++ str
 prettyMountain (Context env a) = do
   let env_as_list = M.toList env
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyMountain b) env_as_list
