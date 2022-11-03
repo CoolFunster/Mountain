@@ -45,13 +45,13 @@ spec = do
             case res of
               (Left e, log) -> do
 
-                error $ show e ++ "\n\n" ++ prettyMountain test ++ "\n" ++ prettyLog log
+                error $ show e ++ "\n\n" ++ prettyTypedMountain test ++ "\n" ++ prettyLog log
               (Right (val, env), log) -> do
                 -- putStrLn $ prettyLog log
                 case val of
-                  Extern Unit -> do
+                  Literal Unit -> do
                     val `shouldBe` val
                     toList env `shouldBe` toList defaultState
                   other -> do
-                    print $ prettyMountain test ++ "\n" ++ prettyLog log
-                    val `shouldBe` Extern Unit
+                    print $ prettyTypedMountain test ++ "\n" ++ prettyLog log
+                    val `shouldBe` Literal Unit

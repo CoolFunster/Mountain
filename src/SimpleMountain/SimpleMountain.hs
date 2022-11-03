@@ -18,30 +18,19 @@ type Id = [Char]
 type Env a = M.Map Id a
 
 data Structure a =
-    Extern a
-  | Var Id
+    Literal a
+  -- | Refs must have definitions (via function or let) before use
+  | Ref Id  
+  -- | Holes are placeholders to be filled in. Errors on eval. Meant to be solved for
+  | Hole Id 
   | Function (Structure a) (Structure a)
-  | Call (Structure a) (Structure a)
   | Let Id (Structure a) (Structure a)
+  | Call (Structure a) (Structure a)
   | Context (Env (Structure a)) (Structure a)
   deriving (Eq, Show)
 
-data Error a =
-    NotImplemented String (Structure a)
-  | UnboundId Id
-  | BadCall (Structure a) (Structure a)
-  | BadFunctionDef (Structure a) (Structure a)
-  | BadCallDef (Structure a) (Structure a)
-  | BadBind (Structure a) (Structure a)
-  | BadAssert (Structure a)
-  | BadAssertIs (Structure a) (Structure a)
-  deriving (Show, Eq)
-
-data Log a =
-  Step (Structure a) [Env (Structure a)]
-  deriving (Eq)
-
-data MountainExtern =
+type MountainTerm = Structure MountainLiteral
+data MountainLiteral =
     Thing String
   | Bool Bool
   | Char Char
@@ -56,11 +45,26 @@ data MountainExtern =
   | Is
   deriving (Eq, Show)
 
-type MountainError = Error MountainExtern
-type MountainLog = Log MountainExtern
-type MountainTerm = Structure MountainExtern
+type MountainError = Error MountainLiteral
+data Error a =
+    NotImplemented String
+  | UnboundId Id
+  | BadCall (Structure a) (Structure a)
+  | BadFunctionDef (Structure a) (Structure a)
+  | BadCallDef (Structure a) (Structure a)
+  | BadBind (Structure a) (Structure a)
+  | BadAssert (Structure a)
+  | BadAssertIs (Structure a) (Structure a)
+  | EvaluateHole Id
+  deriving (Show, Eq)
+
+type MountainLog = Log MountainLiteral
+data Log a =
+  Step (Structure a) [Env (Structure a)]
+  deriving (Eq)
+
 data MountainOptions = Options {
-  parser :: FilePath -> IO MountainTerm,
+  parser :: FilePath -> IO MountainTypedTerm,
   repository :: FilePath,
   file_ext :: String
 }
@@ -68,6 +72,7 @@ instance Eq MountainOptions where
   (==) a b = repository a == repository b && file_ext a == file_ext b
 instance Show MountainOptions where
   show (Options _ r f) = show (r,f)
+
 data MountainState = MountainState {
   changed :: Bool,
   env :: [Env MountainTerm],
@@ -165,26 +170,18 @@ getEnv = do
   let MountainState _ e _ = env
   return e
 
-freeVars :: MountainTerm -> S.Set Id
-freeVars (Extern _) = S.empty
-freeVars (Var id) = S.singleton id
-freeVars (Function a b) = S.difference (freeVars b) (freeVars a)
-freeVars (Call a b) = S.union (freeVars a) (freeVars b)
-freeVars (Let id a b) = S.difference (S.union (freeVars a) (freeVars b)) (S.singleton id)
-freeVars (Context env a) = S.difference (freeVars a) (S.fromList (M.keys env))
-
-validate :: (Monad m) => MountainTerm -> MountainContextT m MountainTerm
-validate t@(Extern _) = return t
-validate t@(Var _) = return t
-validate (Function a@(Var _) b) = Function a <$> validate b
-validate (Function other b) = throwError $ BadFunctionDef other b
-validate (Call a b) = Call <$> validate a <*> validate b
-validate (Let id x y) = Let id <$> validate x <*> validate y
-validate (Context env a) = Context <$> mapM validate env <*> validate a
+freeRefs :: MountainTerm -> S.Set Id
+freeRefs (Literal _) = S.empty
+freeRefs (Ref id) = S.singleton id
+freeRefs (Hole _) = S.empty
+freeRefs (Function a b) = S.difference (freeRefs b) (freeRefs a)
+freeRefs (Call a b) = S.union (freeRefs a) (freeRefs b)
+freeRefs (Let id a b) = S.difference (S.union (freeRefs a) (freeRefs b)) (S.singleton id)
+freeRefs (Context env a) = S.difference (freeRefs a) (S.fromList (M.keys env))
 
 -- normalize :: MountainTerm -> MountainTerm
--- normalize t@(Extern _) = t
--- normalize t@(Var _) = t
+-- normalize t@(Literal _) = t
+-- normalize t@(Ref _) = t
 -- normalize t@(Function a b) = Function (normalize a) (normalize b)
 -- normalize t@(Call a b) = Call (normalize a) (normalize b)
 -- normalize t@(Let id x y) = Let id (normalize x) (normalize y)
@@ -193,8 +190,8 @@ validate (Context env a) = Context <$> mapM validate env <*> validate a
 --   | M.null env = normalize x
 --   | otherwise = Context (M.map normalize env) (normalize x)
 
-bind :: MountainTerm -> MountainTerm -> MountainContextT IO (Env MountainTerm)
-bind (Var id) t = return $ M.singleton id t
+bind :: (Monad m) => MountainTerm -> MountainTerm -> MountainContextT m (Env MountainTerm)
+bind (Ref id) t = return $ M.singleton id t
 bind (Function a b) (Function a' b') = M.union <$> bind a a' <*> bind b b'
 bind other t = throwError $ BadBind other t
 
@@ -208,64 +205,65 @@ dirAsDotPath [] = []
 dirAsDotPath ('/':xs) = '.':dirAsDotPath xs
 dirAsDotPath (x:xs) = x:dirAsDotPath xs
 
-step :: MountainTerm -> MountainContextT IO MountainTerm
-step t@(Extern _) = return t
-step t@(Var id) = do
+step :: (Monad m) => MountainTerm -> MountainContextT m MountainTerm
+step t@(Literal _) = return t
+step t@(Ref id) = do
   res <- getDef id
   markChanged
   return res
+step t@(Hole n) = throwError $ EvaluateHole n
 step t@(Function _ _) = return t
-step t@(Call (Extern Assert) b) = do
+step t@(Call (Literal Assert) b) = do
   res <- step b
   c <- isChanged
   if c
-    then return $ Call (Extern Assert) res
+    then return $ Call (Literal Assert) res
     else do
       case b of
-        (Extern (Bool True)) -> return (Extern Unit)
+        (Literal (Bool True)) -> return (Literal Unit)
         _ -> throwError $ BadAssert b
-step t@(Call (Call (Extern Is) a) b) = do
+step t@(Call (Call (Literal Is) a) b) = do
   res_a <- step a
   c <- isChanged
   if c
-    then return (Call (Call (Extern Is) res_a) b)
+    then return (Call (Call (Literal Is) res_a) b)
   else do
     res_b <- step b
     c2 <- isChanged
     if c2
-      then return (Call (Call (Extern Is) a) res_b)
+      then return (Call (Call (Literal Is) a) res_b)
     else if a == b
       then do
         markChanged
-        return $ Extern (Bool True)
+        return $ Literal (Bool True)
       else do
         markChanged
-        return $ Extern (Bool False)
-step t@(Call (Call (Extern AssertIs) a) b) = do
+        return $ Literal (Bool False)
+step t@(Call (Call (Literal AssertIs) a) b) = do
   res_a <- step a
   c <- isChanged
   if c
-    then return (Call (Call (Extern AssertIs) res_a) b)
+    then return (Call (Call (Literal AssertIs) res_a) b)
   else do
     res_b <- step b
     c2 <- isChanged
     if c2
-      then return (Call (Call (Extern AssertIs) a) res_b)
+      then return (Call (Call (Literal AssertIs) a) res_b)
     else if a == b
       then do
         markChanged
-        return $ Extern Unit
+        return $ Literal Unit
       else throwError $ BadAssertIs a b
-step t@(Call (Extern AssertFail) b) = do
+step t@(Call (Literal AssertFail) b) = do
   res <- step b
   c <- isChanged
   if c
-    then return $ Call (Extern AssertFail) res
+    then return $ Call (Literal AssertFail) res
     else throwError $ BadAssert b
   `catchError` (\e -> do
     markChanged
-    return $ Extern Unit)
-step t@(Call x@(Function a@(Var id) y) b) = do
+    return $ Literal Unit)
+step t@(Call x@(Function a@(Ref id) y) b) = do
   res <- step b
   c <- isChanged
   if c
@@ -293,7 +291,7 @@ step t@(Let id x y) = do
     else do
       markChanged
       return $ Context (M.singleton id x) y
-  `catchError` (\e -> return $ Extern Unit)
+  `catchError` (\e -> return $ Literal Unit)
 step t@(Context e s) = do
   pushEnv e
   res <- step s
@@ -309,7 +307,7 @@ step t@(Context e s) = do
     then return prepruned
     else do
       let Context e t = prepruned
-      let free = freeVars s
+      let free = freeRefs s
       let pruned =
             foldr (\id new_env -> case M.lookup id e of
                   Nothing -> new_env
@@ -328,7 +326,7 @@ step t@(Context e s) = do
             else
               return $ Context pruned t
 
-evaluate :: Maybe Int -> MountainTerm -> MountainContextT IO MountainTerm
+evaluate :: (Monad m) => Maybe Int -> MountainTerm -> MountainContextT m MountainTerm
 evaluate (Just 0) x = return x
 evaluate count t
   | (Just x) <- count, x < 0 = error "negative value for num steps"
@@ -343,5 +341,31 @@ evaluate count t
           evaluate (Just (\x -> x - 1) <*> count) res
         else return res
 
-execute :: Maybe Int -> MountainTerm -> MountainContextT IO MountainTerm
-execute c t = validate t >>= evaluate c
+-------------------------
+-- Mountain with Types
+-------------------------
+
+type MountainType = Structure MountainTypes
+data MountainTypes =
+    Things
+  | Bools
+  | Chars
+  | Strings
+  | Ints
+  | Floats
+  | UnitType
+  | EmptyType
+  deriving (Eq, Show)
+
+type MountainTypedTerm = TypedStructure MountainTypes MountainLiteral
+data TypedStructure mType mLit = 
+    Term (Structure mLit)
+  | Typed (Structure mType) (Structure mLit)
+  deriving (Eq, Show)
+
+typecheck :: (Monad m) => MountainTypedTerm -> MountainContextT m MountainTerm
+typecheck (Term s) = return s
+typecheck t@(Typed _ _) = throwError $ NotImplemented $ "typechecking: " ++ show t
+
+execute :: (Monad m) => Maybe Int -> MountainTypedTerm -> MountainContextT m MountainTerm
+execute c t = typecheck t >>= evaluate c 

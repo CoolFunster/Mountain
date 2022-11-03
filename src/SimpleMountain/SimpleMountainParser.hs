@@ -43,12 +43,12 @@ parseFileWith parser path_to_file = do
     let category = _baseParse parser path_to_file contents
     return category
 
-tryParseFile :: FilePath -> IO (Either String MountainTerm)
-tryParseFile = parseFileWith (pStructure pMountainExtern)
+tryParseFile :: FilePath -> IO (Either String MountainTypedTerm)
+tryParseFile = parseFileWith (pTypedStructure pMountainTypes pMountainLiteral)
 
-parseFile :: FilePath -> IO MountainTerm
+parseFile :: FilePath -> IO MountainTypedTerm
 parseFile fp = do
-  result <- parseFileWith (pStructure pMountainExtern) fp
+  result <- parseFileWith pMountain fp
   case result of
     Left err_str -> error err_str
     Right term -> return term
@@ -56,14 +56,14 @@ parseFile fp = do
 parseStringWith :: Parser a -> [Char] -> Either String a
 parseStringWith cat_parser input_str = _baseParse cat_parser "String" (pack input_str)
 
-parseString :: [Char] -> Either String MountainTerm
-parseString = parseStringWith (pStructure pMountainExtern)
+parseString :: [Char] -> Either String MountainTypedTerm
+parseString = parseStringWith pMountain
 
 parseTextWith :: Parser a -> Text -> Either String a
 parseTextWith cat_parser = _baseParse cat_parser "String"
 
-parseText :: Text -> Either String MountainTerm
-parseText = parseTextWith (pStructure pMountainExtern)
+parseText :: Text -> Either String MountainTypedTerm
+parseText = parseTextWith pMountain
 
 type Parser = Parsec Void Text
 
@@ -129,27 +129,30 @@ pId = do
       isValidChar c = not (c `elem` restrictedIdChars || isSpace c)
 
 -- ########################
--- ### MountainExterns ###
+-- ### MountainBuiltins ###
 -- ########################
 
-pMountainExtern :: Parser MountainExtern
-pMountainExtern = choice [
+pSimpleLiteral :: String -> a -> Parser a
+pSimpleLiteral s l = symbol s $> l
+
+pMountainLiteral :: Parser MountainLiteral
+pMountainLiteral = choice [
   pThing,
   pBool,
   pChar,
   pString,
   try pFloat,
   pInt,
-  try $ pSimpleExtern "assertIs" AssertIs,
-  try $ pSimpleExtern "assertFail" AssertFail,
-  try $ pSimpleExtern "assert" Assert,
-  try $ pSimpleExtern "is" Is
+  try $ pSimpleLiteral "assertIs" AssertIs,
+  try $ pSimpleLiteral "assertFail" AssertFail,
+  try $ pSimpleLiteral "assert" Assert,
+  try $ pSimpleLiteral "is" Is
   ]
 
-pThing :: Parser MountainExtern
+pThing :: Parser MountainLiteral
 pThing = symbol "#" *> (Thing <$> pId)
 
-pChar :: Parser MountainExtern
+pChar :: Parser MountainLiteral
 pChar = Char <$> between (symbol "\'") (symbol "\'") (try escaped <|> normalChar)
    where
      escaped :: Parser Char
@@ -160,7 +163,7 @@ pChar = Char <$> between (symbol "\'") (symbol "\'") (try escaped <|> normalChar
      normalChar :: Parser Char
      normalChar = satisfy (/= '\'')
 
-pString :: Parser MountainExtern
+pString :: Parser MountainLiteral
 pString = String <$> between (symbol "\"") (symbol "\"") (many (try escaped <|> normalChar))
    where
      escaped :: Parser Char
@@ -171,7 +174,7 @@ pString = String <$> between (symbol "\"") (symbol "\"") (many (try escaped <|> 
      normalChar :: Parser Char
      normalChar = satisfy (/= '\"')
 
-pBool :: Parser MountainExtern
+pBool :: Parser MountainLiteral
 pBool = Bool <$> do
   res <- symbol "True" <|> symbol "False"
   case res of
@@ -179,55 +182,64 @@ pBool = Bool <$> do
     "False" -> return False
     _ -> error "unreachable"
 
-pInt :: Parser MountainExtern
+pInt :: Parser MountainLiteral
 pInt = Int <$> L.signed (L.space Text.Megaparsec.empty Text.Megaparsec.empty Text.Megaparsec.empty) L.decimal
 
-pFloat :: Parser MountainExtern
+pFloat :: Parser MountainLiteral
 pFloat = Float <$> L.signed spaceConsumer L.float
 
-pSimpleExtern :: String -> MountainExtern -> Parser MountainExtern
-pSimpleExtern s l = symbol s $> l
+pMountainTypes :: Parser MountainTypes
+pMountainTypes = choice [
+    try $ pSimpleLiteral "Thing" Things,
+    try $ pSimpleLiteral "Bool" Bools,
+    try $ pSimpleLiteral "Char" Chars,
+    try $ pSimpleLiteral "String" Strings,
+    try $ pSimpleLiteral "Int" Ints,
+    try $ pSimpleLiteral "Float" Floats,
+    try $ pSimpleLiteral "Unit" UnitType,
+    try $ pSimpleLiteral "Nothing" EmptyType
+  ]
 
 -- ######################
 -- ### StructureData  ###
 -- ######################
 
-pStructureData :: (Show a) => Parser a -> Parser (Structure a)
+pStructureData :: (Show a) => Parser a ->Parser (Structure a)
 pStructureData pa = choice [
-    try $ pExtern pa,
+    try $ pLiteral pa,
     pTuple pa,
     pContext pa,
     try $ pLet pa,
-    pVar
+    pRef
   ]
 
-pExtern :: Parser a -> Parser (Structure a)
-pExtern pa = Extern <$> pa
+pLiteral :: Parser a -> Parser (Structure a)
+pLiteral pa = Literal <$> pa
 
-pVar :: (Show a) => Parser (Structure a)
-pVar = Var <$> pId
+pRef :: (Show a) => Parser (Structure a)
+pRef = Ref <$> pId
 
-pTuple :: (Show a) => Parser a -> Parser (Structure a)
+pTuple :: (Show a) => Parser a ->Parser (Structure a)
 pTuple pa = pWrapBetween "(" ")" (pStructure pa)
 
-pEnvDecl :: (Show a) => Parser a -> Parser (M.Map Id (Structure a))
+pEnvDecl :: (Show a) => Parser a ->Parser (M.Map Id (Structure a))
 pEnvDecl pa = do
   id_ <- pId
   _ <- symbol "="
   struct <- pStructure pa
   return $ M.singleton id_ struct
 
-pEnv :: (Show a) => Parser a -> Parser (Env (Structure a))
+pEnv :: (Show a) => Parser a ->Parser (Env (Structure a))
 pEnv pa = M.unions <$> pWrapBetween "<" ">" (sepEndBy (pEnvDecl pa) (pWrapWS ";"))
 
-pContext :: (Show a) => Parser a -> Parser (Structure a)
+pContext :: (Show a) => Parser a ->Parser (Structure a)
 pContext pa = do
   env <- pEnv pa
   _ <- pWrapWS "=>"
   struct <- pStructure pa
   return $ Context env struct
 
-pLet :: (Show a) => Parser a -> Parser (Structure a)
+pLet :: (Show a) => Parser a ->Parser (Structure a)
 pLet pa = do
   id <- pId
   _ <- pWrapWS "="
@@ -246,7 +258,7 @@ pStructureOp pa = makeExprParser (pCall pa) [
     [binaryR (pWrapWS "->") Function]
   ]
 
-pCall :: (Show a) => Parser a -> Parser (Structure a)
+pCall :: (Show a) => Parser a ->Parser (Structure a)
 pCall pa = do
   struct1 <- pStructureData pa
   struct2 <- many $ try (optional spaceConsumer *> (pCallInfix pa <|> pCallNormal pa))
@@ -263,11 +275,20 @@ pCallNormal pa = do
   return (`Call` struct)
 
 -- ##################
--- ### Structure  ###
+-- ### Structures ###
 -- ##################
+
+pMountainTerm :: Parser (Structure MountainLiteral)
+pMountainTerm = pStructure pMountainLiteral
 
 pStructure :: (Show a) => Parser a -> Parser (Structure a)
 pStructure = pStructureOp
+
+pMountain :: Parser (TypedStructure MountainTypes MountainLiteral)
+pMountain = pTypedStructure pMountainTypes pMountainLiteral
+
+pTypedStructure :: (Show typ, Show lit) => Parser typ -> Parser lit -> Parser (TypedStructure typ lit)
+pTypedStructure pTyp pLit = Term <$> pStructure pLit
 
 -- ######################
 -- ### Full Importer  ###
@@ -295,14 +316,14 @@ defaultState = MountainState {
 runMountain :: MountainContextT IO MountainTerm -> IO (Either MountainError (MountainTerm, MountainState), [MountainLog])
 runMountain = runMountainContextT defaultState
 
-prettyExtern :: MountainExtern -> String
-prettyExtern (Thing id) = "#" ++ id
-prettyExtern (Bool b) = show b
-prettyExtern (Int i) = show i
-prettyExtern (Char c) = show c
-prettyExtern (String s) = show s
-prettyExtern (Float f) = show f
-prettyExtern x = show x
+prettyLiteral :: MountainLiteral -> String
+prettyLiteral (Thing id) = "#" ++ id
+prettyLiteral (Bool b) = show b
+prettyLiteral (Int i) = show i
+prettyLiteral (Char c) = show c
+prettyLiteral (String s) = show s
+prettyLiteral (Float f) = show f
+prettyLiteral x = show x
 
 prettyMountainState :: MountainState -> String
 prettyMountainState (MountainState _ e _) = show $ map prettyEnv e
@@ -314,8 +335,9 @@ prettyEnv xs = do
   "<" ++ intercalate ";" terms ++ ">"
 
 prettyMountain :: MountainTerm -> String
-prettyMountain (Extern a) = prettyExtern a
-prettyMountain (Var id) = id
+prettyMountain (Literal a) = prettyLiteral a
+prettyMountain (Ref id) = id
+prettyMountain (Hole id) = "?" ++ id
 prettyMountain (Function x y) = prettyMountain x ++ "->" ++ prettyMountain y
 prettyMountain (Call a b) = "(" ++ prettyMountain a ++ ")(" ++ prettyMountain b ++ ")"
 prettyMountain (Let id a b) = "(" ++ id ++ "=" ++ prettyMountain a ++ ";" ++ prettyMountain b ++ ")"
@@ -323,6 +345,10 @@ prettyMountain (Context env a) = do
   let env_as_list = M.toList env
   let terms = map (\(a,b) -> show a ++ ":" ++ prettyMountain b) env_as_list
   "(<" ++ intercalate ";" terms ++ ">  => " ++ prettyMountain a ++ ")"
+
+prettyTypedMountain :: MountainTypedTerm -> String
+prettyTypedMountain (Typed a b) = "(" ++ show a ++ ")::(" ++ prettyMountain b ++ ")"
+prettyTypedMountain (Term t) = prettyMountain t
 
 prettyLog :: [MountainLog] -> String
 prettyLog (Step structure env:xs) = do

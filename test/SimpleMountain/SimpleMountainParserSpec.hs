@@ -17,54 +17,54 @@ spec = parallel $ do
       describe "Var" $ do
         it "Should parse Var" $ do
           let res = parseString "somevar"
-          res `shouldBe` Right (Var "somevar")
+          res `shouldBe` Right (Term $ Ref "somevar")
         it "Should parse underscore var" $ do
           let res = parseString "some_var"
-          res `shouldBe` Right (Var "some_var")
+          res `shouldBe` Right (Term $ Ref "some_var")
         it "Should parse quoted var" $ do
           let res = parseString "some_var'"
-          res `shouldBe` Right (Var "some_var'")
+          res `shouldBe` Right (Term $ Ref "some_var'")
       describe "Function" $ do
         it "Should parse simple function" $ do
           let res = parseString "a -> b"
-          res `shouldBe` Right (Function (Var "a") (Var "b"))
+          res `shouldBe` Right (Term $ Function (Ref "a") (Ref "b"))
         it "Should parse long chain function" $ do
           let res = parseString "a -> b -> c -> d -> e"
-          res `shouldBe` Right (Function (Var "a") (Function (Var "b") (Function (Var "c") (Function (Var "d") (Var "e")))))
+          res `shouldBe` Right (Term $ Function (Ref "a") (Function (Ref "b") (Function (Ref "c") (Function (Ref "d") (Ref "e")))))
         it "Should parse close function" $ do
           let res = parseString "a->b"
-          res `shouldBe` Right (Function (Var "a") (Var "b"))
-      describe "Extern" $ do
+          res `shouldBe` Right (Term $ Function (Ref "a") (Ref "b"))
+      describe "Literal" $ do
         it "Should parse is" $ do
           let res = parseString "is"
-          res `shouldBe` Right (Extern Is)
+          res `shouldBe` Right (Term $ Literal Is)
         it "Should parse assert" $ do
           let res = parseString "assert"
-          res `shouldBe` Right (Extern Assert)
+          res `shouldBe` Right (Term $ Literal Assert)
         it "Should parse assertFail" $ do
           let res = parseString "assertFail"
-          res `shouldBe` Right (Extern AssertFail)
+          res `shouldBe` Right (Term $ Literal AssertFail)
       describe "Call" $ do
         it "Should parse a spaced call" $ do
           let res = parseString "a b"
-          res `shouldBe` Right (Call (Var "a") (Var "b"))
+          res `shouldBe` Right (Term $ Call (Ref "a") (Ref "b"))
         it "Should parse a close call" $ do
           let res = parseString "a(b)"
-          res `shouldBe` Right (Call (Var "a") (Var "b"))
+          res `shouldBe` Right (Term $ Call (Ref "a") (Ref "b"))
         it "Should parse a inverted call" $ do
           let res = parseString "a`b`"
-          res `shouldBe` Right (Call (Var "b") (Var "a"))
+          res `shouldBe` Right (Term $ Call (Ref "b") (Ref "a"))
       describe "Let" $ do
         it "Should parse a let" $ do
           let res = parseString "a = b; a"
-          res `shouldBe` Right (Let "a" (Var "b") (Var "a"))
+          res `shouldBe` Right (Term $ Let "a" (Ref "b") (Ref "a"))
         it "Should parse a let in a function" $ do
           let res = parseString "x -> a = b; a"
-          res `shouldBe` Right (Function (Var "x") (Let "a" (Var "b") (Var "a")))
+          res `shouldBe` Right (Term $ Function (Ref "x") (Let "a" (Ref "b") (Ref "a")))
       describe "Context" $ do
         it "Should parse a context" $ do
           let res = parseString "<a=b> => a"
-          res `shouldBe` Right (Context (fromList [("a",Var "b")]) (Var "a"))
+          res `shouldBe` Right (Term $ Context (fromList [("a",Ref "b")]) (Ref "a"))
         it "Should parse a multiple context" $ do
           let res = parseString "<a=b;c=d> => a"
-          res `shouldBe` Right (Context (fromList [("a",Var "b"), ("c", Var "d")]) (Var "a"))
+          res `shouldBe` Right (Term $ Context (fromList [("a",Ref "b"), ("c", Ref "d")]) (Ref "a"))
