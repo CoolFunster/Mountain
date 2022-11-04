@@ -19,6 +19,7 @@ import Data.Maybe (fromJust, isJust, fromMaybe)
 import Data.Char ( isSpace )
 import Data.List ( intercalate, foldl', sort, isPrefixOf )
 import Data.Functor ( ($>) )
+import Data.Functor.Foldable (cata)
 
 import Debug.Trace (trace)
 import System.Directory (doesFileExist, doesDirectoryExist, listDirectory)
@@ -325,32 +326,37 @@ prettyLiteral (String s) = show s
 prettyLiteral (Float f) = show f
 prettyLiteral x = show x
 
+-- cata means that it replaces subterms with recursive results
+-- and allows us to combine them in the structure to a single res
+prettyMountainTerm :: MountainTerm -> String
+prettyMountainTerm = cata prettyMountainTerm'
+  where 
+    prettyMountainTerm' :: MountainTermF String -> String
+    prettyMountainTerm' (LiteralF a) = prettyLiteral a
+    prettyMountainTerm' (RefF id) = id
+    prettyMountainTerm' (HoleF id) = "?" ++ id
+    prettyMountainTerm' (FunctionF x y) = x ++ "->" ++ y
+    prettyMountainTerm' (CallF a b) = "(" ++ a ++ ")(" ++ b ++ ")"
+    prettyMountainTerm' (LetF id a b) = "(" ++ id ++ "=" ++ a ++ ";" ++ b ++ ")"
+    prettyMountainTerm' (ContextF env a) = do
+        let env_as_list = M.toList env
+        let terms = map (\(a,b) -> show a ++ ":" ++ b) env_as_list
+        "(<" ++ intercalate ";" terms ++ ">  => " ++ a ++ ")"
+
 prettyMountainState :: MountainState -> String
 prettyMountainState (MountainState _ e _) = show $ map prettyEnv e
 
 prettyEnv :: Env MountainTerm -> String
 prettyEnv xs = do
   let env_as_list = M.toList xs
-  let terms = map (\(a,b) -> a ++ "=" ++ prettyMountain b) env_as_list
+  let terms = map (\(a,b) -> a ++ "=" ++ prettyMountainTerm b) env_as_list
   "<" ++ intercalate ";" terms ++ ">"
 
-prettyMountain :: MountainTerm -> String
-prettyMountain (Literal a) = prettyLiteral a
-prettyMountain (Ref id) = id
-prettyMountain (Hole id) = "?" ++ id
-prettyMountain (Function x y) = prettyMountain x ++ "->" ++ prettyMountain y
-prettyMountain (Call a b) = "(" ++ prettyMountain a ++ ")(" ++ prettyMountain b ++ ")"
-prettyMountain (Let id a b) = "(" ++ id ++ "=" ++ prettyMountain a ++ ";" ++ prettyMountain b ++ ")"
-prettyMountain (Context env a) = do
-  let env_as_list = M.toList env
-  let terms = map (\(a,b) -> show a ++ ":" ++ prettyMountain b) env_as_list
-  "(<" ++ intercalate ";" terms ++ ">  => " ++ prettyMountain a ++ ")"
-
 prettyTypedMountain :: MountainTypedTerm -> String
-prettyTypedMountain (Typed a b) = "(" ++ show a ++ ")::(" ++ prettyMountain b ++ ")"
-prettyTypedMountain (Term t) = prettyMountain t
+prettyTypedMountain (Typed a b) = "(" ++ show a ++ ")::(" ++ prettyTypedMountain b ++ ")"
+prettyTypedMountain (Term t) = prettyMountainTerm t
 
 prettyLog :: [MountainLog] -> String
 prettyLog (Step structure env:xs) = do
-  prettyMountain structure ++ "\n" ++ prettyLog xs
+  prettyMountainTerm structure ++ "\n" ++ prettyLog xs
 prettyLog [] = "END"

@@ -1,7 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase, RankNTypes, ScopedTypeVariables, GeneralizedNewtypeDeriving, DeriveFunctor, DeriveFoldable, DeriveTraversable, TemplateHaskell, TypeFamilies #-}
 
 module SimpleMountain.SimpleMountain where
 
@@ -12,24 +9,40 @@ import Control.Monad.Writer.Strict hiding (Any, All)
 import GHC.Base (Nat)
 import qualified Data.Set as S
 import System.Directory (doesFileExist)
+import Data.Functor.Foldable.TH (makeBaseFunctor)
+import Data.Functor.Foldable (cata)
+import Data.List (intercalate)
+
+-- #############################
+-- ###  Mountain Structures  ###
+-- #############################
 
 type Id = [Char]
 
 type Env a = M.Map Id a
 
+-- the structure of structures, used with recursion schemes for profit
+-- honestly, this is hard to read, but its basically an infinite
+-- tree with nodes defined in StructureF(lat)
+
 data Structure a =
     Literal a
   -- | Refs must have definitions (via function or let) before use
-  | Ref Id  
+  | Ref Id
   -- | Holes are placeholders to be filled in. Errors on eval. Meant to be solved for
-  | Hole Id 
+  | Hole Id
   | Function (Structure a) (Structure a)
   | Let Id (Structure a) (Structure a)
   | Call (Structure a) (Structure a)
   | Context (Env (Structure a)) (Structure a)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Functor)
+
+-- This generates a flat version of the above for use in code below.
+-- a flat version doesn't have recursive structures inside it
+makeBaseFunctor ''Structure
 
 type MountainTerm = Structure MountainLiteral
+type MountainTermF = StructureF MountainLiteral
 data MountainLiteral =
     Thing String
   | Bool Bool
@@ -44,6 +57,24 @@ data MountainLiteral =
   | AssertIs
   | Is
   deriving (Eq, Show)
+
+freeRefs :: MountainTerm -> S.Set Id
+freeRefs = cata freeRefs'
+  where
+    freeRefs' :: MountainTermF (S.Set Id) -> S.Set Id
+    freeRefs' (LiteralF _) = S.empty
+    freeRefs' (RefF id) = S.singleton id
+    freeRefs' (HoleF _) = S.empty
+    freeRefs' (FunctionF a b) = S.difference b a
+    freeRefs' (CallF a b) = S.union a b
+    freeRefs' (LetF id a b) = S.difference (S.union a b) (S.singleton id)
+    freeRefs' (ContextF env a) = S.difference a (S.fromList (M.keys env))
+
+
+-- ##############################
+-- ###  Mountain Errors, Logs ###
+-- ###     State and Config   ###
+-- ##############################
 
 type MountainError = Error MountainLiteral
 data Error a =
@@ -82,7 +113,13 @@ data MountainState = MountainState {
 toList :: MountainState -> [[(Id, MountainTerm)]]
 toList (MountainState _ env _) = map M.toList env
 
--- This just lets me throw errors, write to a log, and manage bindings without explicitly writing all the boilerplate. 
+-- ##############################
+-- ###  Mountain State Monad  ###
+-- ##############################
+
+
+-- This machinery just lets me throw errors, write to a log, access configuration without explicitly writing all the boilerplate. 
+-- that's done through the helper functions defined below to abstract away this gross machine
 newtype MountainContextT m a = MountainContextT { getContext :: StateT MountainState (ExceptT MountainError (WriterT [MountainLog] m)) a}
   deriving (Functor, Applicative, Monad, MonadError MountainError, MonadWriter [MountainLog], MonadState MountainState, MonadIO)
 
@@ -170,40 +207,10 @@ getEnv = do
   let MountainState _ e _ = env
   return e
 
-freeRefs :: MountainTerm -> S.Set Id
-freeRefs (Literal _) = S.empty
-freeRefs (Ref id) = S.singleton id
-freeRefs (Hole _) = S.empty
-freeRefs (Function a b) = S.difference (freeRefs b) (freeRefs a)
-freeRefs (Call a b) = S.union (freeRefs a) (freeRefs b)
-freeRefs (Let id a b) = S.difference (S.union (freeRefs a) (freeRefs b)) (S.singleton id)
-freeRefs (Context env a) = S.difference (freeRefs a) (S.fromList (M.keys env))
-
--- normalize :: MountainTerm -> MountainTerm
--- normalize t@(Literal _) = t
--- normalize t@(Ref _) = t
--- normalize t@(Function a b) = Function (normalize a) (normalize b)
--- normalize t@(Call a b) = Call (normalize a) (normalize b)
--- normalize t@(Let id x y) = Let id (normalize x) (normalize y)
--- normalize t@(Context env (Context env' x)) = normalize $ Context (M.union env' env) x
--- normalize t@(Context env x)
---   | M.null env = normalize x
---   | otherwise = Context (M.map normalize env) (normalize x)
-
 bind :: (Monad m) => MountainTerm -> MountainTerm -> MountainContextT m (Env MountainTerm)
 bind (Ref id) t = return $ M.singleton id t
 bind (Function a b) (Function a' b') = M.union <$> bind a a' <*> bind b b'
 bind other t = throwError $ BadBind other t
-
-dotPathAsDir :: String -> FilePath
-dotPathAsDir [] = []
-dotPathAsDir ('.':xs) = '/':dotPathAsDir xs
-dotPathAsDir (x:xs) = x:dotPathAsDir xs
-
-dirAsDotPath :: String -> FilePath
-dirAsDotPath [] = []
-dirAsDotPath ('/':xs) = '.':dirAsDotPath xs
-dirAsDotPath (x:xs) = x:dirAsDotPath xs
 
 step :: (Monad m) => MountainTerm -> MountainContextT m MountainTerm
 step t@(Literal _) = return t
@@ -333,7 +340,8 @@ evaluate count t
   | otherwise = do
       res <- step t
       env <- getEnv
-      tell [Step res env]
+      let s = Step res env
+      tell [s]
       c <- isChanged
       if c
         then do
@@ -360,7 +368,7 @@ data MountainTypes =
 type MountainTypedTerm = TypedStructure MountainTypes MountainLiteral
 data TypedStructure mType mLit = 
     Term (Structure mLit)
-  | Typed (Structure mType) (Structure mLit)
+  | Typed (Structure mType) (TypedStructure mType mLit)
   deriving (Eq, Show)
 
 typecheck :: (Monad m) => MountainTypedTerm -> MountainContextT m MountainTerm

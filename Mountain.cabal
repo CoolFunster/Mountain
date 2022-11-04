@@ -53,6 +53,7 @@ library
     , mtl
     , parser-combinators
     , random
+    , recursion-schemes
     , split
     , text
     , uuid
@@ -84,6 +85,7 @@ executable mountain
     , mtl
     , parser-combinators
     , random
+    , recursion-schemes
     , split
     , text
     , uuid
@@ -122,6 +124,7 @@ test-suite spec
     , mtl
     , parser-combinators
     , random
+    , recursion-schemes
     , split
     , text
     , uuid

@@ -41,6 +41,7 @@ dependencies:
 - cryptonite
 - memory
 - split
+- recursion-schemes
 
 library:
   source-dirs: src
