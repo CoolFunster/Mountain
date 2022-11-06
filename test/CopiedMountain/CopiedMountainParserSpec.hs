@@ -54,13 +54,19 @@ spec = do
         it "Should parse var" $ do
           let res = parseExprWith pPattern "x"
           res `shouldBe` Right (PVar "x")
-      describe "Parens" $ do
+      describe "Tuple" $ do
         it "Should parse int" $ do
           let res = parseExpr "(3)"
           res `shouldBe` Right (ELit (LInt 3))
         it "Should parse bool" $ do
           let res = parseExpr "(true)"
           res `shouldBe` Right (ELit (LBool True))
+        it "Should parse tuple" $ do
+          let res = parseExpr "(true, false)"
+          res `shouldBe` Right (EPair (ELit (LBool True)) (ELit (LBool False)))
+        it "Should parse tuple" $ do
+          let res = parseExpr "(3, 4, 5, 6)"
+          res `shouldBe` Right (EPair (ELit (LInt 3)) (EPair (ELit (LInt 4)) (EPair (ELit (LInt 5)) (ELit (LInt 6)))))
       describe "Call" $ do
         it "Should parse a spaced call" $ do
           let res = parseExpr "a b"

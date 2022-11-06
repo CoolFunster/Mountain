@@ -13,6 +13,7 @@ prettyLit (LBool b) = map toLower $ show b
 prettyPattern :: Pattern -> String
 prettyPattern (PLit i) = prettyLit i
 prettyPattern (PVar v) = T.unpack v
+prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
 
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
@@ -21,6 +22,7 @@ prettyExp (EApp a b) = prettyExp a ++ "(" ++ prettyExp b ++ ")"
 prettyExp (ELam id e) = prettyPattern id ++ "->" ++ prettyExp e
 prettyExp (ELet id a b) = T.unpack id ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
+prettyExp (EPair a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 
 prettyLog :: [Log] -> String
 prettyLog (Step expr env:xs) = do

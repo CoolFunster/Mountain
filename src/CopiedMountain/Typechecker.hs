@@ -22,6 +22,7 @@ emptySubst = Map.empty
 
 applySubst :: Substitution -> Type -> Type
 applySubst subst ty = case ty of
+  TPair a b -> TPair (applySubst subst a) (applySubst subst b)
   TVar var ->
     fromMaybe (TVar var) (Map.lookup var subst)
   TFun arg res ->
@@ -78,6 +79,10 @@ unify (TFun l r) (TFun l' r') = do
   s1 <- unify l l'
   s2 <- unify (applySubst s1 r) (applySubst s1 r')
   return (s2 `composeSubst` s1)
+unify (TPair a b) (TPair a' b') = do
+  s1 <- unify a a'
+  s2 <- unify (applySubst s1 b) (applySubst s1 b')
+  return (s2 `composeSubst` s1)
 unify (TVar u) t = varBind u t
 unify t (TVar u) = varBind u t
 unify t1 t2 =
@@ -108,6 +113,18 @@ inferLiteral lit =
     LInt _ -> TInt
     LBool _ -> TBool)
 
+inferPattern :: Pattern -> TI (Context, Type)
+inferPattern (PLit binder) = do
+  (_, tyBinder) <- inferLiteral binder
+  return (Map.empty, tyBinder)
+inferPattern (PVar binder) = do
+  tyBinder <- newTyVar
+  return (Map.singleton binder (Scheme [] tyBinder), tyBinder)
+inferPattern (PPair a b) = do
+  (ctxa, tya) <- inferPattern a
+  (ctxb, tyb) <- inferPattern b
+  return (Map.union ctxa ctxb, TPair tya tyb)
+
 infer :: Context -> Exp -> TI (Substitution, Type)
 infer ctx exp = case exp of
   EVar var -> case Map.lookup var ctx of
@@ -124,15 +141,11 @@ infer ctx exp = case exp of
     (s2, tyArg) <- infer (applySubstCtx s1 ctx) arg
     s3 <- unify (applySubst s2 tyFun) (TFun tyArg tyRes)
     return (s3 `composeSubst` s2 `composeSubst` s1, applySubst s3 tyRes)
-  ELam (PVar binder) body -> do
-    tyBinder <- newTyVar
-    let tmpCtx = Map.insert binder (Scheme [] tyBinder) ctx
+  ELam pattern body -> do
+    (ctx_p, tyP) <- inferPattern pattern
+    let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
-    return (s1, TFun (applySubst s1 tyBinder) tyBody)
-  ELam (PLit lit) body -> do
-    (_, tyBinder) <- inferLiteral lit
-    (s1, tyBody) <- infer ctx body
-    return (s1, TFun (applySubst s1 tyBinder) tyBody)
+    return (s1, TFun (applySubst s1 tyP) tyBody)
   m@(EMatch a b) -> do
     foo_type <- TFun <$> newTyVar <*> newTyVar
     (s1, tyA) <- infer ctx a
@@ -148,6 +161,10 @@ infer ctx exp = case exp of
     let tmpCtx = Map.insert binder scheme ctx
     (s2, tyBody) <- infer (applySubstCtx s1 tmpCtx) body
     return (s2 `composeSubst` s1, tyBody)
+  EPair a b -> do
+    (s1, tyA) <- infer ctx a
+    (s2, tyB) <- infer (applySubstCtx s1 ctx) b
+    return (s2 `composeSubst` s1, TPair (applySubst s2 tyA) tyB)
 
 typeInference :: Context -> Exp -> TI Type
 typeInference ctx exp = do

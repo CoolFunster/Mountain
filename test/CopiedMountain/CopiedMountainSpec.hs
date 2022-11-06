@@ -25,11 +25,11 @@ initialState = State {
 spec :: Spec
 spec = do
     describe "Sum" $ do
-      -- it "Should handle this case" $ do
-      --   let ast = parseExpr "(x->x || 3->4)3"
-      --   -- ast `shouldBe` Right (EMatch (EApp (ELam (PVar "x") (EVar "x")) (ELit (LInt 3))) (EApp (ELam (PLit (LInt 3)) (ELit (LInt 3))) (ELit (LInt 3))))
-      --   (Right (res, state), log) <- runWith initialState $ I.evaluate (Just 20) (fromRight (error "") ast)
-      --   res `shouldBe` ELit (LInt 3)
+      it "Should handle this case" $ do
+        let ast = parseExpr "(x->x || 3->4)3"
+        -- ast `shouldBe` Right (EMatch (EApp (ELam (PVar "x") (EVar "x")) (ELit (LInt 3))) (EApp (ELam (PLit (LInt 3)) (ELit (LInt 3))) (ELit (LInt 3))))
+        (Right (res, state), log) <- runWith initialState $ I.evaluate (Just 20) (fromRight (error "") ast)
+        res `shouldBe` ELit (LInt 3)
       it "Should handle this case" $ do
         let ast = parseExpr "(1->5 || 2->6 || 3->7)3"
         -- ast `shouldBe` Right (EMatch (EApp (ELam (PVar "x") (EVar "x")) (ELit (LInt 3))) (EApp (ELam (PLit (LInt 3)) (ELit (LInt 3))) (ELit (LInt 3))))

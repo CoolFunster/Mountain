@@ -77,7 +77,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "|-=;`[]{}()<>#\".:"
+restrictedIdChars = "|-=;`[]{}()<>#\".:,"
 
 identifier :: Parser Id
 identifier = do
@@ -99,7 +99,7 @@ pExpr = pBinExp <* optional (symbol ".")
 
 pBinExp :: Parser Exp
 pBinExp = makeExprParser pCall [
-    [binaryR (try $ pWrapWS "->") (ELam . asPattern)],
+    [binaryR (try $ pWrapWS "->") (ELam . expAsPattern)],
     [binaryR (try $ pWrapWS "||") EMatch]
   ]
 
@@ -119,19 +119,10 @@ pCallNormal = do
   struct <- try pExprAtom
   return (`EApp` struct)
 
-asPattern :: Exp -> Pattern
-asPattern (EVar id) = PVar id
-asPattern (ELit l) = PLit l
-asPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
-asPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
-asPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
-asPattern t@(EApp _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
-
 pExprAtom :: Parser Exp
 pExprAtom =
-      parens pExpr
+      try pTuple
   <|> try pLet
-  -- <|> try pLambda
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
 
@@ -144,6 +135,21 @@ pLet = do
   expr1 <- pExpr
   _ <- rword ";" <* sc
   ELet var expr1 <$> pExpr
+
+pTuple :: Parser Exp
+pTuple = do
+  _ <- symbol "("
+  inner <- sepEndBy1 pExpr (pWrapWS ",")
+  _ <- symbol ")"
+  case inner of
+    [] -> error "should not reach. Maybe unit at some point"
+    [x] -> return x
+    other -> return $ _fold other
+    where
+      _fold :: [Exp] -> Exp
+      _fold [x,y] = EPair x y
+      _fold (x:xs) = EPair x (_fold xs)
+      _fold other = error "should not reach"
 
 pPattern :: Parser Pattern
 pPattern = (PLit <$> pLiteral) <|> (PVar <$> identifier)

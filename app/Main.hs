@@ -40,8 +40,6 @@ main = do
           case eval_result of
             Right (res, env) -> do
               putStrLn $ type_str ++ " :: " ++ prettyExp res
-              putStrLn "LOG:"
-              putStrLn $ prettyLog log
             Left e -> do
               putStrLn $ "ERROR: " ++ show e ++ "\n"
               putStrLn "LOG:"

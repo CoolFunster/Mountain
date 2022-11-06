@@ -129,6 +129,10 @@ bind (PVar id) x = return $ M.singleton id x
 bind a@(PLit l) b@(ELit l')
   | l == l' = return M.empty
   | otherwise = throwError $ BadBind a b
+bind a@(PPair x y) b@(EPair x' y') = do
+  res_a <- bind x x'
+  res_b <- bind y y'
+  return $ M.union res_a res_b
 bind a b = throwError $ BadBind a b
 
 step :: (Monad m) => Exp -> ContextT m Exp
@@ -181,6 +185,17 @@ step t@(ELet id x y) = do
       let e' = M.insert id x e
       pushEnv e'
       return y
+step t@(EPair a b) = do
+  res <- step a
+  c <- isChanged
+  if c
+    then return $ EApp res b
+  else do
+    res' <- step b
+    c' <- isChanged
+    if c'
+      then return $ EApp a res'
+      else return t
 
 evaluate :: (Monad m) => Maybe Int -> Exp -> ContextT m Exp
 evaluate (Just 0) x = return x
