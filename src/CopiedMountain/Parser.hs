@@ -173,14 +173,51 @@ pPattern :: Parser Pattern
 pPattern = (PLit <$> pLiteral) <|> (PVar <$> identifier)
 
 pLiteral :: Parser Lit
-pLiteral = LInt <$> integer
-      <|> (symbol "true" $> LBool True)
-      <|> (symbol "false" $> LBool False)
+pLiteral = choice [
+  pThing,
+  pBool,
+  pChar,
+  pString,
+  try pFloat,
+  pInt
+  ]
 
-pLambda :: Parser Exp
-pLambda = do
-  var <- pPattern
-  _ <- sc
-  symbol "->"
-  _ <- sc
-  ELam var <$> pExpr
+pThing :: Parser Lit
+pThing = symbol "#" *> (LThing <$> identifier)
+
+pChar :: Parser Lit
+pChar = LChar <$> between (symbol "\'") (symbol "\'") (try escaped <|> normalChar)
+   where
+     escaped :: Parser Char
+     escaped = do {
+        _ <- symbol "\\"
+      ; satisfy (=='\'')
+     }
+     normalChar :: Parser Char
+     normalChar = satisfy (/= '\'')
+
+pString :: Parser Lit
+pString = LString <$> between (symbol "\"") (symbol "\"") (many (try escaped <|> normalChar))
+   where
+     escaped :: Parser Char
+     escaped = do {
+        _ <- symbol "\\"
+      ; satisfy (=='\"')
+     }
+     normalChar :: Parser Char
+     normalChar = satisfy (/= '\"')
+
+pBool :: Parser Lit
+pBool = LBool <$> do
+  res <- symbol "true" <|> symbol "false"
+  case res of
+    "true" -> return True
+    "false" -> return False
+    _ -> error "unreachable"
+
+pInt :: Parser Lit
+pInt = LInt <$> L.signed (L.space Text.Megaparsec.empty Text.Megaparsec.empty Text.Megaparsec.empty) L.decimal
+
+pFloat :: Parser Lit
+pFloat = LFloat <$> L.signed sc L.float
+

@@ -33,6 +33,10 @@ applySubst subst ty = case ty of
     TFun (applySubst subst arg) (applySubst subst res)
   TInt -> TInt
   TBool -> TBool
+  TChar -> TChar
+  TString -> TString
+  TFloat -> TFloat
+  TThing -> TThing
 
 applySubstScheme :: Substitution -> Scheme -> Scheme
 applySubstScheme subst (Scheme vars t) =
@@ -130,7 +134,11 @@ inferLiteral :: Lit -> TI (Substitution, Type)
 inferLiteral lit =
   return (emptySubst, case lit of
     LInt _ -> TInt
-    LBool _ -> TBool)
+    LBool _ -> TBool
+    LThing _ -> TThing
+    LChar _ -> TChar
+    LString _ -> TString
+    LFloat _ -> TFloat)
 
 inferPattern :: Pattern -> TI (Context, Type)
 inferPattern (PLit binder) = do

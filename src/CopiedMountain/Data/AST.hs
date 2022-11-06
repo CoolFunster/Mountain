@@ -24,11 +24,19 @@ data Exp =
 data Lit
   = LInt Integer
   | LBool Bool
+  | LThing Text
+  | LChar Char
+  | LString String
+  | LFloat Float
   deriving (Eq, Ord, Show)
 
 data Type
   = TInt
-  | TBool
+  | TBool 
+  | TChar
+  | TString
+  | TFloat
+  | TThing
   | TVar Text
   | TFun Type Type
   | TPair Type Type
@@ -55,6 +63,10 @@ renameVar :: Type -> (Text, Text) -> Type
 renameVar ty (old, new) = case ty of
   TInt -> TInt
   TBool -> TBool
+  TChar -> TChar
+  TString -> TString
+  TFloat -> TFloat
+  TThing -> TThing
   TVar var -> TVar (if var == old then new else var)
   TFun t1 t2 -> TFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))

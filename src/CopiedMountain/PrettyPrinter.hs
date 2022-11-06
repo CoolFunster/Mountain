@@ -12,6 +12,10 @@ import Data.List (intercalate)
 prettyLit :: Lit -> String
 prettyLit (LInt i) = show i
 prettyLit (LBool b) = map toLower $ show b
+prettyLit (LThing t) = "#" ++ T.unpack t
+prettyLit (LChar c) = "'" ++ [c] ++ "'"
+prettyLit (LString s) = "\"" ++ s ++ "\""
+prettyLit (LFloat f) = show f
 
 prettyPattern :: Pattern -> String
 prettyPattern (PLit i) = prettyLit i
@@ -34,6 +38,10 @@ prettyType ty = case ty of
   TVar var -> var
   TInt -> "Int"
   TBool -> "Bool"
+  TChar -> "Char"
+  TString -> "String"
+  TFloat -> "Float"
+  TThing -> "Thing"
   TFun ty1 ty2 ->
     (if isFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
     <> " -> " <> prettyType ty2
