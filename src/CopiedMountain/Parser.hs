@@ -13,6 +13,7 @@ import Data.Char (isDigit, isAlphaNum, isSpace)
 import qualified Data.Text as Text
 import Data.Functor (($>))
 import Control.Monad.Combinators.Expr
+import qualified Data.Map as M
 
 parseFile :: FilePath -> IO Exp
 parseFile fp = do
@@ -122,6 +123,7 @@ pCallNormal = do
 pExprAtom :: Parser Exp
 pExprAtom =
       try pTuple
+  <|> try pRecord
   <|> try pLet
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
@@ -150,6 +152,22 @@ pTuple = do
       _fold [x,y] = EPair x y
       _fold (x:xs) = EPair x (_fold xs)
       _fold other = error "should not reach"
+
+pRecord :: Parser Exp
+pRecord = do
+  _ <- symbol "{"
+  inner <- sepEndBy1 _pInner (pWrapWS ",")
+  _ <- symbol "}"
+  case inner of
+    [] -> error "should not reach. Maybe unit at some point"
+    other -> return $ ERecord $ M.fromList other
+    where
+      _pInner :: Parser (Id, Exp)
+      _pInner = do
+        id_ <- identifier
+        _ <- pWrapWS ":"
+        exp_ <- pExpr
+        return (id_, exp_)
 
 pPattern :: Parser Pattern
 pPattern = (PLit <$> pLiteral) <|> (PVar <$> identifier)

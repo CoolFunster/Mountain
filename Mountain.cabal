@@ -59,6 +59,7 @@ library
     , megaparsec
     , memory
     , mtl
+    , ordered-containers
     , parser-combinators
     , random
     , recursion-schemes
@@ -92,6 +93,7 @@ executable mountain
     , megaparsec
     , memory
     , mtl
+    , ordered-containers
     , parser-combinators
     , random
     , recursion-schemes
@@ -134,6 +136,7 @@ test-suite spec
     , megaparsec
     , memory
     , mtl
+    , ordered-containers
     , parser-combinators
     , random
     , recursion-schemes

@@ -43,6 +43,7 @@ dependencies:
 - split
 - recursion-schemes
 - extra
+- ordered-containers
 
 library:
   source-dirs: src

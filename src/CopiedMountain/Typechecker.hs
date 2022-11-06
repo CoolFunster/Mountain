@@ -1,10 +1,12 @@
 {-# language OverloadedStrings #-}
 module CopiedMountain.Typechecker where
 
+import CopiedMountain.PrettyPrinter
+
 import Control.Monad (replicateM)
 import Control.Monad.State (State, runState, get, put, gets, modify)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
@@ -14,6 +16,7 @@ import qualified Data.Text as Text
 import CopiedMountain.Data.AST
 
 import Debug.Trace
+import qualified Data.Text as T
 
 type Substitution = Map Text Type
 
@@ -23,6 +26,7 @@ emptySubst = Map.empty
 applySubst :: Substitution -> Type -> Type
 applySubst subst ty = case ty of
   TPair a b -> TPair (applySubst subst a) (applySubst subst b)
+  TRecord omap -> TRecord (Map.map (applySubst subst) omap)
   TVar var ->
     fromMaybe (TVar var) (Map.lookup var subst)
   TFun arg res ->
@@ -83,10 +87,25 @@ unify (TPair a b) (TPair a' b') = do
   s1 <- unify a a'
   s2 <- unify (applySubst s1 b) (applySubst s1 b')
   return (s2 `composeSubst` s1)
+unify (TRecord omap) (TRecord omap') = do
+  let keys = Map.keysSet omap
+  let keys' = Map.keysSet omap'
+  let int_keys = Set.intersection keys keys'
+  foldr f (pure Map.empty) int_keys
+    where
+      f :: Id -> TI Substitution -> TI Substitution
+      f id m = do
+        cur_subs <- m
+        let k = fromJust $ Map.lookup id omap
+        let k' = fromJust $ Map.lookup id omap'
+        res <- unify (applySubst cur_subs k) (applySubst cur_subs k')
+        return (res `composeSubst` cur_subs)
 unify (TVar u) t = varBind u t
 unify t (TVar u) = varBind u t
 unify t1 t2 =
   throwError ("types do not unify: " <> showT t1 <> " vs. " <> showT t2)
+
+
 
 type Context = Map Text Scheme
 
@@ -124,6 +143,11 @@ inferPattern (PPair a b) = do
   (ctxa, tya) <- inferPattern a
   (ctxb, tyb) <- inferPattern b
   return (Map.union ctxa ctxb, TPair tya tyb)
+inferPattern (PRecord omap) = do
+  let (ids,patts) = unzip $ Map.toList omap
+  res <- mapM inferPattern patts
+  let (ctxs, typs) = unzip res
+  return (Map.unions ctxs, TRecord $ Map.fromList $ zip ids typs)
 
 infer :: Context -> Exp -> TI (Substitution, Type)
 infer ctx exp = case exp of
@@ -154,7 +178,7 @@ infer ctx exp = case exp of
     let res_type = applySubst s3 tyB
     case res_type of
       TFun _ _ -> return (s3 `composeSubst` s2 `composeSubst` s1, applySubst s3 tyB)
-      other -> error $ "Matches need to be functions: " ++ show m
+      other -> throwError $ T.pack ("Matches need to be functions: " <>  show m)
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
     let scheme = Scheme [] (applySubst s1 tyBinder)
@@ -165,6 +189,13 @@ infer ctx exp = case exp of
     (s1, tyA) <- infer ctx a
     (s2, tyB) <- infer (applySubstCtx s1 ctx) b
     return (s2 `composeSubst` s1, TPair (applySubst s2 tyA) tyB)
+  ERecord omap -> do
+    res <- mapM (infer ctx) omap
+    let (ids, typsNSubs) = unzip $ Map.toList res
+    let (subs, typs) = unzip typsNSubs
+    let final_sub = foldr1 composeSubst subs
+    let final_typs = map (applySubst final_sub) typs
+    return (final_sub, TRecord $ Map.fromList $ zip ids final_typs)
 
 typeInference :: Context -> Exp -> TI Type
 typeInference ctx exp = do

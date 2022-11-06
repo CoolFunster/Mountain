@@ -17,6 +17,7 @@ import Control.Monad.Extra (firstJustM, ifM)
 import qualified Data.Set as S
 import qualified Data.Map as M
 import Debug.Trace (trace)
+import Data.Maybe (fromJust)
 
 data Options = Options {
   parser :: FilePath -> IO Exp,
@@ -133,7 +134,22 @@ bind a@(PPair x y) b@(EPair x' y') = do
   res_a <- bind x x'
   res_b <- bind y y'
   return $ M.union res_a res_b
+bind a@(PRecord omap) b@(ERecord omap') = do
+  let k = M.keys omap
+  foldr f (pure M.empty) k
+  where
+    f :: (Monad m) => Id -> ContextT m Env -> ContextT m Env
+    f k cur_map' = do
+      let e = M.lookup k omap'
+      let p = fromJust $ M.lookup k omap
+      cur_map <- cur_map'
+      case e of
+        Nothing -> throwError $ BadBind a b
+        Just x -> do
+          bres <- bind p x
+          return $ M.union bres cur_map
 bind a b = throwError $ BadBind a b
+
 
 step :: (Monad m) => Exp -> ContextT m Exp
 step t@(ELit _) = return t
@@ -196,6 +212,21 @@ step t@(EPair a b) = do
     if c'
       then return $ EApp a res'
       else return t
+step t@(ERecord omap) = do
+  let (ids, exps) = unzip $ M.toList omap
+  exps' <- stepSeq exps
+  return $ ERecord $ M.fromList (zip ids exps')
+  where
+    stepSeq :: (Monad m) => [Exp] -> ContextT m [Exp]
+    stepSeq [] = return []
+    stepSeq (x:xs) = do
+      x' <- step x
+      c <- isChanged
+      if c 
+        then return (x':xs)
+        else do
+          res <- stepSeq xs
+          return (x:res)
 
 evaluate :: (Monad m) => Maybe Int -> Exp -> ContextT m Exp
 evaluate (Just 0) x = return x
