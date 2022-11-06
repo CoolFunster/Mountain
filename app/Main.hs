@@ -38,8 +38,11 @@ main = do
           raw_eval_result <- runWith initialState (evaluate (Just 30) parsed)
           let (eval_result, log) = raw_eval_result
           case eval_result of
-            Right (res, env) -> putStrLn $ type_str ++ " :: " ++ prettyExp res
+            Right (res, env) -> do
+              putStrLn $ type_str ++ " :: " ++ prettyExp res
+              putStrLn "LOG:"
+              putStrLn $ prettyLog log
             Left e -> do
               putStrLn $ "ERROR: " ++ show e ++ "\n"
               putStrLn "LOG:"
-              print $ show log
+              putStrLn $ show log

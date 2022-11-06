@@ -49,6 +49,7 @@ library
     , containers
     , cryptonite
     , directory
+    , extra
     , filepath
     , hspec
     , hspec-core
@@ -81,6 +82,7 @@ executable mountain
     , containers
     , cryptonite
     , directory
+    , extra
     , filepath
     , hspec
     , hspec-core
@@ -103,6 +105,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       CopiedMountain.CopiedMountainParserSpec
+      CopiedMountain.CopiedMountainSpec
       MountainParserSpec
       MountainSpec
       MountainTestsSpec
@@ -121,6 +124,7 @@ test-suite spec
     , containers
     , cryptonite
     , directory
+    , extra
     , filepath
     , hspec ==2.*
     , hspec-core

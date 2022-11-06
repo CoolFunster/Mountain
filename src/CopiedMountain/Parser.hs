@@ -12,6 +12,7 @@ import Data.List (isPrefixOf, foldl')
 import Data.Char (isDigit, isAlphaNum, isSpace)
 import qualified Data.Text as Text
 import Data.Functor (($>))
+import Control.Monad.Combinators.Expr
 
 parseFile :: FilePath -> IO Exp
 parseFile fp = do
@@ -22,12 +23,11 @@ parseFile fp = do
     Right term -> return term
 
 parseExpr :: String -> Either String Exp
-parseExpr = parseExprWith pExpr
+parseExpr = parseExprWith (between sc eof pExpr)
 
 parseExprWith :: Parser a -> String -> Either String a
 parseExprWith p s = do
-  let fullConsumeP = between sc eof p
-  let result = runParser fullConsumeP "" s
+  let result = runParser p "" s
   case result of
     Left parse_error -> Left (errorBundlePretty parse_error)
     Right result -> Right result
@@ -55,6 +55,12 @@ integer = lexeme L.decimal
 rword :: String -> Parser ()
 rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 
+binaryL  inner_parser f = InfixL  (f <$ inner_parser)
+binaryR  inner_parser f = InfixR  (f <$ inner_parser)
+binaryN  inner_parser f = InfixN  (f <$ inner_parser)
+prefix  inner_parser f = Prefix  (f <$ inner_parser)
+postfix inner_parser f = Postfix (f <$ inner_parser)
+
 reservedIds :: [String]
 reservedIds = [
   -- "is",
@@ -71,7 +77,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "-=;`[]{}()<>#\".:"
+restrictedIdChars = "|-=;`[]{}()<>#\".:"
 
 identifier :: Parser Id
 identifier = do
@@ -85,22 +91,47 @@ identifier = do
       isValidChar :: Char -> Bool
       isValidChar c = not (c `elem` restrictedIdChars || isSpace c)
 
+pWrapWS :: [Char] -> Parser String
+pWrapWS input_str = try $ between (optional sc) (optional sc) (symbol input_str)
+
 pExpr :: Parser Exp
-pExpr = do
-  res <- sepBy exprAtom (optional sc)
-  case res of
-    [] -> fail "unable to parse anything"
-    other -> return $ foldApps other
+pExpr = pBinExp <* optional (symbol ".")
 
-foldApps :: [Exp] -> Exp
-foldApps [exp] = exp
-foldApps xs = foldl1 EApp xs
+pBinExp :: Parser Exp
+pBinExp = makeExprParser pCall [
+    [binaryR (try $ pWrapWS "->") (ELam . asPattern)],
+    [binaryR (try $ pWrapWS "|") ESum]
+  ]
 
-exprAtom :: Parser Exp
-exprAtom =
+pCall :: Parser Exp
+pCall = do
+  struct1 <- pExprAtom
+  struct2 <- many $ try (optional sc *> (pCallInfix <|> pCallNormal))
+  return $ foldl' (\state f -> f state) struct1 struct2
+
+pCallInfix :: Parser (Exp -> Exp)
+pCallInfix = do
+  struct <- between (symbol "`") (symbol "`") pExprAtom
+  return $ EApp struct
+
+pCallNormal :: Parser (Exp -> Exp)
+pCallNormal = do
+  struct <- try pExprAtom
+  return (`EApp` struct)
+
+asPattern :: Exp -> Pattern
+asPattern (EVar id) = PVar id
+asPattern (ELit l) = PLit l
+asPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
+asPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+asPattern t@(ESum _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+asPattern t@(EApp _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+
+pExprAtom :: Parser Exp
+pExprAtom =
       parens pExpr
   <|> try pLet
-  <|> try pLambda
+  -- <|> try pLambda
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
 

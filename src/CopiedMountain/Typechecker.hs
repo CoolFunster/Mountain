@@ -86,7 +86,7 @@ unify t1 t2 =
 type Context = Map Text Scheme
 
 applySubstCtx :: Substitution -> Context -> Context
-applySubstCtx subst ctx = Map.map (applySubstScheme subst) ctx
+applySubstCtx subst = Map.map (applySubstScheme subst)
 
 freeTypeVarsCtx :: Context -> Set Text
 freeTypeVarsCtx ctx = foldMap freeTypeVarsScheme (Map.elems ctx)
@@ -133,6 +133,12 @@ infer ctx exp = case exp of
     (_, tyBinder) <- inferLiteral lit
     (s1, tyBody) <- infer ctx body
     return (s1, TFun (applySubst s1 tyBinder) tyBody)
+  ESum a b -> do
+    tyRes <- newTyVar
+    (s1, tyA) <- infer ctx a
+    (s2, tyB) <- infer (applySubstCtx s1 ctx) b
+    s3 <- unify (applySubst s2 tyA) tyB
+    return (s3 `composeSubst` s2 `composeSubst` s1, applySubst s3 tyB)
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
     let scheme = Scheme [] (applySubst s1 tyBinder)

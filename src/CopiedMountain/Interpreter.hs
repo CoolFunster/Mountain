@@ -12,9 +12,11 @@ import qualified Control.Monad.State.Strict as State
 import Control.Monad.State.Strict hiding (State)
 import Control.Monad.Except
 import Control.Monad.Writer.Strict
+import Control.Monad.Extra (firstJustM, ifM)
 
 import qualified Data.Set as S
 import qualified Data.Map as M
+import Debug.Trace (trace)
 
 data Options = Options {
   parser :: FilePath -> IO Exp,
@@ -146,7 +148,9 @@ step t@(EApp a@(ELam pat y) b) = do
       e <- popEnv
       let e' = M.union pat_e e
       pushEnv e'
+      markChanged
       return b
+step t@(EApp a@(ESum x y) b) = return $ ESum (EApp x b) (EApp y b)
 step t@(EApp a b) = do
   res <- step a
   c <- isChanged
@@ -157,7 +161,25 @@ step t@(EApp a b) = do
     c' <- isChanged
     if c'
       then return $ EApp a res'
-      else throwError $ BadEApp a b
+      else error "Should not reach here, bad typechecking on application"
+step t@(ESum x y) = do
+  resx <- tryStep x
+  c <- isChanged
+  if c
+    then
+      case resx of
+        Nothing -> return y
+        Just x' -> return $ ESum x' y
+    else do
+      resy <- tryStep y
+      case resy of
+        Nothing -> return x
+        Just y' -> return $ ESum x y'
+  where
+    tryStep :: (Monad m) => Exp -> ContextT m (Maybe Exp)
+    tryStep s = (Just <$> step s) `catchError` (\case
+      BadBind _ _ -> return Nothing
+      u@(UnboundId _) -> throwError u)
 step t@(ELet id x y) = do
   res_x <- step x
   c <- isChanged

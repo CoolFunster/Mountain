@@ -16,6 +16,7 @@ data Exp =
   | EApp Exp Exp
   | ELam Pattern Exp
   | ELet Id Exp Exp
+  | ESum Exp Exp
   deriving (Eq, Ord, Show)
 
 data Lit

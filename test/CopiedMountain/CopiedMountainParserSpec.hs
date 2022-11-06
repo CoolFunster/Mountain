@@ -12,7 +12,7 @@ import Test.Hspec
 -- TODO Split into respective files
 
 spec :: Spec
-spec = parallel $ do
+spec = do
     describe "Exp" $ do
       describe "Var" $ do
         it "Should parse Var" $ do
@@ -30,10 +30,19 @@ spec = parallel $ do
           res `shouldBe` Right (ELam (PVar "a") (EVar "b"))
         it "Should parse long chain function" $ do
           let res = parseExpr "a -> b -> c -> d -> e"
-          res `shouldBe` Right (ELam (PVar "a") (ELam (PVar "b") (ELam (PVar "c") (ELam (PVar "d") (EVar "e")))))  
+          res `shouldBe` Right (ELam (PVar "a") (ELam (PVar "b") (ELam (PVar "c") (ELam (PVar "d") (EVar "e")))))
         it "Should parse close function" $ do
           let res = parseExpr "a->b"
           res `shouldBe` Right (ELam (PVar "a") (EVar "b"))
+      describe "Sum" $ do
+        it "Should parse simple sum" $ do
+          let res = parseExpr "a -> b | c -> d"
+          res `shouldBe` Right (ESum (ELam (PVar "a") (EVar "b")) (ELam (PVar "c") (EVar "d")))
+        it "Should parse simple sum with parens" $ do
+          let res = parseExpr "(a -> b) | (c -> d)"
+          case res of
+            Left e -> error e
+            Right x -> x `shouldBe` ESum (ELam (PVar "a") (EVar "b")) (ELam (PVar "c") (EVar "d"))
       describe "Literal" $ do
         it "Should parse int" $ do
           let res = parseExpr "3"
@@ -59,6 +68,9 @@ spec = parallel $ do
         it "Should parse a close call" $ do
           let res = parseExpr "a(b)"
           res `shouldBe` Right (EApp (EVar "a") (EVar "b"))
+        it "Should parse a function" $ do
+          let res = parseExpr "a -> b c"
+          res `shouldBe` Right (ELam (PVar "a") (EApp (EVar "b") (EVar "c")))
       describe "Let" $ do
         it "Should parse a let" $ do
           let res = parseExpr "a = b; a"

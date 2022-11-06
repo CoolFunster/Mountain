@@ -42,6 +42,7 @@ dependencies:
 - memory
 - split
 - recursion-schemes
+- extra
 
 library:
   source-dirs: src
