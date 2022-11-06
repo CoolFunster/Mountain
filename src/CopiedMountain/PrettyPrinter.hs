@@ -20,7 +20,7 @@ prettyExp (EVar id) = T.unpack id
 prettyExp (EApp a b) = prettyExp a ++ "(" ++ prettyExp b ++ ")"
 prettyExp (ELam id e) = prettyPattern id ++ "->" ++ prettyExp e
 prettyExp (ELet id a b) = T.unpack id ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
-prettyExp (ESum a b) = "(" ++ prettyExp a ++ "|" ++ prettyExp b ++ ")"
+prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 
 prettyLog :: [Log] -> String
 prettyLog (Step expr env:xs) = do

@@ -100,7 +100,7 @@ pExpr = pBinExp <* optional (symbol ".")
 pBinExp :: Parser Exp
 pBinExp = makeExprParser pCall [
     [binaryR (try $ pWrapWS "->") (ELam . asPattern)],
-    [binaryR (try $ pWrapWS "|") ESum]
+    [binaryR (try $ pWrapWS "||") EMatch]
   ]
 
 pCall :: Parser Exp
@@ -124,7 +124,7 @@ asPattern (EVar id) = PVar id
 asPattern (ELit l) = PLit l
 asPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 asPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
-asPattern t@(ESum _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+asPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 asPattern t@(EApp _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 
 pExprAtom :: Parser Exp

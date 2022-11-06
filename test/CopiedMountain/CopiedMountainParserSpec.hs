@@ -36,13 +36,13 @@ spec = do
           res `shouldBe` Right (ELam (PVar "a") (EVar "b"))
       describe "Sum" $ do
         it "Should parse simple sum" $ do
-          let res = parseExpr "a -> b | c -> d"
-          res `shouldBe` Right (ESum (ELam (PVar "a") (EVar "b")) (ELam (PVar "c") (EVar "d")))
+          let res = parseExpr "a -> b || c -> d"
+          res `shouldBe` Right (EMatch (ELam (PVar "a") (EVar "b")) (ELam (PVar "c") (EVar "d")))
         it "Should parse simple sum with parens" $ do
-          let res = parseExpr "(a -> b) | (c -> d)"
+          let res = parseExpr "(a -> b) || (c -> d)"
           case res of
             Left e -> error e
-            Right x -> x `shouldBe` ESum (ELam (PVar "a") (EVar "b")) (ELam (PVar "c") (EVar "d"))
+            Right x -> x `shouldBe` EMatch (ELam (PVar "a") (EVar "b")) (ELam (PVar "c") (EVar "d"))
       describe "Literal" $ do
         it "Should parse int" $ do
           let res = parseExpr "3"

@@ -133,12 +133,15 @@ infer ctx exp = case exp of
     (_, tyBinder) <- inferLiteral lit
     (s1, tyBody) <- infer ctx body
     return (s1, TFun (applySubst s1 tyBinder) tyBody)
-  ESum a b -> do
-    tyRes <- newTyVar
+  m@(EMatch a b) -> do
+    foo_type <- TFun <$> newTyVar <*> newTyVar
     (s1, tyA) <- infer ctx a
     (s2, tyB) <- infer (applySubstCtx s1 ctx) b
     s3 <- unify (applySubst s2 tyA) tyB
-    return (s3 `composeSubst` s2 `composeSubst` s1, applySubst s3 tyB)
+    let res_type = applySubst s3 tyB
+    case res_type of
+      TFun _ _ -> return (s3 `composeSubst` s2 `composeSubst` s1, applySubst s3 tyB)
+      other -> error $ "Matches need to be functions: " ++ show m
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
     let scheme = Scheme [] (applySubst s1 tyBinder)
