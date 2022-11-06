@@ -1,39 +1,45 @@
 module Main where
 
-import Mountain
-import MountainParser
+import CopiedMountain.Data.AST
+import CopiedMountain.Interpreter
+import CopiedMountain.Parser
+import CopiedMountain.Typechecker
+import CopiedMountain.PrettyPrinter
 
-import Hash
+import qualified Data.Text as Text
+import qualified Data.Map.Strict as Map
 
-import Data.Map.Strict as M ( empty, fromList, singleton )
 import System.Environment
+
+initialState :: State
+initialState = State {
+    changed=False,
+    options=Options{
+      parser=parseFile,
+      repository="/home/mpriam/git/mtpl_language/Repository",
+      file_ext=".mtn"},
+    env=[]
+  }
 
 main :: IO ()
 main = do
   args <- getArgs  
   let file_path = head args
-  let mountain_args = tail args
-  
-  term_to_run <- cleanup <$> parseFile file_path
-  initial_console_hash <- randHash 
-  let initial_env = MountainEnv {
-    options=Options{
-      parser=parseFile,
-      repository=basePath,
-      file_ext=fileExt},
-    environment=[M.fromList $ envList ++ [
-      -- ("console", Unique initial_console_hash (Extern $ Thing "Console")),
-      -- ("args", Tuple $ map (Extern . String) $ mountain_args)
-    ]],
-    unique_hashes=M.singleton "Console" initial_console_hash
-  }
-  res <- runMountainContextT initial_env $ evaluate term_to_run
-  let (Right (console_foo, env), _) = res
-  final_result <- runMountainContextT env $ evaluate (Call console_foo $ Tuple [Unique initial_console_hash (Extern $ Thing "Console"), Tuple $ map (Extern . String) $ mountain_args])
-  let (term, log) = final_result
-  case term of
-    Right (_, _) -> return ()
-    Left e -> do
-      putStrLn $ "ERROR: " ++ show e ++ "\n"
-      putStrLn "LOG:"
-      putStrLn (prettyLog log)
+  fc <- readFile file_path
+  let raw_parsed = parseExpr fc
+  case raw_parsed of
+    Left parse_error -> error parse_error
+    Right parsed -> do
+      let (type_checked, _) = runTI (typeInference primitives parsed)
+      case type_checked of
+        Left err -> error $ show parsed ++ "\n " ++ Text.unpack err ++ "\n"
+        Right t  -> do
+          let type_str = Text.unpack (prettyScheme (generalize Map.empty t))
+          raw_eval_result <- runWith initialState (evaluate (Just 30) parsed)
+          let (eval_result, log) = raw_eval_result
+          case eval_result of
+            Right (res, env) -> putStrLn $ type_str ++ " :: " ++ prettyExp res
+            Left e -> do
+              putStrLn $ "ERROR: " ++ show e ++ "\n"
+              putStrLn "LOG:"
+              print $ show log
