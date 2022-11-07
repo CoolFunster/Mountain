@@ -124,6 +124,7 @@ pExprAtom :: Parser Exp
 pExprAtom =
       try pTuple
   <|> try pRecord
+  <|> try pSum
   <|> try pLet
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
@@ -131,18 +132,16 @@ pExprAtom =
 pLet :: Parser Exp
 pLet = do
   var <- identifier
-  _ <- sc
-  void (symbol "=")
-  _ <- sc
+  _ <- pWrapWS "="
   expr1 <- pExpr
   _ <- rword ";" <* sc
   ELet var expr1 <$> pExpr
 
 pTuple :: Parser Exp
 pTuple = do
-  _ <- symbol "("
+  _ <- symbol "(" <* optional sc
   inner <- sepEndBy1 pExpr (pWrapWS ",")
-  _ <- symbol ")"
+  _ <- optional sc *> symbol ")"
   case inner of
     [] -> error "should not reach. Maybe unit at some point"
     [x] -> return x
@@ -153,21 +152,27 @@ pTuple = do
       _fold (x:xs) = EPair x (_fold xs)
       _fold other = error "should not reach"
 
+pLabeledExpr :: Parser (Id, Exp)
+pLabeledExpr = do
+  id_ <- identifier
+  _ <- pWrapWS ":"
+  exp_ <- pExpr
+  return (id_, exp_)
+
 pRecord :: Parser Exp
 pRecord = do
-  _ <- symbol "{"
-  inner <- sepEndBy1 _pInner (pWrapWS ",")
-  _ <- symbol "}"
+  _ <- symbol "{" <* optional sc
+  inner <- sepEndBy1 pLabeledExpr (pWrapWS ",")
+  _ <- optional sc *> symbol "}"
   case inner of
     [] -> error "should not reach. Maybe unit at some point"
     other -> return $ ERecord $ M.fromList other
-    where
-      _pInner :: Parser (Id, Exp)
-      _pInner = do
-        id_ <- identifier
-        _ <- pWrapWS ":"
-        exp_ <- pExpr
-        return (id_, exp_)
+
+pSum :: Parser Exp
+pSum = do
+  id_ <- identifier
+  expr <- between (pWrapWS "<") (pWrapWS ">") pExpr
+  return $ ESum id_ expr
 
 pPattern :: Parser Pattern
 pPattern = (PLit <$> pLiteral) <|> (PVar <$> identifier)

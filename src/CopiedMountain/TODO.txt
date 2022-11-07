@@ -1,0 +1,9 @@
+ - Sum types
+ - Sets?
+ - type annotations
+    - explicit term with Type and Exp in it
+ - builtin foos
+ - recursion
+    - let rec
+ - Imports
+    - avoid cycles?

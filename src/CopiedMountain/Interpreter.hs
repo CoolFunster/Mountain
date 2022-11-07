@@ -148,6 +148,10 @@ bind a@(PRecord omap) b@(ERecord omap') = do
         Just x -> do
           bres <- bind p x
           return $ M.union bres cur_map
+bind a@(PSum id pat) b@(ESum id' expr) = do
+  if id /= id
+    then throwError $ BadBind a b
+    else bind pat expr
 bind a b = throwError $ BadBind a b
 
 
@@ -227,6 +231,7 @@ step t@(ERecord omap) = do
         else do
           res <- stepSeq xs
           return (x:res)
+step t@(ESum id expr) = ESum id <$> step expr
 
 evaluate :: (Monad m) => Maybe Int -> Exp -> ContextT m Exp
 evaluate (Just 0) x = return x

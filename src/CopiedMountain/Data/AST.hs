@@ -18,6 +18,7 @@ data Exp =
   | ELet Id Exp Exp
   | EMatch Exp Exp
   | EPair Exp Exp
+  | ESum Id Exp
   | ERecord (M.Map Id Exp)
   deriving (Eq, Ord, Show)
 
@@ -41,6 +42,7 @@ data Type
   | TFun Type Type
   | TPair Type Type
   | TRecord (M.Map Id Type)
+  | TSum (M.Map Id Type)
   deriving (Eq, Ord, Show)
 
 data Pattern =
@@ -48,6 +50,7 @@ data Pattern =
   | PVar Id
   | PPair Pattern Pattern
   | PRecord (M.Map Id Pattern)
+  | PSum Id Pattern
   deriving (Eq, Ord, Show)
 
 data Scheme = Scheme [Text] Type
@@ -71,12 +74,14 @@ renameVar ty (old, new) = case ty of
   TFun t1 t2 -> TFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TRecord omap -> TRecord (M.map (\x -> renameVar x (old, new)) omap)
+  TSum omap -> TSum (M.map (\x -> renameVar x (old, new)) omap)
 
 expAsPattern :: Exp -> Pattern
 expAsPattern (EVar id) = PVar id
 expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
 expAsPattern (ERecord omap) = PRecord (M.map expAsPattern omap)
+expAsPattern (ESum id expr) = PSum id (expAsPattern expr)
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
@@ -87,3 +92,4 @@ patternAsExp (PVar id) = EVar id
 patternAsExp (PLit l) = ELit l
 patternAsExp (PPair a b) = EPair (patternAsExp a) (patternAsExp b)
 patternAsExp (PRecord omap) = ERecord (M.map patternAsExp omap)
+patternAsExp (PSum id pat) = ESum id (patternAsExp pat)
