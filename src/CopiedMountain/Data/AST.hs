@@ -16,6 +16,7 @@ data Exp =
   | EApp Exp Exp
   | ELam Pattern Exp
   | ELet Id Exp Exp
+  | ERec Id Exp
   | EMatch Exp Exp
   | EPair Exp Exp
   | ELabel Id Exp
@@ -86,6 +87,7 @@ expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function
 expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EApp _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+expAsPattern t@(ERec _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 
 patternAsExp :: Pattern -> Exp
 patternAsExp (PVar id) = EVar id

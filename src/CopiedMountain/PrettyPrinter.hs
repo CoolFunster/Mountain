@@ -27,13 +27,14 @@ prettyPattern (PAnnot typ x) = "(" ++ T.unpack (prettyType typ) ++ "::" ++ prett
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
 prettyExp (EVar id) = T.unpack id 
-prettyExp (EApp a b) = prettyExp a ++ "(" ++ prettyExp b ++ ")"
+prettyExp (EApp a b) = "(" ++ prettyExp a ++ ")(" ++ prettyExp b ++ ")"
 prettyExp (ELam id e) = prettyPattern id ++ "->" ++ prettyExp e
 prettyExp (ELet id a b) = T.unpack id ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 prettyExp (EPair a b) = "(" ++ prettyExp a ++ "," ++ prettyExp b ++ ")"
 prettyExp (ELabel id a) = T.unpack id ++ ":" ++ prettyExp a
-prettyExp (EAnnot typ a) = T.unpack (prettyType typ) ++ "::" ++ prettyExp a
+prettyExp (EAnnot typ a) = "(" ++ T.unpack (prettyType typ) ++ ")::(" ++ prettyExp a ++ ")"
+prettyExp (ERec id a) = "(" ++ T.unpack id ++ "~" ++ prettyExp a ++ ")"
 
 prettyType :: Type -> T.Text
 prettyType ty = case ty of

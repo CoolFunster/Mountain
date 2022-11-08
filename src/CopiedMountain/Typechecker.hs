@@ -184,7 +184,7 @@ inferPattern (PLabel id x) = do
   return (ctx, TLabel id typ)
 inferPattern (PAnnot typ x) = do
   (s1, typx) <- inferPattern x
-  (_, final_typ) <- unify typ typx 
+  (_, final_typ) <- unify typ typx
   return (s1, final_typ)
 
 infer :: Context -> Exp -> TI (Substitution, Type)
@@ -226,13 +226,13 @@ infer ctx exp = case exp of
         `catchError` (\e -> do {
               let TFun ax ay = applySubst s2 tyA
             ; let TFun bx by = tyB
-            ; (subs_x, tyX) <- unifyJoin ax bx 
-            ; (subs_y, tyY) <- unifyJoin ay by 
+            ; (subs_x, tyX) <- unifyJoin ax bx
+            ; (subs_y, tyY) <- unifyJoin ay by
             ; return (subs_x `composeSubst` subs_y, TFun tyX tyY)
           })
     where
       err = throwError $ T.pack ("Matches need to be functions: " <>  show m)
-      unifyJoin a b = unify a b `catchError` (\e -> return (emptySubst, TSum a b))  
+      unifyJoin a b = unify a b `catchError` (\e -> return (emptySubst, TSum a b))
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
     let scheme = Scheme [] (applySubst s1 tyBinder)
@@ -248,8 +248,13 @@ infer ctx exp = case exp of
     return (s1, TLabel id typ)
   EAnnot typ x -> do
     (s1, typx) <- infer ctx x
-    (fs, _) <- unify typ typx 
+    (fs, _) <- unify typ typx
     return (fs `composeSubst` s1, typ)
+  ERec id (EAnnot typ x) -> do
+    let scheme = Scheme [] typ
+    let tmpCtx = Map.insert id scheme ctx
+    infer tmpCtx x
+  ERec id other -> throwError $ "Recursive types require type annotations"
 
 typeInference :: Context -> Exp -> TI Type
 typeInference ctx exp = do

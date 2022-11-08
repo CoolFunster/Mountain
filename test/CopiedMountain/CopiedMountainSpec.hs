@@ -5,6 +5,7 @@ module CopiedMountain.CopiedMountainSpec (spec) where
 import CopiedMountain.Data.AST 
 import CopiedMountain.Parser
 import CopiedMountain.Interpreter as I
+import CopiedMountain.PrettyPrinter
 
 import Data.Map.Strict as M
 import Data.Either
@@ -45,4 +46,9 @@ spec = do
         -- ast `shouldBe` Right (EApp (EApp (ELam (PVar "x") (ELam (PVar "y") (EVar "x"))) (ELit (LInt 3))) (ELit (LInt 4)))
         (Right (res, state), log) <- runWith initialState $ I.evaluate (Just 20) (fromRight (error "") ast)
         res `shouldBe` ELit (LInt 3)
+      it "Should handle this case 5" $ do
+        let ast = parseExpr "(x ~ (Int -> Int) :: (2 -> (x 3) ||  3 -> 4)) (2)"
+        ast `shouldBe` Right (EApp (ERec "x" (EAnnot (TFun TInt TInt) (EMatch (ELam (PLit (LInt 2)) (EApp (EVar "x") (ELit (LInt 3)))) (ELam (PLit (LInt 3)) (ELit (LInt 4)))))) (ELit (LInt 2)))
+        (Right (res, state), log) <- runWith initialState $ I.evaluate (Just 20) (fromRight (error "") ast)
+        res `shouldBe` ELit (LInt 4)
         

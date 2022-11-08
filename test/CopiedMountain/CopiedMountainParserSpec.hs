@@ -107,5 +107,8 @@ spec = do
         it "should parse a nested Annot" $ do
           let res = parseExpr "Int -> String :: Int :: 3"
           res `shouldBe` Right (EAnnot (TFun TInt TString) (EAnnot TInt (ELit (LInt 3))))
-
+      describe "Recursion" $ do
+        it "should parse a recursive function" $ do
+          let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
+          res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (ELam (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
 

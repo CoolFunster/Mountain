@@ -81,7 +81,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "|-=;`[]{}()<>#\".:,"
+restrictedIdChars = "|-=;`[]{}()<>#\".:,~"
 
 identifier :: Parser Id
 identifier = do
@@ -99,26 +99,27 @@ pWrapWS :: [Char] -> Parser String
 pWrapWS input_str = try $ between (optional sc) (optional sc) (symbol input_str)
 
 pExpr :: Parser Exp
-pExpr = pAnnot <* optional (symbol ".")
+pExpr = pBinExp <* optional (symbol ".")
+
+pBinExp :: Parser Exp
+pBinExp = makeExprParser pAnnot [
+    [binaryR (try pColon) (varLTerm ELabel)],
+    [binaryR (try $ pWrapWS "~") (varLTerm ERec)],
+    [binaryR (try $ pWrapWS "->") (ELam . expAsPattern)],
+    [binaryR (try $ pWrapWS "||") EMatch]
+  ]
+  where
+    varLTerm a (EVar x) rhs = a x rhs
+    varLTerm a other rhs = error "ids must be on the lhs"
+
+    pColon = optional sc *> symbol ":" <* notFollowedBy (symbol ":") <* optional sc
 
 pAnnot :: Parser Exp
 pAnnot = do
   typ <- optional (try (pType <* pWrapWS "::"))
   case typ of
     Just st -> EAnnot st <$> pExpr
-    Nothing -> pBinExp
-
-pBinExp :: Parser Exp
-pBinExp = makeExprParser pCall [
-    [binaryR (try pColon) pLabel],
-    [binaryR (try $ pWrapWS "->") (ELam . expAsPattern)],
-    [binaryR (try $ pWrapWS "||") EMatch]
-  ]
-  where
-    pLabel (EVar x) rhs = ELabel x rhs
-    pLabel other rhs = error "labels can only have ids on the lhs"
-
-    pColon = optional sc *> symbol ":" <* notFollowedBy (symbol ":") <* optional sc
+    Nothing -> pCall
 
 pCall :: Parser Exp
 pCall = do

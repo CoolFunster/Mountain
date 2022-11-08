@@ -125,6 +125,10 @@ getEnv = do
   let State _ e _ = env
   return e
 
+unrollRec :: Exp -> Exp
+unrollRec t@(ERec id x) = replace (M.singleton id t) x
+unrollRec other = error $ "Cannot unroll non recursive obj " ++ show other
+
 replace :: Env -> Exp -> Exp
 replace env e@(ELit _) = e
 replace env e@(EVar id) =
@@ -138,6 +142,9 @@ replace env (EMatch a b) = EMatch (replace env a) (replace env b)
 replace env (EPair a b) = EPair (replace env a) (replace env b)
 replace env (ELabel id x) = ELabel id (replace env x)
 replace env (EAnnot t x) = EAnnot t (replace env x)
+replace env (ERec id x) = do
+  let env' = M.withoutKeys env (S.singleton id)
+  ERec id (replace env' x)
 
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind (PVar id) x = return $ M.singleton id x
@@ -161,9 +168,14 @@ step t@(ELit _) = return t
 step t@(EVar id) = getDef id
 step t@(ELam _ _) = return t
 step t@(EMatch x y) = return t
+step t@(ERec x y) = return t
 step t@(EAnnot _ x) = do
   markChanged
   return x
+step t@(EApp x@(ERec _ _) y) = do
+  markChanged
+  let res = unrollRec x
+  return $ EApp res y
 step t@(EApp a@(ELam pat y) b) = do
   res <- step b
   c <- isChanged
