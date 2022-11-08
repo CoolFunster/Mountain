@@ -138,6 +138,7 @@ bind a@(PLabel id x) b@(ELabel id2 y) = do
   if id == id2
     then bind x y
     else throwError $ BadBind a b
+bind a@(PAnnot typ x) b = bind x b
 bind a b = throwError $ BadBind a b
 
 
@@ -149,6 +150,9 @@ step t@(EVar id) = do
   return res
 step t@(ELam _ _) = return t
 step t@(EMatch x y) = return t
+step t@(EAnnot _ x) = do
+  markChanged
+  return x
 step t@(EApp a@(ELam pat y) b) = do
   res <- step b
   c <- isChanged

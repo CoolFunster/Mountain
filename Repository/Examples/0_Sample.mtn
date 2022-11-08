@@ -1,1 +1,1 @@
-(x:y):3
+(String -> Int :: "hello" -> 1) ("hello")

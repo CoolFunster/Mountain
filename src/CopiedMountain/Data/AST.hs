@@ -19,6 +19,7 @@ data Exp =
   | EMatch Exp Exp
   | EPair Exp Exp
   | ELabel Id Exp
+  | EAnnot Type Exp
   deriving (Eq, Ord, Show)
 
 data Lit
@@ -49,6 +50,7 @@ data Pattern =
   | PVar Id
   | PPair Pattern Pattern
   | PLabel Id Pattern
+  | PAnnot Type Pattern
   deriving (Eq, Ord, Show)
 
 data Scheme = Scheme [Text] Type
@@ -79,6 +81,7 @@ expAsPattern (EVar id) = PVar id
 expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
 expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
+expAsPattern (EAnnot typ exp) = PAnnot typ (expAsPattern exp)
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
@@ -89,3 +92,4 @@ patternAsExp (PVar id) = EVar id
 patternAsExp (PLit l) = ELit l
 patternAsExp (PPair a b) = EPair (patternAsExp a) (patternAsExp b)
 patternAsExp (PLabel id exp) = ELabel id (patternAsExp exp)
+patternAsExp (PAnnot typ x) = EAnnot typ (patternAsExp x)

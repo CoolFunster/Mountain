@@ -22,6 +22,7 @@ prettyPattern (PLit i) = prettyLit i
 prettyPattern (PVar v) = T.unpack v
 prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
 prettyPattern (PLabel id x) = T.unpack id ++ ":" ++ prettyPattern x
+prettyPattern (PAnnot typ x) = "(" ++ T.unpack (prettyType typ) ++ "::" ++ prettyPattern x ++ ")"
 
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
@@ -32,6 +33,7 @@ prettyExp (ELet id a b) = T.unpack id ++ "=" ++ prettyExp a ++ ";" ++ prettyExp 
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 prettyExp (EPair a b) = "(" ++ prettyExp a ++ "," ++ prettyExp b ++ ")"
 prettyExp (ELabel id a) = T.unpack id ++ ":" ++ prettyExp a
+prettyExp (EAnnot typ a) = T.unpack (prettyType typ) ++ "::" ++ prettyExp a
 
 prettyType :: Type -> T.Text
 prettyType ty = case ty of

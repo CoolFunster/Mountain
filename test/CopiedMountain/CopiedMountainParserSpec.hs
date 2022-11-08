@@ -91,3 +91,21 @@ spec = do
         it "Should parse a label foo" $ do
           let res = parseExpr "temp:x -> x"
           res `shouldBe` Right (ELam (PLabel "temp" (PVar "x")) (EVar "x"))
+      describe "Annot" $ do
+        it "should parse a basic type" $ do
+          let res = parseExprWith pType "Int"
+          res `shouldBe` Right TInt
+        it "should parse a basic type foo" $ do
+          let res = parseExprWith pType "Int -> String"
+          res `shouldBe` Right (TFun TInt TString)
+        it "should parse an Annot" $ do
+          let res = parseExpr "Int :: 3"
+          res `shouldBe` Right (EAnnot TInt (ELit (LInt 3)))
+        it "should parse an Annot foo" $ do
+          let res = parseExpr "Int -> String :: 3"
+          res `shouldBe` Right (EAnnot (TFun TInt TString) (ELit (LInt 3)))
+        it "should parse a nested Annot" $ do
+          let res = parseExpr "Int -> String :: Int :: 3"
+          res `shouldBe` Right (EAnnot (TFun TInt TString) (EAnnot TInt (ELit (LInt 3))))
+
+

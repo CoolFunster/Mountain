@@ -32,7 +32,7 @@ main = do
     Right parsed -> do
       let (type_checked, _) = runTI (typeInference primitives parsed)
       case type_checked of
-        Left err -> error $ show parsed ++ "\n " ++ Text.unpack err ++ "\n"
+        Left err -> error $ prettyExp parsed ++ "\n " ++ Text.unpack err ++ "\n"
         Right t  -> do
           let type_str = Text.unpack (prettyScheme (generalize Map.empty t))
           raw_eval_result <- runWith initialState (evaluate (Just 30) parsed)

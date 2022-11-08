@@ -14,6 +14,7 @@ import qualified Data.Text as Text
 import Data.Functor (($>))
 import Control.Monad.Combinators.Expr
 import qualified Data.Map as M
+import Debug.Trace
 
 parseFile :: FilePath -> IO Exp
 parseFile fp = do
@@ -66,14 +67,16 @@ reservedIds :: [String]
 reservedIds = [
   -- "is",
   "true",
-  "false"
+  "false",
   -- "assert",
   -- "assertFail",
   -- "import"
-  -- "Char",
-  -- "String",
-  -- "Int",
-  -- "Float"
+  "Bool",
+  "Char",
+  "String",
+  "Int",
+  "Float",
+  "Thing"
   ]
 
 restrictedIdChars :: [Char]
@@ -96,17 +99,26 @@ pWrapWS :: [Char] -> Parser String
 pWrapWS input_str = try $ between (optional sc) (optional sc) (symbol input_str)
 
 pExpr :: Parser Exp
-pExpr = pBinExp <* optional (symbol ".")
+pExpr = pAnnot <* optional (symbol ".")
+
+pAnnot :: Parser Exp
+pAnnot = do
+  typ <- optional (try (pType <* pWrapWS "::"))
+  case typ of
+    Just st -> EAnnot st <$> pExpr
+    Nothing -> pBinExp
 
 pBinExp :: Parser Exp
 pBinExp = makeExprParser pCall [
-    [binaryR (try $ pWrapWS ":") pLabel],
+    [binaryR (try pColon) pLabel],
     [binaryR (try $ pWrapWS "->") (ELam . expAsPattern)],
     [binaryR (try $ pWrapWS "||") EMatch]
   ]
   where
     pLabel (EVar x) rhs = ELabel x rhs
     pLabel other rhs = error "labels can only have ids on the lhs"
+
+    pColon = optional sc *> symbol ":" <* notFollowedBy (symbol ":") <* optional sc
 
 pCall :: Parser Exp
 pCall = do
@@ -206,3 +218,51 @@ pInt = LInt <$> L.signed (L.space Text.Megaparsec.empty Text.Megaparsec.empty Te
 pFloat :: Parser Lit
 pFloat = LFloat <$> L.signed sc L.float
 
+pType :: Parser Type
+pType = pBinTyp
+
+pBinTyp :: Parser Type
+pBinTyp = makeExprParser pTypeAtom [
+    [binaryR (try $ pColon) pLabel],
+    [binaryR (try $ pWrapWS "->") TFun],
+    [binaryR (try $ pWrapWS "|") TSum]
+  ]
+  where
+    pLabel (TVar x) rhs = TLabel x rhs
+    pLabel other rhs = error "labels can only have ids on the lhs"
+
+    pColon = optional sc *> symbol ":" <* notFollowedBy (symbol ":") <* optional sc
+
+pTypeAtom :: Parser Type
+pTypeAtom =
+      pBuiltInType
+  <|> pTTuple
+  <|> pTVar
+
+pBuiltInType :: Parser Type
+pBuiltInType = choice [
+    symbol "Int" $> TInt,
+    symbol "Bool" $> TBool,
+    symbol "Char" $> TChar,
+    symbol "String" $> TString,
+    symbol "Float" $> TFloat,
+    symbol "Thing" $> TThing
+  ]
+
+pTVar :: Parser Type
+pTVar = TVar <$> identifier
+
+pTTuple :: Parser Type
+pTTuple = do
+  _ <- symbol "(" <* optional sc
+  inner <- sepEndBy1 pType (pWrapWS ",")
+  _ <- optional sc *> symbol ")"
+  case inner of
+    [] -> error "should not reach. Maybe unit at some point"
+    [x] -> return x
+    other -> return $ _fold other
+    where
+      _fold :: [Type] -> Type
+      _fold [x,y] = TPair x y
+      _fold (x:xs) = TPair x (_fold xs)
+      _fold other = error "should not reach"

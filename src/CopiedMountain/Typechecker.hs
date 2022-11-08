@@ -182,6 +182,10 @@ inferPattern (PPair a b) = do
 inferPattern (PLabel id x) = do
   (ctx, typ) <- inferPattern x
   return (ctx, TLabel id typ)
+inferPattern (PAnnot typ x) = do
+  (s1, typx) <- inferPattern x
+  (_, final_typ) <- unify typ typx 
+  return (s1, final_typ)
 
 infer :: Context -> Exp -> TI (Substitution, Type)
 infer ctx exp = case exp of
@@ -242,6 +246,10 @@ infer ctx exp = case exp of
   ELabel id x -> do
     (s1, typ) <- infer ctx x
     return (s1, TLabel id typ)
+  EAnnot typ x -> do
+    (s1, typx) <- infer ctx x
+    (fs, _) <- unify typ typx 
+    return (fs `composeSubst` s1, typ)
 
 typeInference :: Context -> Exp -> TI Type
 typeInference ctx exp = do
