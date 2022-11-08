@@ -100,9 +100,13 @@ pExpr = pBinExp <* optional (symbol ".")
 
 pBinExp :: Parser Exp
 pBinExp = makeExprParser pCall [
+    [binaryR (try $ pWrapWS ":") pLabel],
     [binaryR (try $ pWrapWS "->") (ELam . expAsPattern)],
     [binaryR (try $ pWrapWS "||") EMatch]
   ]
+  where
+    pLabel (EVar x) rhs = ELabel x rhs
+    pLabel other rhs = error "labels can only have ids on the lhs"
 
 pCall :: Parser Exp
 pCall = do
@@ -123,8 +127,6 @@ pCallNormal = do
 pExprAtom :: Parser Exp
 pExprAtom =
       try pTuple
-  <|> try pRecord
-  <|> try pSum
   <|> try pLet
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
@@ -151,28 +153,6 @@ pTuple = do
       _fold [x,y] = EPair x y
       _fold (x:xs) = EPair x (_fold xs)
       _fold other = error "should not reach"
-
-pLabeledExpr :: Parser (Id, Exp)
-pLabeledExpr = do
-  id_ <- identifier
-  _ <- pWrapWS ":"
-  exp_ <- pExpr
-  return (id_, exp_)
-
-pRecord :: Parser Exp
-pRecord = do
-  _ <- symbol "{" <* optional sc
-  inner <- sepEndBy1 pLabeledExpr (pWrapWS ",")
-  _ <- optional sc *> symbol "}"
-  case inner of
-    [] -> error "should not reach. Maybe unit at some point"
-    other -> return $ ERecord $ M.fromList other
-
-pSum :: Parser Exp
-pSum = do
-  id_ <- identifier
-  expr <- between (pWrapWS "<") (pWrapWS ">") pExpr
-  return $ ESum id_ expr
 
 pPattern :: Parser Pattern
 pPattern = (PLit <$> pLiteral) <|> (PVar <$> identifier)

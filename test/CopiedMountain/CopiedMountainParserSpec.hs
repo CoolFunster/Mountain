@@ -84,10 +84,10 @@ spec = do
         it "Should parse a let in a function" $ do
           let res = parseExpr "x -> a = b; a"
           res `shouldBe` Right (ELam (PVar "x") (ELet "a" (EVar "b") (EVar "a")))
-      describe "Sum" $ do
-        it "Should parse a sum" $ do
-          let res = parseExpr "temp<3>"
-          res `shouldBe` Right (ESum "temp" (ELit (LInt 3)))
-        it "Should parse a sum pattern" $ do
-          let res = parseExpr "temp<x> -> x"
-          res `shouldBe` Right (ELam (PSum "temp" (PVar "x")) (EVar "x"))
+      describe "Label" $ do
+        it "Should parse a label" $ do
+          let res = parseExpr "temp:3"
+          res `shouldBe` Right (ELabel "temp" (ELit (LInt 3)))
+        it "Should parse a label foo" $ do
+          let res = parseExpr "temp:x -> x"
+          res `shouldBe` Right (ELam (PLabel "temp" (PVar "x")) (EVar "x"))

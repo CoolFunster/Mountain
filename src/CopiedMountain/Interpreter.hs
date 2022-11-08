@@ -134,24 +134,10 @@ bind a@(PPair x y) b@(EPair x' y') = do
   res_a <- bind x x'
   res_b <- bind y y'
   return $ M.union res_a res_b
-bind a@(PRecord omap) b@(ERecord omap') = do
-  let k = M.keys omap
-  foldr f (pure M.empty) k
-  where
-    f :: (Monad m) => Id -> ContextT m Env -> ContextT m Env
-    f k cur_map' = do
-      let e = M.lookup k omap'
-      let p = fromJust $ M.lookup k omap
-      cur_map <- cur_map'
-      case e of
-        Nothing -> throwError $ BadBind a b
-        Just x -> do
-          bres <- bind p x
-          return $ M.union bres cur_map
-bind a@(PSum id pat) b@(ESum id' expr) = do
-  if id /= id
-    then throwError $ BadBind a b
-    else bind pat expr
+bind a@(PLabel id x) b@(ELabel id2 y) = do
+  if id == id2
+    then bind x y
+    else throwError $ BadBind a b
 bind a b = throwError $ BadBind a b
 
 
@@ -209,29 +195,14 @@ step t@(EPair a b) = do
   res <- step a
   c <- isChanged
   if c
-    then return $ EApp res b
+    then return $ EPair res b
   else do
     res' <- step b
     c' <- isChanged
     if c'
-      then return $ EApp a res'
+      then return $ EPair a res'
       else return t
-step t@(ERecord omap) = do
-  let (ids, exps) = unzip $ M.toList omap
-  exps' <- stepSeq exps
-  return $ ERecord $ M.fromList (zip ids exps')
-  where
-    stepSeq :: (Monad m) => [Exp] -> ContextT m [Exp]
-    stepSeq [] = return []
-    stepSeq (x:xs) = do
-      x' <- step x
-      c <- isChanged
-      if c 
-        then return (x':xs)
-        else do
-          res <- stepSeq xs
-          return (x:res)
-step t@(ESum id expr) = ESum id <$> step expr
+step t@(ELabel id exp) = ELabel id <$> step exp
 
 evaluate :: (Monad m) => Maybe Int -> Exp -> ContextT m Exp
 evaluate (Just 0) x = return x

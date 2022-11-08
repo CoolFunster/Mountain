@@ -108,6 +108,7 @@ test-suite spec
   other-modules:
       CopiedMountain.CopiedMountainParserSpec
       CopiedMountain.CopiedMountainSpec
+      CopiedMountain.CopiedMountainTypeCheckerSpec
       MountainParserSpec
       MountainSpec
       MountainTestsSpec

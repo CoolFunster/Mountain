@@ -21,8 +21,7 @@ prettyPattern :: Pattern -> String
 prettyPattern (PLit i) = prettyLit i
 prettyPattern (PVar v) = T.unpack v
 prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
-prettyPattern (PRecord omap) = "{" <> intercalate "," (map (\(a,b) -> T.unpack a <> ":" <> prettyPattern b) (M.toList omap)) <> "}"
-prettyPattern (PSum id pat) = T.unpack id <> "<" <> prettyPattern pat <> ">"
+prettyPattern (PLabel id x) = T.unpack id ++ ":" ++ prettyPattern x
 
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
@@ -31,9 +30,8 @@ prettyExp (EApp a b) = prettyExp a ++ "(" ++ prettyExp b ++ ")"
 prettyExp (ELam id e) = prettyPattern id ++ "->" ++ prettyExp e
 prettyExp (ELet id a b) = T.unpack id ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
-prettyExp (EPair a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
-prettyExp (ERecord omap) = "{" <> intercalate "," (map (\(a,b) -> T.unpack a <> ":" <> prettyExp b) (M.toList omap)) <> "}"
-prettyExp (ESum id expr) = T.unpack id ++ "<" ++ prettyExp expr ++ ">"
+prettyExp (EPair a b) = "(" ++ prettyExp a ++ "," ++ prettyExp b ++ ")"
+prettyExp (ELabel id a) = T.unpack id ++ ":" ++ prettyExp a
 
 prettyType :: Type -> T.Text
 prettyType ty = case ty of
@@ -48,8 +46,8 @@ prettyType ty = case ty of
     (if isFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
     <> " -> " <> prettyType ty2
   TPair ty1 ty2 -> "(" <> prettyType ty1 <> "," <> prettyType ty2 <> ")"
-  TRecord omap -> "{" <> T.intercalate "," (map (\(a,b) -> a <> ":" <> prettyType b) (M.toList omap)) <> "}"
-  TSum omap -> "(" <> T.intercalate "|" (map (\(a,b) -> a <> "<" <> prettyType b <> ">") (M.toList omap)) <> ")"
+  TSum ty1 ty2 -> "(" <> prettyType ty1 <> "|" <> prettyType ty2 <> ")"
+  TLabel id x -> id <> ":" <> prettyType x
 
 prettyScheme :: Scheme -> T.Text
 prettyScheme (Scheme [] ty) = prettyType ty

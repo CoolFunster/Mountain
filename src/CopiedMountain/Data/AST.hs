@@ -10,7 +10,7 @@ import Data.List (intercalate)
 type Id = Text
 type Env = M.Map Id Exp
 
-data Exp = 
+data Exp =
     ELit Lit
   | EVar Id
   | EApp Exp Exp
@@ -18,8 +18,7 @@ data Exp =
   | ELet Id Exp Exp
   | EMatch Exp Exp
   | EPair Exp Exp
-  | ESum Id Exp
-  | ERecord (M.Map Id Exp)
+  | ELabel Id Exp
   deriving (Eq, Ord, Show)
 
 data Lit
@@ -33,7 +32,7 @@ data Lit
 
 data Type
   = TInt
-  | TBool 
+  | TBool
   | TChar
   | TString
   | TFloat
@@ -41,16 +40,15 @@ data Type
   | TVar Text
   | TFun Type Type
   | TPair Type Type
-  | TRecord (M.Map Id Type)
-  | TSum (M.Map Id Type)
+  | TSum Type Type
+  | TLabel Id Type
   deriving (Eq, Ord, Show)
 
 data Pattern =
     PLit Lit
   | PVar Id
   | PPair Pattern Pattern
-  | PRecord (M.Map Id Pattern)
-  | PSum Id Pattern
+  | PLabel Id Pattern
   deriving (Eq, Ord, Show)
 
 data Scheme = Scheme [Text] Type
@@ -73,15 +71,14 @@ renameVar ty (old, new) = case ty of
   TVar var -> TVar (if var == old then new else var)
   TFun t1 t2 -> TFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
-  TRecord omap -> TRecord (M.map (\x -> renameVar x (old, new)) omap)
-  TSum omap -> TSum (M.map (\x -> renameVar x (old, new)) omap)
+  TSum t1 t2 -> TSum (renameVar t1 (old, new)) (renameVar t2 (old, new))
+  TLabel id t1 -> TLabel id (renameVar t1 (old, new))
 
 expAsPattern :: Exp -> Pattern
 expAsPattern (EVar id) = PVar id
 expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
-expAsPattern (ERecord omap) = PRecord (M.map expAsPattern omap)
-expAsPattern (ESum id expr) = PSum id (expAsPattern expr)
+expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
@@ -91,5 +88,4 @@ patternAsExp :: Pattern -> Exp
 patternAsExp (PVar id) = EVar id
 patternAsExp (PLit l) = ELit l
 patternAsExp (PPair a b) = EPair (patternAsExp a) (patternAsExp b)
-patternAsExp (PRecord omap) = ERecord (M.map patternAsExp omap)
-patternAsExp (PSum id pat) = ESum id (patternAsExp pat)
+patternAsExp (PLabel id exp) = ELabel id (patternAsExp exp)

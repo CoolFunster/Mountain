@@ -5,7 +5,7 @@ import CopiedMountain.PrettyPrinter
 
 import Control.Monad (replicateM)
 import Control.Monad.State (State, runState, get, put, gets, modify)
-import Control.Monad.Except (ExceptT, runExceptT, throwError)
+import Control.Monad.Except (ExceptT, runExceptT, throwError, MonadError (catchError))
 import Data.Maybe (fromMaybe, fromJust)
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -26,8 +26,8 @@ emptySubst = Map.empty
 applySubst :: Substitution -> Type -> Type
 applySubst subst ty = case ty of
   TPair a b -> TPair (applySubst subst a) (applySubst subst b)
-  TRecord omap -> TRecord (Map.map (applySubst subst) omap)
-  TSum omap -> TSum (Map.map (applySubst subst) omap)
+  TSum a b -> TSum (applySubst subst a) (applySubst subst b)
+  TLabel id x -> TLabel id (applySubst subst x)
   TVar var ->
     fromMaybe (TVar var) (Map.lookup var subst)
   TFun arg res ->
@@ -98,43 +98,42 @@ unify (TPair a b) (TPair a' b') = do
   (s2, tyB) <- unify (applySubst s1 b) (applySubst s1 b')
   let final_subs = s2 `composeSubst` s1
   return (final_subs, applySubst final_subs (TPair tyA tyB))
-unify (TRecord omap) (TRecord omap') = do
-  let keys = Map.keysSet omap
-  let keys' = Map.keysSet omap'
-  let int_keys = Set.intersection keys keys'
-  (final_subs, final_ty) <- foldr f (pure (Map.empty, TRecord Map.empty)) int_keys
-  return (final_subs, applySubst final_subs final_ty)
-    where
-      f :: Id -> TI (Substitution,Type) -> TI (Substitution, Type)
-      f id m = do
-        (cur_subs, cur_map') <- m
-        let TRecord cur_map = cur_map'
-        let k = fromJust $ Map.lookup id omap
-        let k' = fromJust $ Map.lookup id omap'
-        (res_subs, res_ty) <- unify (applySubst cur_subs k) (applySubst cur_subs k')
-        return (res_subs `composeSubst` cur_subs, TRecord (Map.union (Map.singleton id res_ty) cur_map))
-unify (TSum omap) (TSum omap') = do
-  let keys = Map.keysSet omap
-  let keys' = Map.keysSet omap'
-  let int_keys = Set.intersection keys keys'
-  (final_subs, middle_ty) <- foldr f (pure (Map.empty, TSum Map.empty)) int_keys
-  let TSum middle_ty' = applySubst final_subs middle_ty
-  return (final_subs, TSum $ Map.unions [middle_ty', omap, omap'])
-    where
-      f :: Id -> TI (Substitution,Type) -> TI (Substitution, Type)
-      f id m = do
-        (cur_subs, cur_map') <- m
-        let TSum cur_map = cur_map'
-        let k = fromJust $ Map.lookup id omap
-        let k' = fromJust $ Map.lookup id omap'
-        (res_subs, res_ty) <- unify (applySubst cur_subs k) (applySubst cur_subs k')
-        return (res_subs `composeSubst` cur_subs, TSum (Map.union (Map.singleton id res_ty) cur_map))
+unify a@(TLabel id x) b@(TLabel id2 y) = do
+  if id == id2
+    then do
+      (ctx, ty) <- unify x y
+      return (ctx, TLabel id ty)
+    else throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
 unify (TVar u) t = do
   res <- varBind u t
   return (res, applySubst res t)
 unify t (TVar u) = do
   res <- varBind u t
   return (res, applySubst res t)
+unify a@(TSum x y) b = do
+  res <- tryUnify x b
+  case res of
+    Nothing -> do
+      res2 <- tryUnify y b
+      case res2 of
+        Nothing -> throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
+        Just s' -> return s'
+    Just s -> return s
+  where
+    tryUnify :: Type -> Type -> TI (Maybe (Substitution, Type))
+    tryUnify a b = (Just <$> unify a b) `catchError` (\e -> return Nothing)
+unify a b@(TSum x' y') = do
+  res <- tryUnify a x'
+  case res of
+    Nothing -> do
+      res2 <- tryUnify a y'
+      case res2 of
+        Nothing -> throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
+        Just s' -> return s'
+    Just s -> return s
+    where
+      tryUnify :: Type -> Type -> TI (Maybe (Substitution, Type))
+      tryUnify a b = (Just <$> unify a b) `catchError` (\e -> return Nothing)
 unify t1 t2 =
   throwError ("types do not unify: " <> showT t1 <> " vs. " <> showT t2)
 
@@ -180,14 +179,9 @@ inferPattern (PPair a b) = do
   (ctxa, tya) <- inferPattern a
   (ctxb, tyb) <- inferPattern b
   return (Map.union ctxa ctxb, TPair tya tyb)
-inferPattern (PRecord omap) = do
-  let (ids,patts) = unzip $ Map.toList omap
-  res <- mapM inferPattern patts
-  let (ctxs, typs) = unzip res
-  return (Map.unions ctxs, TRecord $ Map.fromList $ zip ids typs)
-inferPattern (PSum id pat) = do
-  (ctx, ty) <- inferPattern pat
-  return (ctx, TSum (Map.singleton id ty))
+inferPattern (PLabel id x) = do
+  (ctx, typ) <- inferPattern x
+  return (ctx, TLabel id typ)
 
 infer :: Context -> Exp -> TI (Substitution, Type)
 infer ctx exp = case exp of
@@ -203,7 +197,9 @@ infer ctx exp = case exp of
     tyRes <- newTyVar
     (s1, tyFun) <- infer ctx fun
     (s2, tyArg) <- infer (applySubstCtx s1 ctx) arg
-    unify (applySubst s2 tyFun) (TFun tyArg tyRes)
+    (ctx, final_typ) <- unify (applySubst s2 tyFun) (TFun tyArg tyRes)
+    let TFun a b = final_typ
+    return (ctx, b)
   ELam pattern body -> do
     (ctx_p, tyP) <- inferPattern pattern
     let tmpCtx = Map.union ctx_p ctx
@@ -212,11 +208,27 @@ infer ctx exp = case exp of
   m@(EMatch a b) -> do
     foo_type <- TFun <$> newTyVar <*> newTyVar
     (s1, tyA) <- infer ctx a
-    (s2, tyB) <- infer (applySubstCtx s1 ctx) b
-    (final_subs, final_ty) <- unify (applySubst s2 tyA) tyB
-    case final_ty of
-      TFun _ _ -> return (final_subs, final_ty)
-      other -> throwError $ T.pack ("Matches need to be functions: " <>  show m)
+    if not $ isFun tyA
+      then err
+    else do
+      (s2, tyB) <- infer (applySubstCtx s1 ctx) b
+      if not $ isFun tyB
+        then err
+      else do
+        (final_subs, final_ty) <- unify (applySubst s2 tyA) tyB
+        case final_ty of
+          TFun _ _ -> return (final_subs, final_ty)
+          other -> err
+        `catchError` (\e -> do {
+              let TFun ax ay = applySubst s2 tyA
+            ; let TFun bx by = tyB
+            ; (subs_x, tyX) <- unifyJoin ax bx 
+            ; (subs_y, tyY) <- unifyJoin ay by 
+            ; return (subs_x `composeSubst` subs_y, TFun tyX tyY)
+          })
+    where
+      err = throwError $ T.pack ("Matches need to be functions: " <>  show m)
+      unifyJoin a b = unify a b `catchError` (\e -> return (emptySubst, TSum a b))  
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
     let scheme = Scheme [] (applySubst s1 tyBinder)
@@ -227,16 +239,9 @@ infer ctx exp = case exp of
     (s1, tyA) <- infer ctx a
     (s2, tyB) <- infer (applySubstCtx s1 ctx) b
     return (s2 `composeSubst` s1, TPair (applySubst s2 tyA) tyB)
-  ERecord omap -> do
-    res <- mapM (infer ctx) omap
-    let (ids, typsNSubs) = unzip $ Map.toList res
-    let (subs, typs) = unzip typsNSubs
-    let final_sub = foldr1 composeSubst subs
-    let final_typs = map (applySubst final_sub) typs
-    return (final_sub, TRecord $ Map.fromList $ zip ids final_typs)
-  ESum id a -> do
-    (s1, tyA) <- infer ctx a
-    return (s1, TSum (Map.singleton id tyA))
+  ELabel id x -> do
+    (s1, typ) <- infer ctx x
+    return (s1, TLabel id typ)
 
 typeInference :: Context -> Exp -> TI Type
 typeInference ctx exp = do
