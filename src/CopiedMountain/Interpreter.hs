@@ -125,6 +125,20 @@ getEnv = do
   let State _ e _ = env
   return e
 
+replace :: Env -> Exp -> Exp
+replace env e@(ELit _) = e
+replace env e@(EVar id) =
+  case M.lookup id env of
+    Nothing -> e
+    Just x -> x
+replace env (EApp a b) = EApp (replace env a) (replace env b)
+replace env (ELam p b) = ELam p (replace env b)
+replace env (ELet id a b) = ELet id (replace env a) (replace env b)
+replace env (EMatch a b) = EMatch (replace env a) (replace env b)
+replace env (EPair a b) = EPair (replace env a) (replace env b)
+replace env (ELabel id x) = ELabel id (replace env x)
+replace env (EAnnot t x) = EAnnot t (replace env x)
+
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind (PVar id) x = return $ M.singleton id x
 bind a@(PLit l) b@(ELit l')
@@ -144,10 +158,7 @@ bind a b = throwError $ BadBind a b
 
 step :: (Monad m) => Exp -> ContextT m Exp
 step t@(ELit _) = return t
-step t@(EVar id) = do
-  res <- getDef id
-  markChanged
-  return res
+step t@(EVar id) = getDef id
 step t@(ELam _ _) = return t
 step t@(EMatch x y) = return t
 step t@(EAnnot _ x) = do
@@ -160,11 +171,8 @@ step t@(EApp a@(ELam pat y) b) = do
     then return $ EApp a res
     else do
       pat_e <- bind pat b
-      e <- popEnv
-      let e' = M.union pat_e e
-      pushEnv e'
       markChanged
-      return y
+      return $ replace pat_e y
 step t@(EApp a@(EMatch x y) b) = do
   step (EApp x b)
   `catchError` (\case
@@ -183,7 +191,7 @@ step t@(EApp a b) = do
     c' <- isChanged
     if c'
       then return $ EApp a res'
-      else error "Should not reach here, bad typechecking on application"
+      else error "Should not reach here, bad typechecking of calls"
 step t@(ELet id x y) = do
   res_x <- step x
   c <- isChanged
@@ -191,10 +199,7 @@ step t@(ELet id x y) = do
     then return $ ELet id res_x y
     else do
       markChanged
-      e <- popEnv
-      let e' = M.insert id x e
-      pushEnv e'
-      return y
+      return (replace (M.singleton id x) y)
 step t@(EPair a b) = do
   res <- step a
   c <- isChanged

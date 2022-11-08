@@ -1,1 +1,1 @@
-(String -> Int :: "hello" -> 1) ("hello")
+(x -> y -> y) (3) (2)

@@ -40,4 +40,9 @@ spec = do
         -- ast `shouldBe` Right (EMatch (EApp (ELam (PVar "x") (EVar "x")) (ELit (LInt 3))) (EApp (ELam (PLit (LInt 3)) (ELit (LInt 3))) (ELit (LInt 3))))
         (Right (res, state), log) <- runWith initialState $ I.evaluate (Just 20) (fromRight (error "") ast)
         res `shouldBe` ELit (LInt 1)
+      it "Should handle this case 4" $ do
+        let ast = parseExpr "(x -> y -> x) (3) (4)"
+        -- ast `shouldBe` Right (EApp (EApp (ELam (PVar "x") (ELam (PVar "y") (EVar "x"))) (ELit (LInt 3))) (ELit (LInt 4)))
+        (Right (res, state), log) <- runWith initialState $ I.evaluate (Just 20) (fromRight (error "") ast)
+        res `shouldBe` ELit (LInt 3)
         

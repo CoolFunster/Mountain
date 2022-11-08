@@ -1,7 +1,8 @@
-- type annotations
-  - explicit term with Type and Exp in it
+ - remove ctxs
  - recursion
   - let rec
+ - higher kinded types
+ - higher kinded modules
  - Imports
     - avoid cycles?
  - Type Functions/labels?
