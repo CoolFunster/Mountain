@@ -1,4 +1,5 @@
  - higher kinded types
+ - type vars start capital, normal are lower
  - Unique types
  - higher kinded modules
  - Imports

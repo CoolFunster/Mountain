@@ -12,7 +12,7 @@ import Test.Hspec
 -- TODO Split into respective files
 
 spec :: Spec
-spec = parallel $ do
+spec = do
     describe "Structure" $ do
       describe "Var" $ do
         it "Should parse Var" $ do

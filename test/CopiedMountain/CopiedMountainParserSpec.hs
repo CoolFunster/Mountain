@@ -111,4 +111,8 @@ spec = do
         it "should parse a recursive function" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
           res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (ELam (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
-
+      describe "TypeDefs" $ do
+        it "should handle typedefs" $ do
+          let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
+          res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (ELam (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
+          

@@ -65,18 +65,15 @@ postfix inner_parser f = Postfix (f <$ inner_parser)
 
 reservedIds :: [String]
 reservedIds = [
-  -- "is",
   "true",
   "false",
-  -- "assert",
-  -- "assertFail",
-  -- "import"
   "Bool",
   "Char",
   "String",
   "Int",
   "Float",
-  "Thing"
+  "Thing",
+  "type"
   ]
 
 restrictedIdChars :: [Char]
@@ -90,7 +87,7 @@ identifier = do
       then fail $ "Cannot use " ++ name ++ " as it is a reserved keyword"
     else if "_" `isPrefixOf` name
       then fail $ "Cannot start varname with underscore like " ++ name
-    else return $ pack name
+    else return name
     where
       isValidChar :: Char -> Bool
       isValidChar c = not (c `elem` restrictedIdChars || isSpace c)
@@ -141,6 +138,7 @@ pExprAtom :: Parser Exp
 pExprAtom =
       try pTuple
   <|> try pLet
+  <|> try pTDef
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
 
@@ -152,13 +150,22 @@ pLet = do
   _ <- rword ";" <* sc
   ELet var expr1 <$> pExpr
 
+pTDef :: Parser Exp
+pTDef = do
+  _ <- symbol "type" <* sc
+  n <- identifier
+  _ <- pWrapWS "="
+  expr1 <- pType
+  _ <- symbol ";" <* sc
+  ETDef n expr1 <$> pExpr
+
 pTuple :: Parser Exp
 pTuple = do
   _ <- symbol "(" <* optional sc
-  inner <- sepEndBy1 pExpr (pWrapWS ",")
+  inner <- sepEndBy pExpr (pWrapWS ",")
   _ <- optional sc *> symbol ")"
   case inner of
-    [] -> error "should not reach. Maybe unit at some point"
+    [] -> return $ ELit LUnit
     [x] -> return x
     other -> return $ _fold other
     where
@@ -223,8 +230,8 @@ pType :: Parser Type
 pType = pBinTyp
 
 pBinTyp :: Parser Type
-pBinTyp = makeExprParser pTypeAtom [
-    [binaryR (try $ pColon) pLabel],
+pBinTyp = makeExprParser pTCall [
+    [binaryR (try pColon) pLabel],
     [binaryR (try $ pWrapWS "->") TFun],
     [binaryR (try $ pWrapWS "|") TSum]
   ]
@@ -234,11 +241,28 @@ pBinTyp = makeExprParser pTypeAtom [
 
     pColon = optional sc *> symbol ":" <* notFollowedBy (symbol ":") <* optional sc
 
+pTCall :: Parser Type
+pTCall = do
+  struct1 <- pTypeAtom
+  struct2 <- many $ try (optional sc *> (pTCallInfix <|> pTCallNormal))
+  return $ foldl' (\state f -> f state) struct1 struct2
+
+pTCallInfix :: Parser (Type -> Type)
+pTCallInfix = do
+  struct <- between (symbol "`") (symbol "`") pTypeAtom
+  return $ TCall struct
+
+pTCallNormal :: Parser (Type -> Type)
+pTCallNormal = do
+  struct <- try pTypeAtom
+  return (`TCall` struct)
+
 pTypeAtom :: Parser Type
 pTypeAtom =
       pBuiltInType
   <|> pTTuple
   <|> pTVar
+  <|> TType <$> try pKind
 
 pBuiltInType :: Parser Type
 pBuiltInType = choice [
@@ -256,10 +280,10 @@ pTVar = TVar <$> identifier
 pTTuple :: Parser Type
 pTTuple = do
   _ <- symbol "(" <* optional sc
-  inner <- sepEndBy1 pType (pWrapWS ",")
+  inner <- sepEndBy pType (pWrapWS ",")
   _ <- optional sc *> symbol ")"
   case inner of
-    [] -> error "should not reach. Maybe unit at some point"
+    [] -> return TUnit
     [x] -> return x
     other -> return $ _fold other
     where
@@ -267,3 +291,16 @@ pTTuple = do
       _fold [x,y] = TPair x y
       _fold (x:xs) = TPair x (_fold xs)
       _fold other = error "should not reach"
+
+pKind :: Parser Kind
+pKind = pBinKind
+
+pBinKind :: Parser Kind
+pBinKind = makeExprParser pKindAtom [
+    [binaryR (optional sc) KApp],
+    [binaryR (try $ pWrapWS "->") KFun]
+  ]
+
+pKindAtom :: Parser Kind
+pKindAtom = symbol "Type" $> KType
+  <|> parens pKindAtom

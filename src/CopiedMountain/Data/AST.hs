@@ -5,45 +5,68 @@ import Prelude hiding (unwords)
 import Data.Text (Text, unwords)
 import qualified Data.Text as Text
 import qualified Data.Map as M
+import qualified Data.Set as S
 import Data.List (intercalate)
 
-type Id = Text
+
+-- Main Lambda Calculus
+type Id = String
 type Env = M.Map Id Exp
 
 data Exp =
-    ELit Lit
-  | EVar Id
+  -- calculus
+    EVar Id
   | EApp Exp Exp
   | ELam Pattern Exp
   | ELet Id Exp Exp
+  | EAnnot Type Exp
+  -- type statements
+  | ETDef Id Type Exp
+  -- data types
+  | ELit Lit
   | ERec Id Exp
   | EMatch Exp Exp
   | EPair Exp Exp
   | ELabel Id Exp
-  | EAnnot Type Exp
   deriving (Eq, Ord, Show)
 
 data Lit
-  = LInt Integer
+  =
+    LUnit 
+  | LInt Integer
   | LBool Bool
-  | LThing Text
+  | LThing String
   | LChar Char
   | LString String
   | LFloat Float
   deriving (Eq, Ord, Show)
 
 data Type
-  = TInt
+  = 
+  -- Builtins
+    TInt
   | TBool
   | TChar
   | TString
   | TFloat
   | TThing
-  | TVar Text
+  | TUnit
+  -- Calculus
+  | TVar Id
   | TFun Type Type
+  -- Data Structures
   | TPair Type Type
   | TSum Type Type
   | TLabel Id Type
+  -- Kinds
+  | TType Kind
+  | TCall Type Type
+  deriving (Eq, Ord, Show)
+
+data Kind =
+    KType
+  | KFun Kind Kind
+  | KApp Kind Kind
   deriving (Eq, Ord, Show)
 
 data Pattern =
@@ -54,8 +77,7 @@ data Pattern =
   | PAnnot Type Pattern
   deriving (Eq, Ord, Show)
 
-data Scheme = Scheme [Text] Type
-
+data Scheme = Scheme [Id] Type deriving (Show)
 
 -- Ignore from here onwards
 isFun :: Type -> Bool
@@ -63,8 +85,9 @@ isFun ty = case ty of
   TFun _ _ -> True
   _ -> False
 
-renameVar :: Type -> (Text, Text) -> Type
+renameVar :: Type -> (Id, Id) -> Type
 renameVar ty (old, new) = case ty of
+  TUnit -> TUnit
   TInt -> TInt
   TBool -> TBool
   TChar -> TChar
@@ -76,6 +99,8 @@ renameVar ty (old, new) = case ty of
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TSum t1 t2 -> TSum (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TLabel id t1 -> TLabel id (renameVar t1 (old, new))
+  TType x -> TType x
+  TCall a b -> TCall a b
 
 expAsPattern :: Exp -> Pattern
 expAsPattern (EVar id) = PVar id
@@ -83,6 +108,7 @@ expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
 expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
 expAsPattern (EAnnot typ exp) = PAnnot typ (expAsPattern exp)
+expAsPattern t@(ETDef _ _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t

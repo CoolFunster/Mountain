@@ -18,7 +18,7 @@ import CopiedMountain.Data.AST
 import Debug.Trace
 import qualified Data.Text as T
 
-type Substitution = Map Text Type
+type Substitution = Map String Type
 
 emptySubst :: Substitution
 emptySubst = Map.empty
@@ -28,8 +28,9 @@ applySubst subst ty = case ty of
   TPair a b -> TPair (applySubst subst a) (applySubst subst b)
   TSum a b -> TSum (applySubst subst a) (applySubst subst b)
   TLabel id x -> TLabel id (applySubst subst x)
-  TVar var ->
-    fromMaybe (TVar var) (Map.lookup var subst)
+  TVar var -> case Map.lookup var subst of
+    Nothing -> TVar var
+    Just x -> x
   TFun arg res ->
     TFun (applySubst subst arg) (applySubst subst res)
   TInt -> TInt
@@ -38,6 +39,29 @@ applySubst subst ty = case ty of
   TString -> TString
   TFloat -> TFloat
   TThing -> TThing
+  TType k -> TType k
+  TUnit -> TUnit
+  TCall a b -> TCall (applySubst subst a) (applySubst subst b)
+
+applySubstOnPattern :: Substitution -> Pattern -> Pattern
+applySubstOnPattern s (PLit l) = PLit l
+applySubstOnPattern s (PVar id) = PVar id
+applySubstOnPattern s (PPair a b) = PPair (applySubstOnPattern s a) (applySubstOnPattern s b)
+applySubstOnPattern s (PLabel id b) = PLabel id (applySubstOnPattern s b)
+applySubstOnPattern s (PAnnot typ b) = PAnnot (applySubst s typ) (applySubstOnPattern s b)
+
+applySubstOnExpr :: Substitution -> Exp -> Exp
+applySubstOnExpr subst t@(EVar id) = t
+applySubstOnExpr s t@(EApp a b) = EApp (applySubstOnExpr s a) (applySubstOnExpr s b)
+applySubstOnExpr s t@(ELam a b) = ELam (applySubstOnPattern s a) (applySubstOnExpr s b)
+applySubstOnExpr s t@(ELet id a b) = ELet id (applySubstOnExpr s a) (applySubstOnExpr s b)
+applySubstOnExpr s (EAnnot typ x) = EAnnot (applySubst s typ) (applySubstOnExpr s x)
+applySubstOnExpr s (ETDef id typ x) = ETDef id (applySubst s typ) (applySubstOnExpr s x)
+applySubstOnExpr s (ELit l) = ELit l
+applySubstOnExpr s (ERec id r) = ERec id (applySubstOnExpr s r)
+applySubstOnExpr s (EMatch a b) = EMatch (applySubstOnExpr s a) (applySubstOnExpr s b)
+applySubstOnExpr s (EPair a b) = EPair (applySubstOnExpr s a) (applySubstOnExpr s b)
+applySubstOnExpr s (ELabel id b) = ELabel id (applySubstOnExpr s b)
 
 applySubstScheme :: Substitution -> Scheme -> Scheme
 applySubstScheme subst (Scheme vars t) =
@@ -49,9 +73,9 @@ applySubstScheme subst (Scheme vars t) =
 composeSubst :: Substitution -> Substitution -> Substitution
 composeSubst s1 s2 = Map.union (Map.map (applySubst s1) s2) s1
 
-type TI a = ExceptT Text (State Int) a
+type TI a = ExceptT String (State Int) a
 
-runTI :: TI a -> (Either Text a, Int)
+runTI :: TI a -> (Either String a, Int)
 runTI ti = runState (runExceptT ti) 0
 
 -- | Creates a fresh type variable
@@ -61,7 +85,7 @@ newTyVar = do
   put (s + 1)
   return (TVar ("u" <> showT s))
 
-freeTypeVars :: Type -> Set Text
+freeTypeVars :: Type -> Set Id
 freeTypeVars ty = case ty of
  TVar var ->
    Set.singleton var
@@ -70,47 +94,61 @@ freeTypeVars ty = case ty of
  _ ->
    Set.empty
 
-freeTypeVarsScheme :: Scheme -> Set Text
+freeTypeVarsScheme :: Scheme -> Set Id
 freeTypeVarsScheme (Scheme vars t) =
   Set.difference (freeTypeVars t) (Set.fromList vars)
 
 -- | Creates a fresh unification variable and binds it to the given type
-varBind :: Text -> Type -> TI Substitution
+varBind :: String -> Type -> TI Substitution
 varBind var ty
   | ty == TVar var = return emptySubst
   | var `Set.member` freeTypeVars ty = throwError "occurs check failed"
   | otherwise = return (Map.singleton var ty)
 
-unify :: Type -> Type -> TI (Substitution, Type)
-unify TInt TInt = return (emptySubst, TInt)
-unify TBool TBool = return (emptySubst, TBool)
-unify TChar TChar = return (emptySubst, TChar)
-unify TString TString = return (emptySubst, TString)
-unify TFloat TFloat = return (emptySubst, TFloat)
-unify TThing TThing = return (emptySubst, TThing)
-unify (TFun l r) (TFun l' r') = do
-  (s1, tyl) <- unify l l'
-  (s2, tyr) <- unify (applySubst s1 r) (applySubst s1 r')
+unify :: Context -> Type -> Type -> TI (Substitution, Type)
+unify _ TUnit TUnit = return (emptySubst, TUnit)
+unify _ TInt TInt = return (emptySubst, TInt)
+unify _ TBool TBool = return (emptySubst, TBool)
+unify _ TChar TChar = return (emptySubst, TChar)
+unify _ TString TString = return (emptySubst, TString)
+unify _ TFloat TFloat = return (emptySubst, TFloat)
+unify _ TThing TThing = return (emptySubst, TThing)
+unify ctx (TFun l r) (TFun l' r') = do
+  (s1, tyl) <- unify ctx l l'
+  (s2, tyr) <- unify ctx (applySubst s1 r) (applySubst s1 r')
   let final_subs = s2 `composeSubst` s1
   return (final_subs, applySubst final_subs $ TFun tyl tyr)
-unify (TPair a b) (TPair a' b') = do
-  (s1, tyA) <- unify a a'
-  (s2, tyB) <- unify (applySubst s1 b) (applySubst s1 b')
+unify ctx (TPair a b) (TPair a' b') = do
+  (s1, tyA) <- unify ctx a a'
+  (s2, tyB) <- unify ctx (applySubst s1 b) (applySubst s1 b')
   let final_subs = s2 `composeSubst` s1
   return (final_subs, applySubst final_subs (TPair tyA tyB))
-unify a@(TLabel id x) b@(TLabel id2 y) = do
+unify ctx a@(TLabel id x) b@(TLabel id2 y) = do
   if id == id2
     then do
-      (ctx, ty) <- unify x y
+      (ctx, ty) <- unify ctx x y
       return (ctx, TLabel id ty)
     else throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
-unify (TVar u) t = do
-  res <- varBind u t
-  return (res, applySubst res t)
-unify t (TVar u) = do
-  res <- varBind u t
-  return (res, applySubst res t)
-unify a@(TSum x y) b = do
+unify ctx (TVar u) t = do
+  case Map.lookup u ctx of
+    Nothing -> do
+      res <- varBind u t
+      return (res, applySubst res t)
+    Just any -> do
+      resT <- instantiate any
+      unify ctx resT t
+unify ctx a b@(TVar u) = unify ctx b a
+unify ctx a@(TCall (TVar id) b) c = do
+  case Map.lookup id ctx of
+    Nothing -> throwError ("types do not unify: " <> showT a <> " vs. " <> showT c)
+    Just any -> do
+      res <- instantiate any
+      unify ctx (TCall res b) c
+unify ctx (TCall (TFun x y) b) c = do
+  (subs, typX) <- unify ctx x b
+  unify ctx (applySubst subs y) c
+unify ctx a b@(TCall _ _) = unify ctx b a
+unify ctx a@(TSum x y) b = do
   res <- tryUnify x b
   case res of
     Nothing -> do
@@ -121,30 +159,17 @@ unify a@(TSum x y) b = do
     Just s -> return s
   where
     tryUnify :: Type -> Type -> TI (Maybe (Substitution, Type))
-    tryUnify a b = (Just <$> unify a b) `catchError` (\e -> return Nothing)
-unify a b@(TSum x' y') = do
-  res <- tryUnify a x'
-  case res of
-    Nothing -> do
-      res2 <- tryUnify a y'
-      case res2 of
-        Nothing -> throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
-        Just s' -> return s'
-    Just s -> return s
-    where
-      tryUnify :: Type -> Type -> TI (Maybe (Substitution, Type))
-      tryUnify a b = (Just <$> unify a b) `catchError` (\e -> return Nothing)
-unify t1 t2 =
+    tryUnify a b = (Just <$> unify ctx a b) `catchError` (\e -> return Nothing)
+unify ctx a b@(TSum x' y') = unify ctx b a
+unify _ t1 t2 =
   throwError ("types do not unify: " <> showT t1 <> " vs. " <> showT t2)
 
-
-
-type Context = Map Text Scheme
+type Context = Map String Scheme
 
 applySubstCtx :: Substitution -> Context -> Context
 applySubstCtx subst = Map.map (applySubstScheme subst)
 
-freeTypeVarsCtx :: Context -> Set Text
+freeTypeVarsCtx :: Context -> Set String
 freeTypeVarsCtx ctx = foldMap freeTypeVarsScheme (Map.elems ctx)
 
 generalize :: Context -> Type -> Scheme
@@ -166,25 +191,26 @@ inferLiteral lit =
     LThing _ -> TThing
     LChar _ -> TChar
     LString _ -> TString
-    LFloat _ -> TFloat)
+    LFloat _ -> TFloat
+    LUnit -> TUnit)
 
-inferPattern :: Pattern -> TI (Context, Type)
-inferPattern (PLit binder) = do
+inferPattern :: Context -> Pattern -> TI (Context, Type)
+inferPattern _ (PLit binder) = do
   (_, tyBinder) <- inferLiteral binder
   return (Map.empty, tyBinder)
-inferPattern (PVar binder) = do
+inferPattern _ (PVar binder) = do
   tyBinder <- newTyVar
   return (Map.singleton binder (Scheme [] tyBinder), tyBinder)
-inferPattern (PPair a b) = do
-  (ctxa, tya) <- inferPattern a
-  (ctxb, tyb) <- inferPattern b
+inferPattern ctx (PPair a b) = do
+  (ctxa, tya) <- inferPattern ctx a
+  (ctxb, tyb) <- inferPattern ctx b
   return (Map.union ctxa ctxb, TPair tya tyb)
-inferPattern (PLabel id x) = do
-  (ctx, typ) <- inferPattern x
-  return (ctx, TLabel id typ)
-inferPattern (PAnnot typ x) = do
-  (s1, typx) <- inferPattern x
-  (_, final_typ) <- unify typ typx
+inferPattern ctx (PLabel id x) = do
+  (new_ctx, typ) <- inferPattern ctx x
+  return (new_ctx, TLabel id typ)
+inferPattern ctx (PAnnot typ x) = do
+  (s1, typx) <- inferPattern ctx x
+  (_, final_typ) <- unify ctx typ typx
   return (s1, final_typ)
 
 infer :: Context -> Exp -> TI (Substitution, Type)
@@ -201,11 +227,11 @@ infer ctx exp = case exp of
     tyRes <- newTyVar
     (s1, tyFun) <- infer ctx fun
     (s2, tyArg) <- infer (applySubstCtx s1 ctx) arg
-    (ctx, final_typ) <- unify (applySubst s2 tyFun) (TFun tyArg tyRes)
+    (ctx, final_typ) <- unify ctx (applySubst s2 tyFun) (TFun tyArg tyRes)
     let TFun a b = final_typ
     return (ctx, b)
   ELam pattern body -> do
-    (ctx_p, tyP) <- inferPattern pattern
+    (ctx_p, tyP) <- inferPattern ctx pattern
     let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
     return (s1, TFun (applySubst s1 tyP) tyBody)
@@ -219,7 +245,7 @@ infer ctx exp = case exp of
       if not $ isFun tyB
         then err
       else do
-        (final_subs, final_ty) <- unify (applySubst s2 tyA) tyB
+        (final_subs, final_ty) <- unify ctx (applySubst s2 tyA) tyB
         case final_ty of
           TFun _ _ -> return (final_subs, final_ty)
           other -> err
@@ -231,8 +257,8 @@ infer ctx exp = case exp of
             ; return (subs_x `composeSubst` subs_y, TFun tyX tyY)
           })
     where
-      err = throwError $ T.pack ("Matches need to be functions: " <>  show m)
-      unifyJoin a b = unify a b `catchError` (\e -> return (emptySubst, TSum a b))
+      err = throwError ("Matches need to be functions: " <>  show m)
+      unifyJoin a b = unify ctx a b `catchError` (\e -> return (emptySubst, TSum a b))
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
     let scheme = Scheme [] (applySubst s1 tyBinder)
@@ -248,13 +274,16 @@ infer ctx exp = case exp of
     return (s1, TLabel id typ)
   EAnnot typ x -> do
     (s1, typx) <- infer ctx x
-    (fs, _) <- unify typ typx
-    return (fs `composeSubst` s1, typ)
+    (fs, u_type) <- unify ctx typ typx
+    return (fs `composeSubst` s1, u_type)
   ERec id (EAnnot typ x) -> do
     let scheme = Scheme [] typ
     let tmpCtx = Map.insert id scheme ctx
     infer tmpCtx x
   ERec id other -> throwError $ "Recursive types require type annotations"
+  ETDef id t rest -> do
+    let new_ctx = Map.insert id (Scheme [] t) ctx
+    infer new_ctx $ applySubstOnExpr (Map.singleton id t) rest
 
 typeInference :: Context -> Exp -> TI Type
 typeInference ctx exp = do
@@ -274,8 +303,8 @@ testTI :: Exp -> IO ()
 testTI e = do
   let (res, _) = runTI (typeInference primitives e)
   case res of
-    Left err -> putStrLn $ show e ++ "\n " ++ Text.unpack err ++ "\n"
-    Right t  -> putStrLn $ "\n" ++ Text.unpack (prettyScheme (generalize Map.empty t)) ++ "\n"
+    Left err -> putStrLn $ show e ++ "\n " ++ err ++ "\n"
+    Right t  -> putStrLn $ "\n" ++ (prettyScheme (generalize Map.empty t)) ++ "\n"
 
-showT :: Show a => a -> Text
-showT = Text.pack . show
+showT :: Show a => a -> String
+showT = show

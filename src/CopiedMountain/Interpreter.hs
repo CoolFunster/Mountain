@@ -145,6 +145,7 @@ replace env (EAnnot t x) = EAnnot t (replace env x)
 replace env (ERec id x) = do
   let env' = M.withoutKeys env (S.singleton id)
   ERec id (replace env' x)
+replace _ t@(ETDef _ _ _) = t
 
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind (PVar id) x = return $ M.singleton id x
@@ -169,6 +170,9 @@ step t@(EVar id) = getDef id
 step t@(ELam _ _) = return t
 step t@(EMatch x y) = return t
 step t@(ERec x y) = return t
+step (ETDef _ _ t) = do
+  markChanged
+  return t
 step t@(EAnnot _ x) = do
   markChanged
   return x
