@@ -1,17 +1,10 @@
- - higher kinded types
- - type vars start capital, normal are lower
  - Unique types
+     -*>
+     *
  - higher kinded modules
  - Imports
     - avoid cycles?
- - Type Functions/labels?
  - builtin foos
  - macros
  - refined pattern guard (x % x > 0)
-
- -*>
- ->
- sum ~ Int -> Int :: (
-      0 -> 0
-  ||  n -> n + sum (n-1)
-)
+ - type vars start capital, normal are lower

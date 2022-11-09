@@ -3,6 +3,7 @@
 module CopiedMountain.CopiedMountainTypeCheckerSpec (spec) where
 
 import CopiedMountain.Data.AST
+import CopiedMountain.Data.Errors
 import CopiedMountain.Parser
 import CopiedMountain.Typechecker
 
@@ -16,10 +17,15 @@ spec :: Spec
 spec = do
     describe "Match Call" $ do
       it "case 1" $ do
-        let Right x = parseExpr "(3  ->  4|| \"s\" -> \"t\")(3)"
+        let Right x = parseExpr "(3  ->  4 || \"s\" -> \"t\")(3)"
         x `shouldBe` EApp (EMatch (ELam (PLit (LInt 3)) (ELit (LInt 4))) (ELam (PLit (LString "s")) (ELit (LString "t")))) (ELit (LInt 3))
         let (res, _) = runTI (typeInference primitives x)
-        res `shouldBe` Right (TSum TInt TString)
+        res `shouldBe` Right TInt
+      it "case 1b" $ do
+        let Right x = parseExpr "(3  ->  \"s\" || \"s\" -> 4)(3)"
+        x `shouldBe` EApp (EMatch (ELam (PLit (LInt 3)) (ELit (LString "s"))) (ELam (PLit (LString "s")) (ELit (LInt 4)))) (ELit (LInt 3))
+        let (res, _) = runTI (typeInference primitives x)
+        res `shouldBe` Right TString
     describe "TypeAnnotations" $ do
       it "case 1" $ do
         let Right x = parseExpr "(String :: x) -> 3"
@@ -39,7 +45,11 @@ spec = do
         res `shouldBe` Right (TPair TInt TUnit)
     describe "Unify" $ do
       it "case x" $ do
-        let (res, _) = runTI $ unify primitives (TSum TUnit (TPair TInt (TCall (TVar "List") TInt))) TUnit
+        let (res, _) = runTI $ has primitives (TSum TUnit (TPair TInt (TCall (TVar "List") TInt))) TUnit
         res `shouldBe` Right (emptySubst, TUnit)
+      it "case sum disjoint" $ do
+        let (res, _) = runTI $ unify primitives (TSum TUnit TThing) (TSum TUnit TInt)
+        res `shouldBe` Left (BadUnify TUnit TInt)
+
 
         

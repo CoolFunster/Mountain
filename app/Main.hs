@@ -32,7 +32,7 @@ main = do
     Right parsed -> do
       let (type_checked, _) = runTI (typeInference primitives parsed)
       case type_checked of
-        Left err -> error $ prettyExp parsed ++ "\n " ++ err ++ "\n"
+        Left err -> error $ prettyError err
         Right t  -> do
           let type_str = (prettyScheme (generalize Map.empty t))
           raw_eval_result <- runWith initialState (evaluate (Just 30) parsed)
@@ -41,6 +41,6 @@ main = do
             Right (res, env) -> do
               putStrLn $ type_str ++ " :: " ++ prettyExp res
             Left e -> do
-              putStrLn $ "ERROR: " ++ show e ++ "\n"
+              putStrLn $ "ERROR: " ++ prettyError e ++ "\n"
               putStrLn "LOG:"
               putStrLn $ show log

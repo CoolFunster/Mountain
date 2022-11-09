@@ -27,6 +27,7 @@ library
       CopiedMountain.Data.AST
       CopiedMountain.Data.Errors
       CopiedMountain.Data.Log
+      CopiedMountain.Hash
       CopiedMountain.Interpreter
       CopiedMountain.Parser
       CopiedMountain.PrettyPrinter

@@ -1,7 +1,15 @@
-type Chess = (
-    bishop:()
-  | rook:()
+type ChessPiece = (
+    rook:()
   | pawn:()
+  | queen:()
+  | king:()
 );
 
-Chess :: rook:()
+pieceVal = ChessPiece -> Int :: (
+      rook:() -> 5
+  ||  pawn:() -> 1
+  ||  queen:() -> 9
+  ||  king:() -> 100
+);
+
+pieceVal(rook:())

@@ -146,8 +146,10 @@ replace env (ERec id x) = do
   let env' = M.withoutKeys env (S.singleton id)
   ERec id (replace env' x)
 replace _ t@(ETDef _ _ _) = t
+-- replace env (EUnique h a) = EUnique h (replace env a)
 
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
+-- bind a@(PVar id) b@(EUnique _ _) = throwError $ BadBind a b
 bind (PVar id) x = return $ M.singleton id x
 bind a@(PLit l) b@(ELit l')
   | l == l' = return M.empty
@@ -161,6 +163,8 @@ bind a@(PLabel id x) b@(ELabel id2 y) = do
     then bind x y
     else throwError $ BadBind a b
 bind a@(PAnnot typ x) b = bind x b
+-- bind (PUnique (PVar id)) b@(EUnique _ _) = return $ M.singleton id b
+-- bind a@(PUnique pat) (EUnique h x) = bind pat x
 bind a b = throwError $ BadBind a b
 
 
@@ -170,6 +174,7 @@ step t@(EVar id) = getDef id
 step t@(ELam _ _) = return t
 step t@(EMatch x y) = return t
 step t@(ERec x y) = return t
+-- step t@(EUnique h x) = EUnique h <$> step x
 step (ETDef _ _ t) = do
   markChanged
   return t

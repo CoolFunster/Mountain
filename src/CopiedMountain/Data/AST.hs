@@ -1,9 +1,8 @@
 module CopiedMountain.Data.AST where
 
-import Prelude hiding (unwords)
+import CopiedMountain.Hash
 
-import Data.Text (Text, unwords)
-import qualified Data.Text as Text
+
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.List (intercalate)
@@ -28,6 +27,7 @@ data Exp =
   | EMatch Exp Exp
   | EPair Exp Exp
   | ELabel Id Exp
+  -- | EUnique Hash Exp
   deriving (Eq, Ord, Show)
 
 data Lit
@@ -58,6 +58,7 @@ data Type
   | TPair Type Type
   | TSum Type Type
   | TLabel Id Type
+  -- | TUnique Hash Type
   -- Kinds
   | TType Kind
   | TCall Type Type
@@ -75,6 +76,7 @@ data Pattern =
   | PPair Pattern Pattern
   | PLabel Id Pattern
   | PAnnot Type Pattern
+  -- | PUnique Pattern
   deriving (Eq, Ord, Show)
 
 data Scheme = Scheme [Id] Type deriving (Show)
@@ -101,6 +103,7 @@ renameVar ty (old, new) = case ty of
   TLabel id t1 -> TLabel id (renameVar t1 (old, new))
   TType x -> TType x
   TCall a b -> TCall a b
+  -- TUnique h a -> TUnique h (renameVar a (old, new))
 
 expAsPattern :: Exp -> Pattern
 expAsPattern (EVar id) = PVar id
@@ -108,6 +111,7 @@ expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
 expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
 expAsPattern (EAnnot typ exp) = PAnnot typ (expAsPattern exp)
+-- expAsPattern (EUnique h a) = PUnique (expAsPattern a)
 expAsPattern t@(ETDef _ _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
@@ -121,3 +125,4 @@ patternAsExp (PLit l) = ELit l
 patternAsExp (PPair a b) = EPair (patternAsExp a) (patternAsExp b)
 patternAsExp (PLabel id exp) = ELabel id (patternAsExp exp)
 patternAsExp (PAnnot typ x) = EAnnot typ (patternAsExp x)
+-- patternAsExp (PUnique pat) = EUnique Unset (patternAsExp pat)

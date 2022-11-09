@@ -2,6 +2,7 @@
 module CopiedMountain.PrettyPrinter where
 
 import CopiedMountain.Data.AST
+import CopiedMountain.Data.Errors
 import CopiedMountain.Data.Log
 import qualified Data.Text as T
 import qualified Data.Map as M
@@ -78,3 +79,6 @@ prettyLog :: [Log] -> String
 prettyLog (Step expr env:xs) = do
   prettyExp expr ++ "\n" ++ prettyLog xs
 prettyLog [] = "END"
+
+prettyError :: Error -> String
+prettyError = show

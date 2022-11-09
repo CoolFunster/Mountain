@@ -2,6 +2,7 @@
 module CopiedMountain.Typechecker where
 
 import CopiedMountain.PrettyPrinter
+import CopiedMountain.Data.Errors
 
 import Control.Monad (replicateM)
 import Control.Monad.State (State, runState, get, put, gets, modify)
@@ -73,9 +74,9 @@ applySubstScheme subst (Scheme vars t) =
 composeSubst :: Substitution -> Substitution -> Substitution
 composeSubst s1 s2 = Map.union (Map.map (applySubst s1) s2) s1
 
-type TI a = ExceptT String (State Int) a
+type TI a = ExceptT Error (State Int) a
 
-runTI :: TI a -> (Either String a, Int)
+runTI :: TI a -> (Either Error a, Int)
 runTI ti = runState (runExceptT ti) 0
 
 -- | Creates a fresh type variable
@@ -102,8 +103,80 @@ freeTypeVarsScheme (Scheme vars t) =
 varBind :: String -> Type -> TI Substitution
 varBind var ty
   | ty == TVar var = return emptySubst
-  | var `Set.member` freeTypeVars ty = throwError "occurs check failed"
+  | var `Set.member` freeTypeVars ty = throwError $ OccursCheck var ty
   | otherwise = return (Map.singleton var ty)
+
+evalTCall :: Context -> Type -> TI Type
+evalTCall ctx (TCall (TVar id) b) = do
+  case Map.lookup id ctx of
+    Nothing -> throwError $ UnboundId id
+    Just any -> do
+      res <- instantiate any
+      evalTCall ctx (TCall res b)
+evalTCall ctx (TCall (TFun x y) b) = do
+  (subs, typX) <- has ctx x b
+  return $ applySubst subs y
+evalTCall ctx (TCall somethin b) = error $ "what is this case?: " ++ show somethin
+evalTCall _ _ = error "Must Be TCall"
+
+has :: Context -> Type -> Type -> TI (Substitution, Type)
+has _ TUnit TUnit = return (emptySubst, TUnit)
+has _ TInt TInt = return (emptySubst, TInt)
+has _ TBool TBool = return (emptySubst, TBool)
+has _ TChar TChar = return (emptySubst, TChar)
+has _ TString TString = return (emptySubst, TString)
+has _ TFloat TFloat = return (emptySubst, TFloat)
+has _ TThing TThing = return (emptySubst, TThing)
+has ctx a b@(TSum x y) = do
+  (sx, resx) <- has ctx a x
+  (sy, resy) <- has ctx a y
+  let final_s = sx `composeSubst` sy
+  return (final_s, applySubst final_s (TSum resx resy))
+has ctx a@(TSum x y) b = do
+  res <- tryHas x b
+  case res of
+    Nothing -> do
+      res2 <- tryHas y b
+      case res2 of
+        Just x -> return x
+        Nothing -> throwError $ BadHas a b
+    Just x -> return x
+  where
+    tryHas :: Type -> Type -> TI (Maybe (Substitution, Type))
+    tryHas a b = (Just <$> has ctx a b) `catchError` (\e -> return Nothing)
+has ctx (TFun l r) (TFun l' r') = do
+  (s1, tyl) <- has ctx l l'
+  (s2, tyr) <- has ctx (applySubst s1 r) (applySubst s1 r')
+  let final_subs = s2 `composeSubst` s1
+  return (final_subs, applySubst final_subs $ TFun tyl tyr)
+has ctx (TPair a b) (TPair a' b') = do
+  (s1, tyA) <- has ctx a a'
+  (s2, tyB) <- has ctx (applySubst s1 b) (applySubst s1 b')
+  let final_subs = s2 `composeSubst` s1
+  return (final_subs, applySubst final_subs (TPair tyA tyB))
+has ctx a@(TLabel id x) b@(TLabel id2 y) = do
+  if id == id2
+    then do
+      (ctx, ty) <- has ctx x y
+      return (ctx, TLabel id ty)
+    else throwError $ BadHas a b
+has ctx (TVar u) t = do
+  case Map.lookup u ctx of
+    Nothing -> do
+      res <- varBind u t
+      return (res, applySubst res t)
+    Just any -> do
+      resT <- instantiate any
+      has ctx resT t
+has ctx t b@(TVar u) = has ctx b t
+has ctx a@(TCall _ _) c = do
+  res <- evalTCall ctx a 
+  has ctx res c
+has ctx c a@(TCall _ _) = do
+  res <- evalTCall ctx a 
+  has ctx c res 
+has _ t1 t2 = throwError $ BadUnify t1 t2
+
 
 unify :: Context -> Type -> Type -> TI (Substitution, Type)
 unify _ TUnit TUnit = return (emptySubst, TUnit)
@@ -128,7 +201,7 @@ unify ctx a@(TLabel id x) b@(TLabel id2 y) = do
     then do
       (ctx, ty) <- unify ctx x y
       return (ctx, TLabel id ty)
-    else throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
+    else throwError $ BadUnify a b
 unify ctx (TVar u) t = do
   case Map.lookup u ctx of
     Nothing -> do
@@ -138,31 +211,25 @@ unify ctx (TVar u) t = do
       resT <- instantiate any
       unify ctx resT t
 unify ctx a b@(TVar u) = unify ctx b a
-unify ctx a@(TCall (TVar id) b) c = do
-  case Map.lookup id ctx of
-    Nothing -> throwError ("types do not unify: " <> showT a <> " vs. " <> showT c)
-    Just any -> do
-      res <- instantiate any
-      unify ctx (TCall res b) c
-unify ctx (TCall (TFun x y) b) c = do
-  (subs, typX) <- unify ctx x b
-  unify ctx (applySubst subs y) c
-unify ctx a b@(TCall _ _) = unify ctx b a
-unify ctx a@(TSum x y) b = do
-  res <- tryUnify x b
-  case res of
-    Nothing -> do
-      res2 <- tryUnify y b
-      case res2 of
-        Nothing -> throwError ("types do not unify: " <> showT a <> " vs. " <> showT b)
-        Just s' -> return s'
-    Just s -> return s
-  where
-    tryUnify :: Type -> Type -> TI (Maybe (Substitution, Type))
-    tryUnify a b = (Just <$> unify ctx a b) `catchError` (\e -> return Nothing)
+unify ctx a@(TCall _ _) c = do
+  res <- evalTCall ctx a 
+  unify ctx res c
+unify ctx c a@(TCall _ _) = do
+  res <- evalTCall ctx a 
+  unify ctx c res 
+unify ctx a@(TSum x y) b@(TSum x' y') = do
+  (sub_x, typX) <- unify ctx x x'
+  (sub_y, typY) <- unify ctx y y'
+  let final_subs = sub_x `composeSubst` sub_y
+  return (final_subs, TSum (applySubst final_subs typX) (applySubst final_subs typY))
+  `catchError` (\e -> do {
+     (sub_x, typX) <- unify ctx x y'
+    ;(sub_y, typY) <- unify ctx y x'
+    ;let final_subs = sub_x `composeSubst` sub_y
+    ;return (final_subs, TSum (applySubst final_subs typX) (applySubst final_subs typY))
+  })
 unify ctx a b@(TSum x' y') = unify ctx b a
-unify _ t1 t2 =
-  throwError ("types do not unify: " <> showT t1 <> " vs. " <> showT t2)
+unify _ t1 t2 = throwError $ BadUnify t1 t2
 
 type Context = Map String Scheme
 
@@ -210,14 +277,13 @@ inferPattern ctx (PLabel id x) = do
   return (new_ctx, TLabel id typ)
 inferPattern ctx (PAnnot typ x) = do
   (s1, typx) <- inferPattern ctx x
-  (_, final_typ) <- unify ctx typ typx
+  (_, final_typ) <- has ctx typ typx
   return (s1, final_typ)
 
 infer :: Context -> Exp -> TI (Substitution, Type)
 infer ctx exp = case exp of
   EVar var -> case Map.lookup var ctx of
-    Nothing ->
-      throwError ("unbound variable: " <> showT var)
+    Nothing -> throwError $ UnboundId var
     Just scheme -> do
       ty <- instantiate scheme
       return (emptySubst, ty)
@@ -227,7 +293,7 @@ infer ctx exp = case exp of
     tyRes <- newTyVar
     (s1, tyFun) <- infer ctx fun
     (s2, tyArg) <- infer (applySubstCtx s1 ctx) arg
-    (ctx, final_typ) <- unify ctx (applySubst s2 tyFun) (TFun tyArg tyRes)
+    (ctx, final_typ) <- has ctx (applySubst s2 tyFun) (TFun tyArg tyRes)
     let TFun a b = final_typ
     return (ctx, b)
   ELam pattern body -> do
@@ -257,7 +323,7 @@ infer ctx exp = case exp of
             ; return (subs_x `composeSubst` subs_y, TFun tyX tyY)
           })
     where
-      err = throwError ("Matches need to be functions: " <>  show m)
+      err = throwError $ MatchWithNonFunction m
       unifyJoin a b = unify ctx a b `catchError` (\e -> return (emptySubst, TSum a b))
   ELet binder binding body -> do
     (s1, tyBinder) <- infer ctx binding
@@ -274,13 +340,13 @@ infer ctx exp = case exp of
     return (s1, TLabel id typ)
   EAnnot typ x -> do
     (s1, typx) <- infer ctx x
-    (fs, u_type) <- unify ctx typ typx
+    (fs, u_type) <- has ctx typ typx
     return (fs `composeSubst` s1, u_type)
   ERec id (EAnnot typ x) -> do
     let scheme = Scheme [] typ
     let tmpCtx = Map.insert id scheme ctx
     infer tmpCtx x
-  ERec id other -> throwError $ "Recursive types require type annotations"
+  ERec id other -> throwError $ RecursiveWithNoTypeAnnotation other
   ETDef id t rest -> do
     let new_ctx = Map.insert id (Scheme [] t) ctx
     infer new_ctx $ applySubstOnExpr (Map.singleton id t) rest
@@ -303,8 +369,8 @@ testTI :: Exp -> IO ()
 testTI e = do
   let (res, _) = runTI (typeInference primitives e)
   case res of
-    Left err -> putStrLn $ show e ++ "\n " ++ err ++ "\n"
-    Right t  -> putStrLn $ "\n" ++ (prettyScheme (generalize Map.empty t)) ++ "\n"
+    Left err -> print err
+    Right t  -> putStrLn $ "\n" ++ prettyScheme (generalize Map.empty t) ++ "\n"
 
 showT :: Show a => a -> String
 showT = show
