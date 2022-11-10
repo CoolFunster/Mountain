@@ -1,6 +1,7 @@
  - Unique types
      -*>
      *
+ - lets should be patterns vs id
  - higher kinded modules
  - Imports
     - avoid cycles?

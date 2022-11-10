@@ -9,7 +9,7 @@ def pieceVal = ChessPiece -> Int :: (
       rook:() -> 5
   ||  pawn:() -> 1
   ||  queen:() -> 9
-  ||  king:() -> 100
+  ||  bishop:() -> 100
 );
 
 pieceVal(rook:())

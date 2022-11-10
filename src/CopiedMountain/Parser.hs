@@ -15,6 +15,7 @@ import Data.Functor (($>))
 import Control.Monad.Combinators.Expr
 import qualified Data.Map as M
 import Debug.Trace
+import CopiedMountain.Hash
 
 parseFile :: FilePath -> IO Exp
 parseFile fp = do
@@ -102,7 +103,8 @@ pBinExp :: Parser Exp
 pBinExp = makeExprParser pAnnot [
     [binaryR (try pColon) (varLTerm ELabel)],
     [binaryR (try $ pWrapWS "~") (varLTerm ERec)],
-    [binaryR (try $ pWrapWS "->") (ELam . expAsPattern)],
+    [binaryR (try $ pWrapWS "->") (ELam . expAsPattern),
+     binaryR (try $ pWrapWS "-*>") (EULam . expAsPattern)],
     [binaryR (try $ pWrapWS "||") EMatch]
   ]
   where
@@ -136,6 +138,7 @@ pCallNormal = do
 
 pExprAtom :: Parser Exp
 pExprAtom =
+      -- try pUnique
       try pTuple
   <|> try pLet
   <|> try pTDef
@@ -146,10 +149,13 @@ pLet :: Parser Exp
 pLet = do
   _ <- symbol "def" <* sc
   var <- pPattern
-  _ <- pWrapWS "="
+  b <- choice [try $ pWrapWS "*=", try $ pWrapWS "="]
   expr1 <- pExpr
   _ <- rword ";" <* sc
-  ELet var expr1 <$> pExpr
+  case b of
+    "*=" -> EULet var expr1 <$> pExpr
+    "=" -> ELet var expr1 <$> pExpr
+    other -> error "should never reach here"
 
 pTDef :: Parser Exp
 pTDef = do
@@ -233,7 +239,8 @@ pType = pBinTyp
 pBinTyp :: Parser Type
 pBinTyp = makeExprParser pTCall [
     [binaryR (try pColon) pLabel],
-    [binaryR (try $ pWrapWS "->") TFun],
+    [binaryR (try $ pWrapWS "->") TFun,
+     binaryR (try $ pWrapWS "-*>") TUFun],
     [binaryR (try $ pWrapWS "|") TSum]
   ]
   where
@@ -261,9 +268,15 @@ pTCallNormal = do
 pTypeAtom :: Parser Type
 pTypeAtom =
       pBuiltInType
+  <|> pUniqueType
   <|> pTTuple
   <|> pTVar
   <|> TType <$> try pKind
+
+pUniqueType :: Parser Type
+pUniqueType = do
+  _ <- symbol "*"
+  pType
 
 pBuiltInType :: Parser Type
 pBuiltInType = choice [

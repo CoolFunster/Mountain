@@ -26,12 +26,14 @@ prettyPattern (PVar v) = v
 prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
 prettyPattern (PLabel id x) = id ++ ":" ++ prettyPattern x
 prettyPattern (PAnnot typ x) = "(" ++ prettyType typ ++ "::" ++ prettyPattern x ++ ")"
+prettyPattern (PUnique x) = "*" ++ prettyPattern x
 
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
 prettyExp (EVar id) = id
 prettyExp (EApp a b) = "(" ++ prettyExp a ++ ")(" ++ prettyExp b ++ ")"
 prettyExp (ELam id e) = prettyPattern id ++ "->" ++ prettyExp e
+prettyExp (EULam id e) = prettyPattern id ++ "-*>" ++ prettyExp e
 prettyExp (ELet pat a b) = prettyPattern pat ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 prettyExp (EPair a b) = "(" ++ prettyExp a ++ "," ++ prettyExp b ++ ")"
@@ -39,6 +41,7 @@ prettyExp (ELabel id a) = id ++ ":" ++ prettyExp a
 prettyExp (EAnnot typ a) = "(" ++ prettyType typ ++ ")::(" ++ prettyExp a ++ ")"
 prettyExp (ERec id a) = "(" ++ id ++ "~" ++ prettyExp a ++ ")"
 prettyExp (ETDef id typ rest) = "type " ++ id ++ " = " ++ prettyType typ ++ ";" ++ prettyExp rest
+prettyExp (EUnique h x) = "*(" ++ prettyExp x ++ ")"
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
@@ -58,11 +61,15 @@ prettyType ty = case ty of
   TFun ty1 ty2 ->
     (if isFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
     <> " -> " <> prettyType ty2
+  TUFun ty1 ty2 ->
+    (if isFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
+    <> " -*> " <> prettyType ty2
   TPair ty1 ty2 -> "(" <> prettyType ty1 <> "," <> prettyType ty2 <> ")"
   TSum ty1 ty2 -> "(" <> prettyType ty1 <> "|" <> prettyType ty2 <> ")"
   TLabel id x -> id <> ":" <> prettyType x
   TType kind -> prettyKind kind
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
+  TUnique t -> "*" <> prettyType t
 
 prettyScheme :: Scheme -> String
 prettyScheme (Scheme [] ty) = prettyType ty
@@ -81,4 +88,4 @@ prettyLog (Step expr env:xs) = do
 prettyLog [] = "END"
 
 prettyError :: Error -> String
-prettyError = show
+prettyError = show 

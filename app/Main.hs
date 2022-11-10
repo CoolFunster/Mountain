@@ -9,6 +9,7 @@ import CopiedMountain.PrettyPrinter
 
 import qualified Data.Text as Text
 import qualified Data.Map.Strict as Map
+import Control.Monad.State (MonadTrans (lift))
 
 import System.Environment
 
@@ -23,14 +24,16 @@ initialState = State {
     name_counter=0
   }
 
-processExp :: Exp -> ContextT IO (Type, Exp)
-processExp x = do
-  resType <- typeInference primitives x
-  resExp <- evaluate (Just 30) x
+processExp :: (Maybe Int) -> Exp -> ContextT IO (Type, Exp)
+processExp steps x = do
+  vx <- preprocess x
+  resType <- typeInference primitives vx
+  resExp <- evaluate steps vx
   return (resType, resExp)
 
 main :: IO ()
 main = do
+  -- Parse file
   args <- getArgs  
   let file_path = head args
   fc <- readFile file_path
@@ -38,7 +41,7 @@ main = do
   case raw_parsed of
     Left parse_error -> error parse_error
     Right parsed -> do
-      raw_eval_result <- runWith initialState (processExp parsed)
+      raw_eval_result <- runWith initialState (processExp (Just 30) parsed)
       let (eval_result, log) = raw_eval_result
       case eval_result of
         Right ((resT, resExp), env) -> do

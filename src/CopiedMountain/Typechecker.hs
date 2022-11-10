@@ -35,6 +35,8 @@ applySubst subst ty = case ty of
     Just x -> x
   TFun arg res ->
     TFun (applySubst subst arg) (applySubst subst res)
+  TUFun arg res ->
+    TUFun (applySubst subst arg) (applySubst subst res)
   TInt -> TInt
   TBool -> TBool
   TChar -> TChar
@@ -44,6 +46,7 @@ applySubst subst ty = case ty of
   TType k -> TType k
   TUnit -> TUnit
   TCall a b -> TCall (applySubst subst a) (applySubst subst b)
+  TUnique t -> TUnique (applySubst subst t)
 
 applySubstOnPattern :: Substitution -> Pattern -> Pattern
 applySubstOnPattern s (PLit l) = PLit l
@@ -51,11 +54,13 @@ applySubstOnPattern s (PVar id) = PVar id
 applySubstOnPattern s (PPair a b) = PPair (applySubstOnPattern s a) (applySubstOnPattern s b)
 applySubstOnPattern s (PLabel id b) = PLabel id (applySubstOnPattern s b)
 applySubstOnPattern s (PAnnot typ b) = PAnnot (applySubst s typ) (applySubstOnPattern s b)
+applySubstOnPattern s (PUnique b) = PUnique (applySubstOnPattern s b)
 
 applySubstOnExpr :: Substitution -> Exp -> Exp
 applySubstOnExpr subst t@(EVar id) = t
 applySubstOnExpr s t@(EApp a b) = EApp (applySubstOnExpr s a) (applySubstOnExpr s b)
 applySubstOnExpr s t@(ELam a b) = ELam (applySubstOnPattern s a) (applySubstOnExpr s b)
+applySubstOnExpr s t@(EULam a b) = EULam (applySubstOnPattern s a) (applySubstOnExpr s b)
 applySubstOnExpr s t@(ELet id a b) = ELet id (applySubstOnExpr s a) (applySubstOnExpr s b)
 applySubstOnExpr s (EAnnot typ x) = EAnnot (applySubst s typ) (applySubstOnExpr s x)
 applySubstOnExpr s (ETDef id typ x) = ETDef id (applySubst s typ) (applySubstOnExpr s x)
@@ -64,6 +69,7 @@ applySubstOnExpr s (ERec id r) = ERec id (applySubstOnExpr s r)
 applySubstOnExpr s (EMatch a b) = EMatch (applySubstOnExpr s a) (applySubstOnExpr s b)
 applySubstOnExpr s (EPair a b) = EPair (applySubstOnExpr s a) (applySubstOnExpr s b)
 applySubstOnExpr s (ELabel id b) = ELabel id (applySubstOnExpr s b)
+applySubstOnExpr s (EUnique h b) = EUnique h (applySubstOnExpr s b)
 
 applySubstScheme :: Substitution -> Scheme -> Scheme
 applySubstScheme subst (Scheme vars t) =
@@ -71,7 +77,6 @@ applySubstScheme subst (Scheme vars t) =
   Scheme vars (applySubst (foldr Map.delete subst vars) t)
 
 -- | This is much more subtle than it seems. (union is left biased)
---
 composeSubst :: Substitution -> Substitution -> Substitution
 composeSubst s1 s2 = Map.union (Map.map (applySubst s1) s2) s1
 
@@ -159,11 +164,12 @@ has ctx (TVar u) t = do
       has ctx resT t
 has ctx t b@(TVar u) = has ctx b t
 has ctx a@(TCall _ _) c = do
-  res <- evalTCall ctx a 
+  res <- evalTCall ctx a
   has ctx res c
 has ctx c a@(TCall _ _) = do
-  res <- evalTCall ctx a 
-  has ctx c res 
+  res <- evalTCall ctx a
+  has ctx c res
+has ctx (TUnique x) (TUnique y) = has ctx x y
 has _ t1 t2 = throwError $ BadUnify t1 t2
 
 
@@ -201,11 +207,11 @@ unify ctx (TVar u) t = do
       unify ctx resT t
 unify ctx a b@(TVar u) = unify ctx b a
 unify ctx a@(TCall _ _) c = do
-  res <- evalTCall ctx a 
+  res <- evalTCall ctx a
   unify ctx res c
 unify ctx c a@(TCall _ _) = do
-  res <- evalTCall ctx a 
-  unify ctx c res 
+  res <- evalTCall ctx a
+  unify ctx c res
 unify ctx a@(TSum x y) b@(TSum x' y') = do
   (sub_x, typX) <- unify ctx x x'
   (sub_y, typY) <- unify ctx y y'
@@ -218,6 +224,7 @@ unify ctx a@(TSum x y) b@(TSum x' y') = do
     ;return (final_subs, TSum (applySubst final_subs typX) (applySubst final_subs typY))
   })
 unify ctx a b@(TSum x' y') = unify ctx b a
+unify ctx (TUnique x) (TUnique y) = unify ctx x y
 unify _ t1 t2 = throwError $ BadUnify t1 t2
 
 type Context = Map String Scheme
@@ -268,6 +275,9 @@ inferPattern ctx (PAnnot typ x) = do
   (s1, typx) <- inferPattern ctx x
   (_, final_typ) <- has ctx typ typx
   return (s1, final_typ)
+inferPattern ctx (PUnique x) = do
+  (s1, typx) <- inferPattern ctx x
+  return (s1, TUnique typx)
 
 infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
 infer ctx exp = case exp of
@@ -285,7 +295,13 @@ infer ctx exp = case exp of
     (ctx, final_typ) <- has ctx (applySubst s2 tyFun) (TFun tyArg tyRes)
     let TFun a b = final_typ
     return (ctx, b)
+  ELam p@(PUnique _) b@body -> throwError $ UniqueInNonUniqueCtx p b
   ELam pattern body -> do
+    (ctx_p, tyP) <- inferPattern ctx pattern
+    let tmpCtx = Map.union ctx_p ctx
+    (s1, tyBody) <- infer tmpCtx body
+    return (s1, TFun (applySubst s1 tyP) tyBody)
+  EULam pattern body -> do
     (ctx_p, tyP) <- inferPattern ctx pattern
     let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
@@ -340,6 +356,9 @@ infer ctx exp = case exp of
   ETDef id t rest -> do
     let new_ctx = Map.insert id (Scheme [] t) ctx
     infer new_ctx $ applySubstOnExpr (Map.singleton id t) rest
+  EUnique h x -> do
+    (subst, typX) <- infer ctx x
+    return (subst, TUnique typX)
 
 typeInference :: (Monad m) => Context -> Exp -> ContextT m Type
 typeInference ctx exp = do
