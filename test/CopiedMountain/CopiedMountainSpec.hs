@@ -3,6 +3,7 @@
 module CopiedMountain.CopiedMountainSpec (spec) where
 
 import CopiedMountain.Data.AST 
+import CopiedMountain.Context
 import CopiedMountain.Parser
 import CopiedMountain.Interpreter as I
 import CopiedMountain.PrettyPrinter

@@ -3,6 +3,7 @@ module Main where
 import CopiedMountain.Data.AST
 import CopiedMountain.Interpreter
 import CopiedMountain.Parser
+import CopiedMountain.Context
 import CopiedMountain.Typechecker
 import CopiedMountain.PrettyPrinter
 
@@ -18,8 +19,15 @@ initialState = State {
       parser=parseFile,
       repository="/home/mpriam/git/mtpl_language/Repository",
       file_ext=".mtn"},
-    env=[]
+    env=[],
+    name_counter=0
   }
+
+processExp :: Exp -> ContextT IO (Type, Exp)
+processExp x = do
+  resType <- typeInference primitives x
+  resExp <- evaluate (Just 30) x
+  return (resType, resExp)
 
 main :: IO ()
 main = do
@@ -30,17 +38,12 @@ main = do
   case raw_parsed of
     Left parse_error -> error parse_error
     Right parsed -> do
-      let (type_checked, _) = runTI (typeInference primitives parsed)
-      case type_checked of
-        Left err -> error $ prettyError err
-        Right t  -> do
-          let type_str = (prettyScheme (generalize Map.empty t))
-          raw_eval_result <- runWith initialState (evaluate (Just 30) parsed)
-          let (eval_result, log) = raw_eval_result
-          case eval_result of
-            Right (res, env) -> do
-              putStrLn $ type_str ++ " :: " ++ prettyExp res
-            Left e -> do
-              putStrLn $ "ERROR: " ++ prettyError e ++ "\n"
-              putStrLn "LOG:"
-              putStrLn $ show log
+      raw_eval_result <- runWith initialState (processExp parsed)
+      let (eval_result, log) = raw_eval_result
+      case eval_result of
+        Right ((resT, resExp), env) -> do
+          putStrLn $ prettyType resT ++ " :: " ++ prettyExp resExp
+        Left e -> do
+          putStrLn $ "ERROR: " ++ prettyError e ++ "\n"
+          putStrLn "LOG:"
+          putStrLn $ show log

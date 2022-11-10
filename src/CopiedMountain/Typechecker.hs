@@ -18,6 +18,7 @@ import CopiedMountain.Data.AST
 
 import Debug.Trace
 import qualified Data.Text as T
+import CopiedMountain.Context
 
 type Substitution = Map String Type
 
@@ -74,18 +75,6 @@ applySubstScheme subst (Scheme vars t) =
 composeSubst :: Substitution -> Substitution -> Substitution
 composeSubst s1 s2 = Map.union (Map.map (applySubst s1) s2) s1
 
-type TI a = ExceptT Error (State Int) a
-
-runTI :: TI a -> (Either Error a, Int)
-runTI ti = runState (runExceptT ti) 0
-
--- | Creates a fresh type variable
-newTyVar :: TI Type
-newTyVar = do
-  s <- get
-  put (s + 1)
-  return (TVar ("u" <> showT s))
-
 freeTypeVars :: Type -> Set Id
 freeTypeVars ty = case ty of
  TVar var ->
@@ -100,13 +89,13 @@ freeTypeVarsScheme (Scheme vars t) =
   Set.difference (freeTypeVars t) (Set.fromList vars)
 
 -- | Creates a fresh unification variable and binds it to the given type
-varBind :: String -> Type -> TI Substitution
+varBind :: (Monad m) => String -> Type -> ContextT m Substitution
 varBind var ty
   | ty == TVar var = return emptySubst
   | var `Set.member` freeTypeVars ty = throwError $ OccursCheck var ty
   | otherwise = return (Map.singleton var ty)
 
-evalTCall :: Context -> Type -> TI Type
+evalTCall :: (Monad m) => Context -> Type -> ContextT m Type
 evalTCall ctx (TCall (TVar id) b) = do
   case Map.lookup id ctx of
     Nothing -> throwError $ UnboundId id
@@ -119,7 +108,7 @@ evalTCall ctx (TCall (TFun x y) b) = do
 evalTCall ctx (TCall somethin b) = error $ "what is this case?: " ++ show somethin
 evalTCall _ _ = error "Must Be TCall"
 
-has :: Context -> Type -> Type -> TI (Substitution, Type)
+has :: (Monad m) => Context -> Type -> Type -> ContextT m (Substitution, Type)
 has _ TUnit TUnit = return (emptySubst, TUnit)
 has _ TInt TInt = return (emptySubst, TInt)
 has _ TBool TBool = return (emptySubst, TBool)
@@ -142,7 +131,7 @@ has ctx a@(TSum x y) b = do
         Nothing -> throwError $ BadHas a b
     Just x -> return x
   where
-    tryHas :: Type -> Type -> TI (Maybe (Substitution, Type))
+    tryHas :: (Monad m) => Type -> Type -> ContextT m (Maybe (Substitution, Type))
     tryHas a b = (Just <$> has ctx a b) `catchError` (\e -> return Nothing)
 has ctx (TFun l r) (TFun l' r') = do
   (s1, tyl) <- has ctx l l'
@@ -178,7 +167,7 @@ has ctx c a@(TCall _ _) = do
 has _ t1 t2 = throwError $ BadUnify t1 t2
 
 
-unify :: Context -> Type -> Type -> TI (Substitution, Type)
+unify :: (Monad m) => Context -> Type -> Type -> ContextT m (Substitution, Type)
 unify _ TUnit TUnit = return (emptySubst, TUnit)
 unify _ TInt TInt = return (emptySubst, TInt)
 unify _ TBool TBool = return (emptySubst, TBool)
@@ -244,13 +233,13 @@ generalize ctx t = Scheme vars t
   where
     vars = Set.toList (Set.difference (freeTypeVars t) (freeTypeVarsCtx ctx))
 
-instantiate :: Scheme -> TI Type
+instantiate :: (Monad m) => Scheme -> ContextT m Type
 instantiate (Scheme vars ty) = do
   newVars <- traverse (const newTyVar) vars
   let subst = Map.fromList (zip vars newVars)
   return (applySubst subst ty)
 
-inferLiteral :: Lit -> TI (Substitution, Type)
+inferLiteral :: (Monad m) => Lit -> ContextT m (Substitution, Type)
 inferLiteral lit =
   return (emptySubst, case lit of
     LInt _ -> TInt
@@ -261,7 +250,7 @@ inferLiteral lit =
     LFloat _ -> TFloat
     LUnit -> TUnit)
 
-inferPattern :: Context -> Pattern -> TI (Context, Type)
+inferPattern :: (Monad m) => Context -> Pattern -> ContextT m (Context, Type)
 inferPattern _ (PLit binder) = do
   (_, tyBinder) <- inferLiteral binder
   return (Map.empty, tyBinder)
@@ -280,7 +269,7 @@ inferPattern ctx (PAnnot typ x) = do
   (_, final_typ) <- has ctx typ typx
   return (s1, final_typ)
 
-infer :: Context -> Exp -> TI (Substitution, Type)
+infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
 infer ctx exp = case exp of
   EVar var -> case Map.lookup var ctx of
     Nothing -> throwError $ UnboundId var
@@ -352,7 +341,7 @@ infer ctx exp = case exp of
     let new_ctx = Map.insert id (Scheme [] t) ctx
     infer new_ctx $ applySubstOnExpr (Map.singleton id t) rest
 
-typeInference :: Context -> Exp -> TI Type
+typeInference :: (Monad m) => Context -> Exp -> ContextT m Type
 typeInference ctx exp = do
   (s, t) <- infer ctx exp
   return (applySubst s t)
@@ -365,13 +354,3 @@ primitives = Map.fromList
   , ("gte", Scheme [] (TFun TInt (TFun TInt TBool)))
   , ("if", Scheme ["a"] (TFun TBool (TFun (TVar "a") (TFun (TVar "a") (TVar "a")))))
   ]
-
-testTI :: Exp -> IO ()
-testTI e = do
-  let (res, _) = runTI (typeInference primitives e)
-  case res of
-    Left err -> print err
-    Right t  -> putStrLn $ "\n" ++ prettyScheme (generalize Map.empty t) ++ "\n"
-
-showT :: Show a => a -> String
-showT = show

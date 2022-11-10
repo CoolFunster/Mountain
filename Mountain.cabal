@@ -24,6 +24,7 @@ source-repository head
 
 library
   exposed-modules:
+      CopiedMountain.Context
       CopiedMountain.Data.AST
       CopiedMountain.Data.Errors
       CopiedMountain.Data.Log
