@@ -79,11 +79,11 @@ spec = do
           res `shouldBe` Right (ELam (PVar "a") (EApp (EVar "b") (EVar "c")))
       describe "Let" $ do
         it "Should parse a let" $ do
-          let res = parseExpr "a = b; a"
-          res `shouldBe` Right (ELet "a" (EVar "b") (EVar "a"))
+          let res = parseExpr "def a = b; a"
+          res `shouldBe` Right (ELet (PVar "a") (EVar "b") (EVar "a"))
         it "Should parse a let in a function" $ do
-          let res = parseExpr "x -> a = b; a"
-          res `shouldBe` Right (ELam (PVar "x") (ELet "a" (EVar "b") (EVar "a")))
+          let res = parseExpr "x -> def a = b; a"
+          res `shouldBe` Right (ELam (PVar "x") (ELet (PVar "a") (EVar "b") (EVar "a")))
       describe "Label" $ do
         it "Should parse a label" $ do
           let res = parseExpr "temp:3"

@@ -17,7 +17,7 @@ data Exp =
     EVar Id
   | EApp Exp Exp
   | ELam Pattern Exp
-  | ELet Id Exp Exp
+  | ELet Pattern Exp Exp
   | EAnnot Type Exp
   -- type statements
   | ETDef Id Type Exp

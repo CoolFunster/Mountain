@@ -5,7 +5,7 @@ type ChessPiece = (
   | king:()
 );
 
-pieceVal = ChessPiece -> Int :: (
+def pieceVal = ChessPiece -> Int :: (
       rook:() -> 5
   ||  pawn:() -> 1
   ||  queen:() -> 9

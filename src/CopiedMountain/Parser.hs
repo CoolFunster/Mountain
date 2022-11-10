@@ -144,7 +144,8 @@ pExprAtom =
 
 pLet :: Parser Exp
 pLet = do
-  var <- identifier
+  _ <- symbol "def" <* sc
+  var <- pPattern
   _ <- pWrapWS "="
   expr1 <- pExpr
   _ <- rword ";" <* sc
@@ -175,7 +176,7 @@ pTuple = do
       _fold other = error "should not reach"
 
 pPattern :: Parser Pattern
-pPattern = (PLit <$> pLiteral) <|> (PVar <$> identifier)
+pPattern = expAsPattern <$> pExpr
 
 pLiteral :: Parser Lit
 pLiteral = choice [

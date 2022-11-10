@@ -213,14 +213,15 @@ step t@(EApp a b) = do
     if c'
       then return $ EApp a res'
       else error "Should not reach here, bad typechecking of calls"
-step t@(ELet id x y) = do
+step t@(ELet pat x y) = do
   res_x <- step x
   c <- isChanged
   if c
-    then return $ ELet id res_x y
+    then return $ ELet pat res_x y
     else do
+      pat_e <- bind pat x
       markChanged
-      return (replace (M.singleton id x) y)
+      return (replace pat_e y)
 step t@(EPair a b) = do
   res <- step a
   c <- isChanged

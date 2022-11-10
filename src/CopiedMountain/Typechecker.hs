@@ -325,12 +325,13 @@ infer ctx exp = case exp of
     where
       err = throwError $ MatchWithNonFunction m
       unifyJoin a b = unify ctx a b `catchError` (\e -> return (emptySubst, TSum a b))
-  ELet binder binding body -> do
+  ELet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
-    let scheme = Scheme [] (applySubst s1 tyBinder)
-    let tmpCtx = Map.insert binder scheme ctx
-    (s2, tyBody) <- infer (applySubstCtx s1 tmpCtx) body
-    return (s2 `composeSubst` s1, tyBody)
+    (ctx_p, tyP) <- inferPattern ctx pattern
+    let newCtx = Map.union ctx_p ctx
+    (s2, typB) <- unify newCtx tyP (applySubst s1 tyBinder)
+    (s3, tyBody) <- infer (applySubstCtx (s2 `composeSubst` s1) newCtx) body
+    return (s3 `composeSubst` s2 `composeSubst` s1, tyBody)
   EPair a b -> do
     (s1, tyA) <- infer ctx a
     (s2, tyB) <- infer (applySubstCtx s1 ctx) b
