@@ -1,6 +1,7 @@
  - Unique types
      -*>
      *
+ - wildcards
  - lets should be patterns vs id
  - higher kinded modules
  - Imports

@@ -46,30 +46,23 @@ replace env (ERec id x) = do
 replace _ t@(ETDef _ _ _) = t
 replace env (EUnique h a) = EUnique h (replace env a)
 
-bind :: (Monad m) => Bool -> Pattern -> Exp -> ContextT m Env
-bind u a@(PVar id) x =
-  if u
-    then return $ M.singleton id x
-    else
-      case x of
-        u@(EUnique _ _) -> throwError $ UniqueInNonUniqueCtx a x
-        other -> return $ M.singleton id x
-bind _ a@(PLit l) b@(ELit l')
+bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
+bind a@(PVar id) x = return $ M.singleton id x
+bind a@(PLit l) b@(ELit l')
   | l == l' = return M.empty
   | otherwise = throwError $ BadBind a b
-bind u a@(PPair x y) b@(EPair x' y') = do
-  res_a <- bind u x x'
-  res_b <- bind u y y'
+bind a@(PPair x y) b@(EPair x' y') = do
+  res_a <- bind x x'
+  res_b <- bind y y'
   return $ M.union res_a res_b -- TODO Union intersection should be eq
-bind u a@(PLabel id x) b@(ELabel id2 y) = do
+bind a@(PLabel id x) b@(ELabel id2 y) = do
   if id == id2
-    then bind u x y
+    then bind x y
     else throwError $ BadBind a b
-bind u a@(PAnnot typ x) b = bind u x b
-bind _ (PUnique (PVar id)) b@(EUnique _ _) = return $ M.singleton id b
-bind True a@(PUnique pat) (EUnique h x) = bind True pat x
-bind False a@(PUnique pat) b@(EUnique h x) = throwError $ UniqueInNonUniqueCtx a b
-bind _ a b = throwError $ BadBind a b
+bind a@(PAnnot typ x) b = bind x b -- only used during typechecking
+bind (PUnique (PVar id)) (EUnique _ b) = return $ M.singleton id b
+bind a@(PUnique pat) (EUnique h x) = bind pat x
+bind a b = throwError $ BadBind a b
 
 uniquify :: Exp -> IO Exp
 uniquify t@(EVar _) = return t
@@ -81,26 +74,18 @@ uniquify t@(EApp a b) = do
     else return (EApp a' b')
 uniquify t@(ELam p e) = do
   e' <- uniquify e
-  if isUnique e
-    then EUnique <$> randHash <*> pure (ELam p e')
-    else return (ELam p e')
+  return (ELam p e')
 uniquify t@(EULam p e) = do
   e' <- uniquify e
-  if isUnique e
-    then EUnique <$> randHash <*> pure (EULam p e')
-    else return (EULam p e')
+  return (EULam p e')
 uniquify t@(ELet id a b) = do
   a' <- uniquify a
   b' <- uniquify b
-  if any isUnique [a',b']
-    then EUnique <$> randHash <*> pure (ELet id a' b')
-    else return (ELet id a' b')
+  return (ELet id a' b')
 uniquify t@(EULet id a b) = do
   a' <- uniquify a
   b' <- uniquify b
-  if any isUnique [a',b']
-    then EUnique <$> randHash <*> pure (ELet id a' b')
-    else return (ELet id a' b')
+  return (EULet id a' b')
 uniquify (EAnnot t e) = do
   e' <- uniquify e
   if isUnique e
@@ -130,11 +115,11 @@ uniquify t@(ELabel id e) = do
   if isUnique e
     then EUnique <$> randHash <*> pure (ELabel id e')
     else return (ELabel id e')
+uniquify t@(EUnique Unset e) = EUnique <$> randHash <*> pure e
 uniquify t@(EUnique h e) = return t
 
 validate :: (Monad m) => Exp -> ContextT m Exp
 validate t@(EVar _) = return t
-validate t@(ELam p@(PUnique _) x) = throwError $ UniqueInNonUniqueCtx p t
 validate t@(ELam pat x) = do
   _ <- validate x
   let pat_vars :: S.Set Id = patFreeVars pat
@@ -158,7 +143,6 @@ validate t@(EULam pat x) = do
     then throwError $ ThisShouldBeNotUnique t
     else return t
 validate t@(EApp a b) = EApp <$> validate a <*> validate b
-validate t@(ELet p@(PUnique _) _ _) = throwError $ UniqueInNonUniqueCtx p t
 validate t@(ELet pat a b) = do
   _ <- validate a
   _ <- validate b
@@ -227,7 +211,7 @@ step x = do
       if c
         then return $ EApp a res
         else do
-          pat_e <- bind False pat b
+          pat_e <- bind pat b
           markChanged
           return $ replace pat_e y
     step' t@(EApp a@(EULam pat y) b) = do
@@ -236,7 +220,7 @@ step x = do
       if c
         then return $ EApp a res
         else do
-          pat_e <- bind True pat b
+          pat_e <- bind pat b
           markChanged
           return $ replace pat_e y
     step' t@(EApp a@(EMatch x y) b) = do
@@ -264,7 +248,7 @@ step x = do
       if c
         then return $ ELet pat res_x y
         else do
-          pat_e <- bind False pat x
+          pat_e <- bind pat x
           markChanged
           return (replace pat_e y)
     step' t@(EULet pat x y) = do
@@ -273,7 +257,7 @@ step x = do
       if c
         then return $ ELet pat res_x y
         else do
-          pat_e <- bind True pat x
+          pat_e <- bind pat x
           markChanged
           return (replace pat_e y)
     step' t@(EPair a b) = do

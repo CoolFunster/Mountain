@@ -1,15 +1,4 @@
-type ChessPiece = (
-    rook:()
-  | pawn:()
-  | queen:()
-  | king:()
-);
-
-def pieceVal = ChessPiece -> Int :: (
-      rook:() -> 5
-  ||  pawn:() -> 1
-  ||  queen:() -> 9
-  ||  bishop:() -> 100
-);
-
-pieceVal(rook:())
+def incr *= 1 -> 2;
+def incr2 *= 2 -> 3;
+def *x *= *1;
+incr2(incr(x))

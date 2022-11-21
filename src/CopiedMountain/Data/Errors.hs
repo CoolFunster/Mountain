@@ -5,9 +5,11 @@ import CopiedMountain.Data.AST
 data Error =
     UnboundId Id
   | BadBind Pattern Exp
-  | UniqueInNonUniqueCtx Pattern Exp
+  | BadBindT Pattern Type
+  | DirectUniqueCreation Exp
   | ThisShouldBeUnique Exp
   | ThisShouldBeNotUnique Exp
+  | BindUniqueNonUniquely Exp
   | BadUnify Type Type
   | BadHas Type Type
   | MatchWithNonFunction Exp

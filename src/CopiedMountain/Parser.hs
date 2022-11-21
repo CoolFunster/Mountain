@@ -79,7 +79,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "|-=;`[]{}()<>#\".:,~"
+restrictedIdChars = "|-=;`[]{}()<>#\".:,~*"
 
 identifier :: Parser Id
 identifier = do
@@ -102,9 +102,10 @@ pExpr = pBinExp <* optional (symbol ".")
 pBinExp :: Parser Exp
 pBinExp = makeExprParser pAnnot [
     [binaryR (try pColon) (varLTerm ELabel)],
+    [prefix (symbol "*") (EUnique Unset)],
     [binaryR (try $ pWrapWS "~") (varLTerm ERec)],
-    [binaryR (try $ pWrapWS "->") (ELam . expAsPattern),
-     binaryR (try $ pWrapWS "-*>") (EULam . expAsPattern)],
+    [binaryR (try $ pWrapWS "-->") (ELam . expAsPattern),
+     binaryR (try $ pWrapWS "->") (EULam . expAsPattern)],
     [binaryR (try $ pWrapWS "||") EMatch]
   ]
   where
@@ -138,7 +139,6 @@ pCallNormal = do
 
 pExprAtom :: Parser Exp
 pExprAtom =
-      -- try pUnique
       try pTuple
   <|> try pLet
   <|> try pTDef
@@ -239,8 +239,9 @@ pType = pBinTyp
 pBinTyp :: Parser Type
 pBinTyp = makeExprParser pTCall [
     [binaryR (try pColon) pLabel],
-    [binaryR (try $ pWrapWS "->") TFun,
-     binaryR (try $ pWrapWS "-*>") TUFun],
+    [prefix (try $ symbol "*") TUnique],
+    [binaryR (try $ pWrapWS "-->") TFun,
+     binaryR (try $ pWrapWS "->") TUFun],
     [binaryR (try $ pWrapWS "|") TSum]
   ]
   where
@@ -268,15 +269,9 @@ pTCallNormal = do
 pTypeAtom :: Parser Type
 pTypeAtom =
       pBuiltInType
-  <|> pUniqueType
   <|> pTTuple
   <|> pTVar
   <|> TType <$> try pKind
-
-pUniqueType :: Parser Type
-pUniqueType = do
-  _ <- symbol "*"
-  pType
 
 pBuiltInType :: Parser Type
 pBuiltInType = choice [
@@ -312,7 +307,7 @@ pKind = pBinKind
 pBinKind :: Parser Kind
 pBinKind = makeExprParser pKindAtom [
     [binaryR (optional sc) KApp],
-    [binaryR (try $ pWrapWS "->") KFun]
+    [binaryR (try $ pWrapWS "-->") KFun]
   ]
 
 pKindAtom :: Parser Kind

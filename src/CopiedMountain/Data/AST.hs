@@ -92,9 +92,18 @@ isFun ty = case ty of
   TUFun _ _ -> True
   _ -> False
 
+isLam :: Exp -> Bool
+isLam (ELam _ _) = True
+isLam (EULam _ _) = True
+isLam _ = False
+
 isUnique :: Exp -> Bool
 isUnique (EUnique _ _) = True
 isUnique other = False
+
+isUniqueT :: Type -> Bool
+isUniqueT (TUnique _) = True
+isUniqueT other = False
 
 renameVar :: Type -> (Id, Id) -> Type
 renameVar ty (old, new) = case ty of
@@ -121,7 +130,7 @@ expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
 expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
 expAsPattern (EAnnot typ exp) = PAnnot typ (expAsPattern exp)
-expAsPattern (EUnique h a) = PUnique (expAsPattern a)
+expAsPattern (EUnique _ a) = PUnique (expAsPattern a)
 expAsPattern t@(ETDef _ _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(EULam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
