@@ -299,6 +299,10 @@ inferPattern ctx (PAnnot typ x) = do
 inferPattern ctx (PUnique x) = do
   (s1, typx) <- inferPattern ctx x
   return (s1, TUnique typx)
+inferPattern ctx PWildcard = do
+  res <- newTyVar
+  return (ctx, res)
+  
 
 infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
 infer ctx exp = case exp of

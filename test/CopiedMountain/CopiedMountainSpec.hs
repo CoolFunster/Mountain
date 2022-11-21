@@ -38,7 +38,16 @@ spec = do
         ast `shouldBe` Right (EULet (PVar "x") (ELit (LInt 3)) (EVar "x"))
         res <- uniquify (fromRight (error "") ast)
         res `shouldBe` EULet (PVar "x") (ELit (LInt 3)) (EVar "x")
-    describe "Sum" $ do
+    describe "Wildcards" $ do
+      it "Should handle a wildcard" $ do
+        let ast = parseExpr "(? -> 4)3"
+        ast `shouldBe` Right (EApp (EULam PWildcard (ELit (LInt 4))) (ELit (LInt 3)))
+        (raw_res, log) <- runWith initialState $ process (Just 20) (fromRight (error "") ast)
+        case raw_res of
+          Left e -> error $ prettyError e
+          Right (res, state) ->
+            res `shouldBe` ELit (LInt 4)
+    describe "Cases" $ do
       it "Should handle this case" $ do
         let ast = parseExpr "(x -> x || 3 -> 4)3"
         ast `shouldBe` Right (EApp (EMatch (EULam (PVar "x") (EVar "x")) (EULam (PLit (LInt 3)) (ELit (LInt 4)))) (ELit (LInt 3)))

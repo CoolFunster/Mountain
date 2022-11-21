@@ -1,4 +1,2 @@
-def incr *= 1 -> 2;
-def incr2 *= 2 -> 3;
-def *x *= *1;
-incr2(incr(x))
+def athree = ? -> 3;
+(athree("a"), athree(3))

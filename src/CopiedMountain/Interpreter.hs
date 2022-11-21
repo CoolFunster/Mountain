@@ -47,6 +47,7 @@ replace _ t@(ETDef _ _ _) = t
 replace env (EUnique h a) = EUnique h (replace env a)
 
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
+bind PWildcard x = return M.empty
 bind a@(PVar id) x = return $ M.singleton id x
 bind a@(PLit l) b@(ELit l')
   | l == l' = return M.empty
@@ -60,7 +61,6 @@ bind a@(PLabel id x) b@(ELabel id2 y) = do
     then bind x y
     else throwError $ BadBind a b
 bind a@(PAnnot typ x) b = bind x b -- only used during typechecking
-bind (PUnique (PVar id)) (EUnique _ b) = return $ M.singleton id b
 bind a@(PUnique pat) (EUnique h x) = bind pat x
 bind a b = throwError $ BadBind a b
 

@@ -62,7 +62,6 @@ data Type
   | TSum Type Type
   | TLabel Id Type
   | TUnique Type
-  -- | TUnique Hash Type
   -- Kinds
   | TType Kind
   | TCall Type Type
@@ -77,6 +76,7 @@ data Kind =
 data Pattern =
     PLit Lit
   | PVar Id
+  | PWildcard
   | PPair Pattern Pattern
   | PLabel Id Pattern
   | PAnnot Type Pattern
@@ -125,6 +125,7 @@ renameVar ty (old, new) = case ty of
   TUnique t -> TUnique (renameVar t (old, new))
 
 expAsPattern :: Exp -> Pattern
+expAsPattern (EVar "?") = PWildcard
 expAsPattern (EVar id) = PVar id
 expAsPattern (ELit l) = PLit l
 expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
@@ -182,3 +183,4 @@ patFreeVars (PPair a b) = S.union (patFreeVars a) (patFreeVars b)
 patFreeVars (PLabel id a) = patFreeVars a
 patFreeVars (PAnnot t p) = patFreeVars p
 patFreeVars (PUnique p) = patFreeVars p
+patFreeVars PWildcard = S.empty

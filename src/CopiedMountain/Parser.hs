@@ -182,7 +182,10 @@ pTuple = do
       _fold other = error "should not reach"
 
 pPattern :: Parser Pattern
-pPattern = expAsPattern <$> pExpr
+pPattern = choice [
+    symbol "?" $> PWildcard,
+    expAsPattern <$> pExpr
+  ]
 
 pLiteral :: Parser Lit
 pLiteral = choice [

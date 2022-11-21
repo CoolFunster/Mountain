@@ -1,12 +1,9 @@
- - Unique types
-     -*>
-     *
  - wildcards
- - lets should be patterns vs id
- - higher kinded modules
+ - tokens
+ - Structures & Signatures
  - Imports
-    - avoid cycles?
  - builtin foos
- - macros
  - refined pattern guard (x % x > 0)
+ - macros
  - type vars start capital, normal are lower
+ - fix var names and properly eliminate ? from valid var names

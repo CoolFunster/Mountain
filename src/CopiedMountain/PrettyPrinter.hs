@@ -27,6 +27,7 @@ prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ 
 prettyPattern (PLabel id x) = id ++ ":" ++ prettyPattern x
 prettyPattern (PAnnot typ x) = "(" ++ prettyType typ ++ "::" ++ prettyPattern x ++ ")"
 prettyPattern (PUnique x) = "*" ++ prettyPattern x
+prettyPattern PWildcard = "?"
 
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
@@ -89,4 +90,4 @@ prettyLog (Step expr env:xs) = do
 prettyLog [] = "END"
 
 prettyError :: Error -> String
-prettyError = show 
+prettyError = show
