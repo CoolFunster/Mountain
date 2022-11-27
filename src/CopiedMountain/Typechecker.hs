@@ -51,6 +51,7 @@ applySubst subst ty = case ty of
   TUnit -> TUnit
   TCall a b -> TCall (applySubst subst a) (applySubst subst b)
   TUnique t -> TUnique (applySubst subst t)
+  TToken id -> TToken id
 
 applySubstOnPattern :: Substitution -> Pattern -> Pattern
 applySubstOnPattern s (PLit l) = PLit l
@@ -59,6 +60,7 @@ applySubstOnPattern s (PPair a b) = PPair (applySubstOnPattern s a) (applySubstO
 applySubstOnPattern s (PLabel id b) = PLabel id (applySubstOnPattern s b)
 applySubstOnPattern s (PAnnot typ b) = PAnnot (applySubst s typ) (applySubstOnPattern s b)
 applySubstOnPattern s (PUnique b) = PUnique (applySubstOnPattern s b)
+applySubstOnPattern s PWildcard = PWildcard
 
 applySubstOnExpr :: Substitution -> Exp -> Exp
 applySubstOnExpr subst t@(EVar id) = t
@@ -75,6 +77,7 @@ applySubstOnExpr s (EMatch a b) = EMatch (applySubstOnExpr s a) (applySubstOnExp
 applySubstOnExpr s (EPair a b) = EPair (applySubstOnExpr s a) (applySubstOnExpr s b)
 applySubstOnExpr s (ELabel id b) = ELabel id (applySubstOnExpr s b)
 applySubstOnExpr s (EUnique h b) = EUnique h (applySubstOnExpr s b)
+applySubstOnExpr s (EToken id h) = EToken id h
 
 applySubstScheme :: Substitution -> Scheme -> Scheme
 applySubstScheme subst (Scheme vars t) =
@@ -89,10 +92,23 @@ freeTypeVars :: Type -> Set Id
 freeTypeVars ty = case ty of
  TVar var ->
    Set.singleton var
- TFun t1 t2 ->
-   Set.union (freeTypeVars t1) (freeTypeVars t2)
- _ ->
-   Set.empty
+ TFun t1 t2 -> Set.union (freeTypeVars t1) (freeTypeVars t2)
+ TUFun t1 t2 -> Set.union (freeTypeVars t1) (freeTypeVars t2)
+ TPair a b -> Set.union (freeTypeVars a) (freeTypeVars b)
+ TSum a b -> Set.union (freeTypeVars a) (freeTypeVars b)
+ TLabel _ b -> freeTypeVars b
+ TUnique t -> freeTypeVars t
+ TToken _ -> Set.empty
+ TType _ -> Set.empty
+ TCall a b -> Set.union (freeTypeVars a) (freeTypeVars b)
+ TInt -> Set.empty
+ TBool -> Set.empty
+ TChar -> Set.empty
+ TString -> Set.empty
+ TFloat -> Set.empty
+ TThing -> Set.empty
+ TUnit -> Set.empty
+
 
 freeTypeVarsScheme :: Scheme -> Set Id
 freeTypeVarsScheme (Scheme vars t) =
@@ -185,6 +201,10 @@ has ctx c a@(TCall _ _) = do
   res <- evalTCall ctx a
   has ctx c res
 has ctx (TUnique x) (TUnique y) = has ctx x y
+has ctx t1@(TToken id) t2@(TToken id2) =
+  if id /= id2
+    then throwError $ BadHas t1 t2
+    else return (emptySubst, TToken id)
 has _ t1 t2 = throwError $ BadHas t1 t2
 
 
@@ -246,6 +266,10 @@ unify ctx a@(TSum x y) b@(TSum x' y') = do
   })
 unify ctx a b@(TSum x' y') = unify ctx b a
 unify ctx (TUnique x) (TUnique y) = unify ctx x y
+unify ctx t1@(TToken id) t2@(TToken id2) =
+  if id /= id2
+    then throwError $ BadUnify t1 t2
+    else return (emptySubst, TToken id)
 unify _ t1 t2 = throwError $ BadUnify t1 t2
 
 type Context = Map String Scheme
@@ -260,6 +284,9 @@ generalize :: Context -> Type -> Scheme
 generalize ctx t = Scheme vars t
   where
     vars = Set.toList (Set.difference (freeTypeVars t) (freeTypeVarsCtx ctx))
+
+generalizeScheme :: Context -> Scheme -> Scheme
+generalizeScheme ctx (Scheme _ exp) = generalize ctx exp
 
 instantiate :: (Monad m) => Scheme -> ContextT m Type
 instantiate (Scheme vars ty) = do
@@ -302,7 +329,7 @@ inferPattern ctx (PUnique x) = do
 inferPattern ctx PWildcard = do
   res <- newTyVar
   return (ctx, res)
-  
+
 
 infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
 infer ctx exp = case exp of
@@ -318,21 +345,12 @@ infer ctx exp = case exp of
     (s2, tyArg) <- infer (applySubstCtx s1 ctx) arg
     (s3, input_typ) <- has ctx (applySubst s2 (inputTyp tyFun)) tyArg
     let final_subst = s3 `composeSubst` s2 `composeSubst` s1
-    if hasBoundUnique s3
-      then case tyFun of
-        TFun _ _ -> throwError $ BindUniqueNonUniquely exp
-        TUFun _ _ -> return (final_subst, TUnique $ outputTyp (applySubst final_subst tyFun))
-        other -> error "what is this case"
-      else return (final_subst, outputTyp (applySubst final_subst tyFun))
+    return (final_subst, outputTyp (applySubst final_subst tyFun))
     where
       inputTyp (TFun a b) = a
       inputTyp (TUFun a b) = a
       outputTyp (TFun a b) = b
       outputTyp (TUFun a b) = b
-  ELam p@(PUnique x) b@body -> do
-    (subs, typ) <- infer ctx (ELam x b)
-    let TFun a b = typ
-    return (subs, TFun (TUnique a) b)
   ELam pattern body -> do
     (ctx_p, tyP) <- inferPattern ctx pattern
     let tmpCtx = Map.union ctx_p ctx
@@ -376,17 +394,18 @@ infer ctx exp = case exp of
     (ctx_p, tyP) <- inferPattern ctx pattern
     let newCtx = Map.union ctx_p ctx
     (s2, typB) <- unify newCtx tyP (applySubst s1 tyBinder)
-    if hasBoundUnique s2
-      then throwError $ BindUniqueNonUniquely exp
-      else do
-        (s3, tyBody) <- infer (applySubstCtx (s2 `composeSubst` s1) newCtx) body
-        return (s3 `composeSubst` s2 `composeSubst` s1, tyBody)
+    let patCtx = Map.map (generalizeScheme ctx) $ applySubstCtx (s2 `composeSubst` s1) ctx_p
+    let finalCtx = applySubstCtx (s2 `composeSubst` s1) $ Map.union patCtx ctx
+    (s3, tyBody) <- infer finalCtx body
+    return (s3 `composeSubst` s2 `composeSubst` s1, tyBody)
   EULet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
     (ctx_p, tyP) <- inferPattern ctx pattern
     let newCtx = Map.union ctx_p ctx
     (s2, typB) <- unify newCtx tyP (applySubst s1 tyBinder)
-    (s3, tyBody) <- infer (applySubstCtx (s2 `composeSubst` s1) newCtx) body
+    let patCtx = Map.map (generalizeScheme ctx) $ applySubstCtx (s2 `composeSubst` s1) ctx_p
+    let finalCtx = applySubstCtx (s2 `composeSubst` s1) $ Map.union patCtx ctx
+    (s3, tyBody) <- infer finalCtx body
     return (s3 `composeSubst` s2 `composeSubst` s1, tyBody)
   EPair a b -> do
     (s1, tyA) <- infer ctx a
@@ -421,11 +440,12 @@ infer ctx exp = case exp of
     case typX of
       TUnique _ -> return (subst, typX)
       other -> return (subst, TUnique typX)
+  EToken id h -> return (emptySubst, TToken id)
 
-typeInference :: (Monad m) => Context -> Exp -> ContextT m Type
+typeInference :: (Monad m) => Context -> Exp -> ContextT m Scheme
 typeInference ctx exp = do
   (s, t) <- infer ctx exp
-  return (applySubst s t)
+  return (applySubstScheme s (generalize ctx t))
 
 primitives :: Context
 primitives = Map.fromList

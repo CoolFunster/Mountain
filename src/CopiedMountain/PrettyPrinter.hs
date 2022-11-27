@@ -44,6 +44,7 @@ prettyExp (EAnnot typ a) = "(" ++ prettyType typ ++ ")::(" ++ prettyExp a ++ ")"
 prettyExp (ERec id a) = "(" ++ id ++ "~" ++ prettyExp a ++ ")"
 prettyExp (ETDef id typ rest) = "type " ++ id ++ " = " ++ prettyType typ ++ ";" ++ prettyExp rest
 prettyExp (EUnique h x) = "*" <> (if isLam x then "(" <> prettyExp x <> ")" else prettyExp x)
+prettyExp (EToken id _) = "#" <> id
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
@@ -72,6 +73,7 @@ prettyType ty = case ty of
   TType kind -> prettyKind kind
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
   TUnique t -> "*" <> (if isFun t then "(" <> prettyType t <> ")" else prettyType t)
+  TToken id -> "$" <> id
 
 prettyScheme :: Scheme -> String
 prettyScheme (Scheme [] ty) = prettyType ty

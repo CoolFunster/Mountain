@@ -24,7 +24,7 @@ initialState = State {
     name_counter=0
   }
 
-processExp :: (Maybe Int) -> Exp -> ContextT IO (Type, Exp)
+processExp :: (Maybe Int) -> Exp -> ContextT IO (Scheme, Exp)
 processExp steps x = do
   vx <- preprocess x
   resType <- typeInference primitives vx
@@ -45,7 +45,7 @@ main = do
       let (eval_result, log) = raw_eval_result
       case eval_result of
         Right ((resT, resExp), env) -> do
-          putStrLn $ prettyType resT ++ " :: " ++ prettyExp resExp
+          putStrLn $ prettyScheme resT ++ " :: " ++ prettyExp resExp
         Left e -> do
           putStrLn $ "ERROR: " ++ prettyError e ++ "\n"
           putStrLn "LOG:"

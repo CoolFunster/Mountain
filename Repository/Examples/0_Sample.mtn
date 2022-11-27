@@ -1,2 +1,0 @@
-def athree = ? -> 3;
-(athree("a"), athree(3))

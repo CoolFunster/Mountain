@@ -45,6 +45,7 @@ replace env (ERec id x) = do
   ERec id (replace env' x)
 replace _ t@(ETDef _ _ _) = t
 replace env (EUnique h a) = EUnique h (replace env a)
+replace env t@(EToken id h) = t
 
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind PWildcard x = return M.empty
@@ -117,6 +118,7 @@ uniquify t@(ELabel id e) = do
     else return (ELabel id e')
 uniquify t@(EUnique Unset e) = EUnique <$> randHash <*> pure e
 uniquify t@(EUnique h e) = return t
+uniquify t@(EToken _ _) = return t
 
 validate :: (Monad m) => Exp -> ContextT m Exp
 validate t@(EVar _) = return t
@@ -181,6 +183,7 @@ validate (EMatch a b) = EMatch <$> validate a <*> validate b
 validate (EPair a b) = EPair <$> validate a <*> validate b
 validate (ELabel id x) = ELabel id <$> validate x
 validate (EUnique h x) = EUnique h <$> validate x
+validate t@(EToken _ _) = return t
 
 step :: Exp -> ContextT IO Exp
 step x = do
@@ -272,6 +275,7 @@ step x = do
           then return $ EPair a res'
           else return t
     step' t@(ELabel id exp) = ELabel id <$> step' exp
+    step' t@(EToken _ _) = return t
 
 evaluate :: Maybe Int -> Exp -> ContextT IO Exp
 evaluate (Just 0) x = return x

@@ -79,7 +79,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "|-=;`[]{}()<>#\".:,~*"
+restrictedIdChars = "|-=;`[]{}()<>#\".:,~*$"
 
 identifier :: Parser Id
 identifier = do
@@ -102,7 +102,6 @@ pExpr = pBinExp <* optional (symbol ".")
 pBinExp :: Parser Exp
 pBinExp = makeExprParser pAnnot [
     [binaryR (try pColon) (varLTerm ELabel)],
-    [prefix (symbol "*") (EUnique Unset)],
     [binaryR (try $ pWrapWS "~") (varLTerm ERec)],
     [binaryR (try $ pWrapWS "-->") (ELam . expAsPattern),
      binaryR (try $ pWrapWS "->") (EULam . expAsPattern)],
@@ -139,11 +138,17 @@ pCallNormal = do
 
 pExprAtom :: Parser Exp
 pExprAtom =
-      try pTuple
+      try pUnique
+  <|> try pTuple
   <|> try pLet
   <|> try pTDef
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
+
+pUnique :: Parser Exp
+pUnique = do
+  _ <- symbol "*"
+  EUnique Unset <$> pExprAtom
 
 pLet :: Parser Exp
 pLet = do
@@ -275,6 +280,12 @@ pTypeAtom =
   <|> pTTuple
   <|> pTVar
   <|> TType <$> try pKind
+  <|> pTToken
+
+pTToken :: Parser Type
+pTToken = do
+  _ <- symbol "$"
+  TToken <$> identifier
 
 pBuiltInType :: Parser Type
 pBuiltInType = choice [

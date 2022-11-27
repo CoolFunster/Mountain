@@ -1,5 +1,5 @@
- - wildcards
  - tokens
+ - fix type schemes
  - Structures & Signatures
  - Imports
  - builtin foos

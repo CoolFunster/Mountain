@@ -30,6 +30,7 @@ data Exp =
   | EPair Exp Exp
   | ELabel Id Exp
   | EUnique Hash Exp
+  | EToken Id Hash
   deriving (Eq, Ord, Show)
 
 data Lit
@@ -62,6 +63,7 @@ data Type
   | TSum Type Type
   | TLabel Id Type
   | TUnique Type
+  | TToken Id
   -- Kinds
   | TType Kind
   | TCall Type Type
@@ -83,7 +85,7 @@ data Pattern =
   | PUnique Pattern
   deriving (Eq, Ord, Show)
 
-data Scheme = Scheme [Id] Type deriving (Show)
+data Scheme = Scheme [Id] Type deriving (Show, Eq)
 
 -- Ignore from here onwards
 isFun :: Type -> Bool
@@ -99,10 +101,12 @@ isLam _ = False
 
 isUnique :: Exp -> Bool
 isUnique (EUnique _ _) = True
+isUnique (EToken _ _) = True
 isUnique other = False
 
 isUniqueT :: Type -> Bool
 isUniqueT (TUnique _) = True
+isUniqueT (TToken _) = True
 isUniqueT other = False
 
 renameVar :: Type -> (Id, Id) -> Type

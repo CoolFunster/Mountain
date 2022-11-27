@@ -4,6 +4,7 @@ module CopiedMountain.CopiedMountainParserSpec (spec) where
 
 import CopiedMountain.Data.AST
 import CopiedMountain.Parser
+import CopiedMountain.Hash
 
 import Data.Map.Strict as M
 import Data.Either
@@ -87,6 +88,12 @@ spec = do
         it "Should parse a Unique let" $ do
           let res = parseExpr "def a *= b; a"
           res `shouldBe` Right (EULet (PVar "a") (EVar "b") (EVar "a"))
+        it "Should parse this let" $ do
+          let res = parseExpr "def id = x -> x; id"
+          res `shouldBe` Right (ELet (PVar "id") (EULam (PVar "x") (EVar "x")) (EVar "id"))
+        it "Should parse this let2" $ do
+          let res = parseExpr "def id = x -> x; (id(3), id(\"s\"))"
+          res `shouldBe` Right (ELet (PVar "id") (EULam (PVar "x") (EVar "x")) (EPair (EApp (EVar "id") (ELit (LInt 3))) (EApp (EVar "id") (ELit (LString "s")))))
       describe "Label" $ do
         it "Should parse a label" $ do
           let res = parseExpr "temp:3"
@@ -110,6 +117,9 @@ spec = do
         it "should parse a nested Annot" $ do
           let res = parseExpr "Int -> String :: Int :: 3"
           res `shouldBe` Right (EAnnot (TUFun TInt TString) (EAnnot TInt (ELit (LInt 3))))
+        it "should parse a pattern annotation" $ do
+          let res = parseExpr "(*Int :: x) -> x"
+          res `shouldBe` Right (EULam (PAnnot (TUnique TInt) (PVar "x")) (EVar "x"))
       describe "Recursion" $ do
         it "should parse a recursive function" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
@@ -118,4 +128,8 @@ spec = do
         it "should handle typedefs" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
           res `shouldBe` Right (ERec "x" (EAnnot (TUFun TInt TInt) (EULam (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
+        it "should handle simple typedef" $ do
+          let res = parseExpr "*Int :: x"
+          res `shouldBe` Right (EAnnot (TUnique TInt) (EVar "x"))
+
           
