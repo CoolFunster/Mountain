@@ -194,14 +194,14 @@ spec = do
         x' <- uniquify (fromRight (error "") x)
         prettyExp x' `shouldBe` "(*Int::x)-->(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
-        raw_res `shouldBe` Left (BindUniqueNonUniquely (EVar "x"))
+        raw_res `shouldBe` Left BindUniqueNonUniquely
       it "Should handle unique type annotations" $ do
         let x = parseExpr "(*Int, String) --> (*Int, *Int) :: (x,?) --> (x,x)"
         x `shouldBe` Right (EAnnot (TFun (TPair (TUnique TInt) TString) (TPair (TUnique TInt) (TUnique TInt))) (ELam (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
         x' <- uniquify (fromRight (error "") x)
         prettyExp x' `shouldBe` "((*Int,String) --> (*Int,*Int))::((x,?)-->(x,x))"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
-        raw_res `shouldBe` Left (BindUniqueNonUniquely (EVar "x"))
+        raw_res `shouldBe` Left BindUniqueNonUniquely
     describe "lets" $ do
       it "Should handle polymorphic functions" $ do
         let x = parseExpr "def id = x -> x; (id(3), id(\"s\"))"

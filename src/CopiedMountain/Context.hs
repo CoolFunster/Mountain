@@ -119,8 +119,10 @@ getEnv = do
   let State _ e _ _ = env
   return e
 
-newTyVar :: (Monad m) => ContextT m Type
-newTyVar = do
+newTyVar :: (Monad m) => Bool -> ContextT m Type
+newTyVar isNU = do
   State a b c s <- get
   put $ State a b c (s + 1)
-  return (TVar ("u" <> show s))
+  if isNU
+    then return (TNUVar ("v" <> show s))
+    else return (TVar ("u" <> show s))

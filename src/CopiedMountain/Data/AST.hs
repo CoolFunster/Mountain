@@ -56,6 +56,7 @@ data Type
   | TUnit
   -- Calculus
   | TVar Id
+  | TNUVar Id -- non unique var
   | TFun Type Type
   | TUFun Type Type
   -- Data Structures
@@ -109,6 +110,9 @@ isUniqueT (TUnique _) = True
 isUniqueT (TToken _) = True
 isUniqueT other = False
 
+isUniqueScheme :: Scheme -> Bool
+isUniqueScheme (Scheme _ t) = isUniqueT t
+
 renameVar :: Type -> (Id, Id) -> Type
 renameVar ty (old, new) = case ty of
   TUnit -> TUnit
@@ -119,6 +123,7 @@ renameVar ty (old, new) = case ty of
   TFloat -> TFloat
   TThing -> TThing
   TVar var -> TVar (if var == old then new else var)
+  TNUVar var -> TVar (if var == old then new else var)
   TFun t1 t2 -> TFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TUFun t1 t2 -> TUFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
@@ -127,6 +132,7 @@ renameVar ty (old, new) = case ty of
   TType x -> TType x
   TCall a b -> TCall a b
   TUnique t -> TUnique (renameVar t (old, new))
+  TToken id -> TToken id
 
 expAsPattern :: Exp -> Pattern
 expAsPattern (EVar "?") = PWildcard
@@ -136,14 +142,15 @@ expAsPattern (EPair a b) = PPair (expAsPattern a) (expAsPattern b)
 expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
 expAsPattern (EAnnot typ exp) = PAnnot typ (expAsPattern exp)
 expAsPattern (EUnique _ a) = PUnique (expAsPattern a)
-expAsPattern t@(ETDef _ _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
+expAsPattern t@ETDef {} = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@(EULam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
-expAsPattern t@(ELet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
-expAsPattern t@(EULet _ _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+expAsPattern t@ELet {} = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+expAsPattern t@EULet {} = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EApp _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(ERec _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
+expAsPattern t@(EToken _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 
 freeRefs :: Exp -> S.Set Id
 freeRefs x = M.keysSet (freeRefWithCounts x)
@@ -172,13 +179,14 @@ freeRefWithCounts (EULet pat a b) = let
   in
     M.unionWith (+) a_refs (M.withoutKeys b_refs p_refs)
 freeRefWithCounts (EAnnot t b) = freeRefWithCounts b
-freeRefWithCounts (ETDef _ _ _) = M.empty
+freeRefWithCounts ETDef {} = M.empty
 freeRefWithCounts (ELit _) = M.empty
 freeRefWithCounts (ERec id x) = M.delete id $ freeRefWithCounts x
 freeRefWithCounts (EMatch a b) = M.unionWith (+) (freeRefWithCounts a) (freeRefWithCounts b)
 freeRefWithCounts (EPair a b) = M.unionWith (+) (freeRefWithCounts a) (freeRefWithCounts b)
 freeRefWithCounts (ELabel id x) = freeRefWithCounts x
 freeRefWithCounts (EUnique h x) = freeRefWithCounts x
+freeRefWithCounts (EToken h x) = M.empty
 
 patFreeVars :: Pattern -> S.Set Id
 patFreeVars (PLit _) = S.empty

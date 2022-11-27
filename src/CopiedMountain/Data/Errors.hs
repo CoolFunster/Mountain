@@ -9,7 +9,7 @@ data Error =
   | DirectUniqueCreation Exp
   | ThisShouldBeUnique Exp
   | ThisShouldBeNotUnique Exp
-  | BindUniqueNonUniquely Exp
+  | BindUniqueNonUniquely
   | BadUnify Type Type
   | BadHas Type Type
   | MatchWithNonFunction Exp
