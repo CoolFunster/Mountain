@@ -244,6 +244,7 @@ pBinTyp :: Parser Type
 pBinTyp = makeExprParser pTCall [
     [binaryR (try pColon) pLabel],
     [prefix (try $ symbol "*") TUnique],
+    [prefix (try $ symbol "+") TCopied],
     [binaryR (try $ pWrapWS "->") TFun],
     [binaryR (try $ pWrapWS "|") TSum]
   ]

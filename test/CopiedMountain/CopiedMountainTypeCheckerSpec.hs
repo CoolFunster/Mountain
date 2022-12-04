@@ -83,6 +83,15 @@ spec = do
       it "case sum disjoint" $ do
         (raw_res, _) <- runWith dummyState  $ unify primitives (TSum TUnit TThing) (TSum TUnit TInt)
         raw_res  `shouldBe` Left (BadUnify TUnit TInt)
+    describe "Copied" $ do
+      it "should infer a copied type" $ do
+        let x = parseExpr "(x,?) -> (x,x)"
+        x `shouldBe` Right (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x")))
+        (raw_res, _) <- runWith dummyState (typeInference primitives (fromRight (error "") x))
+        case raw_res of
+          Left e -> error (show e)
+          Right (res, _) ->
+            res `shouldBe` Scheme ["u0","u1"] (TFun (TPair (TCopied $ TVar "u0") (TVar "u1")) (TPair (TVar "u0") (TVar "u0")))
     describe "Unique" $ do
       it "Should infer a unique type" $ do
         let x = EUnique Unset (ELit (LInt 3))
@@ -127,7 +136,7 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme [] (TFun TInt (TPair TInt TInt))
+            res `shouldBe` Scheme [] (TFun (TCopied TInt) (TPair TInt TInt))
       it "Should infer a app" $ do
         let x = parseExpr "(3 -> 5)(3)"
         x `shouldBe` Right (EApp (EFun (PLit (LInt 3)) (ELit (LInt 5))) (ELit (LInt 3)))
@@ -197,11 +206,14 @@ spec = do
         raw_res `shouldBe` Left BindUniqueNonUniquely
       it "Should handle unique type annotations" $ do
         let x = parseExpr "(+Int, String) -> (Int, Int) :: (x,?) -> (x,x)"
-        x `shouldBe` Right (EAnnot (TFun (TPair (TUnique TInt) TString) (TPair (TUnique TInt) (TUnique TInt))) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
+        x `shouldBe` Right (EAnnot (TFun (TPair (TCopied TInt) TString) (TPair TInt TInt)) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
         x' <- uniquify (fromRight (error "") x)
-        prettyExp x' `shouldBe` "((*Int,String) -> (*Int,*Int))::((x,?)->(x,x))"
+        prettyExp x' `shouldBe` "((+Int,String) -> (Int,Int))::((x,?)->(x,x))"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
-        raw_res `shouldBe` Left BindUniqueNonUniquely
+        case raw_res of
+          Left e -> error (show e)
+          Right (res, _) ->
+            res `shouldBe` Scheme [] (TFun (TPair (TCopied TInt) TString) (TPair TInt TInt))
     describe "lets" $ do
       it "Should handle polymorphic functions" $ do
         let x = parseExpr "def id = x -> x; (id(3), id(\"s\"))"

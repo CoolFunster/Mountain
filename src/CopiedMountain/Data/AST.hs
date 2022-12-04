@@ -54,12 +54,13 @@ data Type
   | TUnit
   -- Calculus
   | TVar Id
-  | TNUVar Id -- non unique var
+  | TNUVar Id
   | TFun Type Type
   -- Data Structures
   | TPair Type Type
   | TSum Type Type
   | TLabel Id Type
+  | TCopied Type -- non unique var
   | TUnique Type
   | TToken Id
   -- Kinds
@@ -118,15 +119,16 @@ renameVar ty (old, new) = case ty of
   TFloat -> TFloat
   TThing -> TThing
   TVar var -> TVar (if var == old then new else var)
-  TNUVar var -> TVar (if var == old then new else var)
+  TNUVar var -> TNUVar (if var == old then new else var)
   TFun t1 t2 -> TFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TSum t1 t2 -> TSum (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TLabel id t1 -> TLabel id (renameVar t1 (old, new))
   TType x -> TType x
   TCall a b -> TCall a b
-  TUnique t -> TUnique (renameVar t (old, new))
   TToken id -> TToken id
+  TCopied t -> TCopied (renameVar t (old,new))
+  TUnique t -> TUnique (renameVar t (old,new))
 
 expAsPattern :: Exp -> Pattern
 expAsPattern (EVar "?") = PWildcard
@@ -146,6 +148,9 @@ expAsPattern t@(EToken _ _) = error $ "bad parse! must be var or lit on a functi
 
 freeRefs :: Exp -> S.Set Id
 freeRefs x = M.keysSet (freeRefWithCounts x)
+
+copiedFreeRef :: Exp -> S.Set Id
+copiedFreeRef e = M.keysSet $ M.filter (> 1) $ freeRefWithCounts e
 
 freeRefWithCounts :: Exp -> M.Map Id Int
 freeRefWithCounts (EVar id) = M.singleton id 1

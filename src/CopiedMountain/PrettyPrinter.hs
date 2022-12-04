@@ -69,6 +69,7 @@ prettyType ty = case ty of
   TType kind -> prettyKind kind
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
   TUnique t -> "*" <> (if isTFun t then "(" <> prettyType t <> ")" else prettyType t)
+  TCopied t -> "+" <> (if isTFun t then "(" <> prettyType t <> ")" else prettyType t)
   TToken id -> "$" <> id
 
 prettyScheme :: Scheme -> String

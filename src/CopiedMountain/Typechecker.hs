@@ -20,6 +20,7 @@ import CopiedMountain.Data.AST
 import Debug.Trace
 import qualified Data.Text as T
 import CopiedMountain.Context
+import qualified Data.Set as S
 
 type Substitution = Map String Type
 
@@ -30,30 +31,36 @@ emptySubst :: Substitution
 emptySubst = Map.empty
 
 applySubst :: (Monad m) => Substitution -> Type -> ContextT m Type
-applySubst subst ty = case ty of
-  TPair a b -> TPair <$> applySubst subst a <*> applySubst subst b
-  TSum a b -> TSum <$> applySubst subst a <*> applySubst subst b
-  TLabel id x -> TLabel id <$> applySubst subst x
-  TVar var -> return $ case Map.lookup var subst of
-    Nothing -> TVar var
-    Just x -> x
-  TNUVar var -> case Map.lookup var subst of
-    Nothing -> return $ TNUVar var
-    Just (TUnique _) -> throwError BindUniqueNonUniquely
-    Just x -> return x
-  TFun arg res ->
-    TFun <$> applySubst subst arg <*> applySubst subst res
-  TInt -> return TInt
-  TBool -> return TBool
-  TChar -> return TChar
-  TString -> return TString
-  TFloat -> return TFloat
-  TThing -> return TThing
-  TType k -> return $ TType k
-  TUnit -> return TUnit
-  TCall a b -> TCall <$> applySubst subst a <*> applySubst subst b
-  TUnique t -> TUnique <$> applySubst subst t
-  TToken id -> return $ TToken id
+applySubst subst ty = do
+  case ty of
+    TPair a b -> TPair <$> applySubst subst a <*> applySubst subst b
+    TSum a b -> TSum <$> applySubst subst a <*> applySubst subst b
+    TLabel id x -> TLabel id <$> applySubst subst x
+    TVar var -> return $ case Map.lookup var subst of
+      Nothing -> TVar var
+      Just x -> x
+    TNUVar var -> case Map.lookup var subst of
+      Nothing -> return $ TNUVar var
+      Just (TUnique _) -> throwError BindUniqueNonUniquely
+      Just x -> return x
+    TFun arg res ->
+      TFun <$> applySubst subst arg <*> applySubst subst res
+    TInt -> return TInt
+    TBool -> return TBool
+    TChar -> return TChar
+    TString -> return TString
+    TFloat -> return TFloat
+    TThing -> return TThing
+    TType k -> return $ TType k
+    TUnit -> return TUnit
+    TCall a b -> TCall <$> applySubst subst a <*> applySubst subst b
+    TUnique t -> TUnique <$> applySubst subst t
+    TCopied t -> do
+      res <- applySubst subst t
+      if isTUnique res
+        then throwError BindUniqueNonUniquely
+        else return $ TCopied res
+    TToken id -> return $ TToken id
 
 applySubstOnPattern :: (Monad m) => Substitution -> Pattern -> ContextT m Pattern
 applySubstOnPattern s (PLit l) = return $ PLit l
@@ -99,6 +106,7 @@ freeTypeVars ty = case ty of
  TSum a b -> Set.union (freeTypeVars a) (freeTypeVars b)
  TLabel _ b -> freeTypeVars b
  TUnique t -> freeTypeVars t
+ TCopied t -> freeTypeVars t
  TToken _ -> Set.empty
  TType _ -> Set.empty
  TCall a b -> Set.union (freeTypeVars a) (freeTypeVars b)
@@ -117,6 +125,7 @@ freeTypeVarsScheme (Scheme vars t) =
 
 -- | Creates a fresh unification variable and binds it to the given type
 varBind :: (Monad m) => String -> Type -> ContextT m Substitution
+varBind var (TCopied ty) = varBind var ty
 varBind var ty
   | ty == TVar var = return emptySubst
   | var `Set.member` freeTypeVars ty = throwError $ OccursCheck var ty
@@ -214,6 +223,12 @@ has ctx t1@(TToken id) t2@(TToken id2) =
   if id /= id2
     then throwError $ BadHas t1 t2
     else return (emptySubst, TToken id)
+has ctx t1@(TCopied _) t2@(TUnique _) = throwError $ BadHas t1 t2
+has ctx (TCopied x) other = has ctx x other
+has ctx other (TCopied x) = do
+  res <- has ctx other x
+  let (a,b) = res
+  return (a, TCopied b)
 has _ t1 t2 = throwError $ BadHas t1 t2
 
 
@@ -289,6 +304,11 @@ unify ctx t1@(TToken id) t2@(TToken id2) =
   if id /= id2
     then throwError $ BadUnify t1 t2
     else return (emptySubst, TToken id)
+unify ctx t1@(TCopied x) t2@(TUnique y) = throwError $ BadUnify t1 t2
+unify ctx t1@(TCopied x) t2 = do
+  res <- unify ctx x t2
+  let (a,b) = res
+  return (a, TCopied b)
 unify _ t1 t2 = throwError $ BadUnify t1 t2
 
 type Context = Map String Scheme
@@ -309,7 +329,7 @@ generalizeScheme ctx (Scheme _ exp) = generalize ctx exp
 
 instantiate :: (Monad m) => Scheme -> ContextT m Type
 instantiate (Scheme vars ty) = do
-  newVars <- traverse (const (newTyVar False)) vars
+  newVars <- traverse (const newTyVar) vars
   let subst = Map.fromList (zip vars newVars)
   applySubst subst ty
 
@@ -324,30 +344,32 @@ inferLiteral lit =
     LFloat _ -> TFloat
     LUnit -> TUnit)
 
-inferPattern :: (Monad m) => Bool -> Context -> Pattern -> ContextT m (Context, Type)
-inferPattern isNonU _ (PLit binder) = do
+inferPattern :: (Monad m) => Context -> S.Set Id -> Pattern -> ContextT m (Context, Type)
+inferPattern _ copied (PLit binder) = do
   (_, tyBinder) <- inferLiteral binder
   return (Map.empty, tyBinder)
-inferPattern isNonU _ (PVar binder) = do
-  tyBinder <- newTyVar isNonU
-  return (Map.singleton binder (Scheme [] tyBinder), tyBinder)
-inferPattern isNonU ctx (PPair a b) = do
-  (ctxa, tya) <- inferPattern isNonU ctx a
-  (ctxb, tyb) <- inferPattern isNonU ctx b
+inferPattern _ copied (PVar binder) = do
+  tyBinder <- newTyVar
+  if binder `elem` copied
+    then return (Map.singleton binder (Scheme [] tyBinder), TCopied tyBinder)
+    else return (Map.singleton binder (Scheme [] tyBinder), tyBinder)
+inferPattern ctx copied (PPair a b) = do
+  (ctxa, tya) <- inferPattern ctx copied a
+  (ctxb, tyb) <- inferPattern ctx copied b
   return (Map.union ctxa ctxb, TPair tya tyb)
-inferPattern isNonU ctx (PLabel id x) = do
-  (new_ctx, typ) <- inferPattern isNonU ctx x
+inferPattern ctx copied (PLabel id x) = do
+  (new_ctx, typ) <- inferPattern ctx copied x
   return (new_ctx, TLabel id typ)
-inferPattern isNonU ctx (PAnnot typ x) = do
-  (s1, typx) <- inferPattern isNonU ctx x
+inferPattern ctx copied (PAnnot typ x) = do
+  (s1, typx) <- inferPattern ctx copied x
   (s2, final_typ) <- has ctx typ typx
   res <- applySubstCtx s2 s1
   return (res, final_typ)
-inferPattern isNonU ctx (PUnique x) = do
-  (s1, typx) <- inferPattern isNonU ctx x
+inferPattern ctx copied (PUnique x) = do
+  (s1, typx) <- inferPattern ctx copied x
   return (s1, TUnique typx)
-inferPattern isNonU ctx PWildcard = do
-  res <- newTyVar False
+inferPattern ctx copied PWildcard = do
+  res <- newTyVar
   return (ctx, res)
 
 infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
@@ -371,13 +393,13 @@ infer ctx exp = case exp of
       inputTyp (TFun a b) = a
       outputTyp (TFun a b) = b
   EFun pattern body -> do
-    (ctx_p, tyP) <- inferPattern False ctx pattern
+    (ctx_p, tyP) <- inferPattern ctx (copiedFreeRef body) pattern
     let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
     res <- applySubst s1 tyP
     return (s1, TFun res tyBody)
   m@(EMatch a b) -> do
-    foo_type <- TFun <$> newTyVar False <*> newTyVar False
+    foo_type <- TFun <$> newTyVar <*> newTyVar
     (s1, tyA) <- infer ctx a
     if not $ isTFun tyA
       then err
@@ -409,7 +431,7 @@ infer ctx exp = case exp of
       tFunArgs (TFun a b) = (False,a,b)
   ELet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
-    (ctx_p, tyP) <- inferPattern False ctx pattern
+    (ctx_p, tyP) <- inferPattern ctx (copiedFreeRef body) pattern
     let newCtx = Map.union ctx_p ctx
     res <- applySubst s1 tyBinder
     (s2, typB) <- unify newCtx tyP res
