@@ -24,7 +24,7 @@ import CopiedMountain.Context
 type Substitution = Map String Type
 
 hasBoundUnique :: Substitution -> Bool
-hasBoundUnique = foldr (\(a::Type) (b::Bool) -> b || isUniqueT a) False
+hasBoundUnique = foldr (\(a::Type) (b::Bool) -> b || isTUnique a) False
 
 emptySubst :: Substitution
 emptySubst = Map.empty
@@ -43,8 +43,6 @@ applySubst subst ty = case ty of
     Just x -> return x
   TFun arg res ->
     TFun <$> applySubst subst arg <*> applySubst subst res
-  TUFun arg res ->
-    TUFun <$> applySubst subst arg <*> applySubst subst res
   TInt -> return TInt
   TBool -> return TBool
   TChar -> return TChar
@@ -69,10 +67,8 @@ applySubstOnPattern s PWildcard = pure PWildcard
 applySubstOnExpr :: (Monad m) => Substitution -> Exp -> ContextT m Exp
 applySubstOnExpr subst t@(EVar id) = pure t
 applySubstOnExpr s t@(EApp a b) = EApp <$> applySubstOnExpr s a <*> applySubstOnExpr s b
-applySubstOnExpr s t@(ELam a b) = ELam <$> applySubstOnPattern s a <*> applySubstOnExpr s b
-applySubstOnExpr s t@(EULam a b) = EULam <$> applySubstOnPattern s a <*> applySubstOnExpr s b
+applySubstOnExpr s t@(EFun a b) = EFun <$> applySubstOnPattern s a <*> applySubstOnExpr s b
 applySubstOnExpr s t@(ELet id a b) = ELet id <$> applySubstOnExpr s a <*> applySubstOnExpr s b
-applySubstOnExpr s t@(EULet id a b) = EULet id <$> applySubstOnExpr s a <*> applySubstOnExpr s b
 applySubstOnExpr s (EAnnot typ x) = EAnnot <$> applySubst s typ <*> applySubstOnExpr s x
 applySubstOnExpr s (ETDef id typ x) = ETDef id <$> applySubst s typ <*> applySubstOnExpr s x
 applySubstOnExpr s (ELit l) = pure $ ELit l
@@ -99,7 +95,6 @@ freeTypeVars ty = case ty of
  TNUVar var ->
    Set.singleton var
  TFun t1 t2 -> Set.union (freeTypeVars t1) (freeTypeVars t2)
- TUFun t1 t2 -> Set.union (freeTypeVars t1) (freeTypeVars t2)
  TPair a b -> Set.union (freeTypeVars a) (freeTypeVars b)
  TSum a b -> Set.union (freeTypeVars a) (freeTypeVars b)
  TLabel _ b -> freeTypeVars b
@@ -135,9 +130,6 @@ evalTCall ctx (TCall (TVar id) b) = do
       res <- instantiate any
       evalTCall ctx (TCall res b)
 evalTCall ctx (TCall (TFun x y) b) = do
-  (subs, typX) <- has ctx x b
-  applySubst subs y
-evalTCall ctx (TCall (TUFun x y) b) = do
   (subs, typX) <- has ctx x b
   applySubst subs y
 evalTCall ctx (TCall somethin b) = error $ "what is this case?: " ++ show somethin
@@ -177,16 +169,6 @@ has ctx (TFun l r) (TFun l' r') = do
   final_subs <- s2 `composeSubst` s1
   res <- applySubst final_subs $ TFun tyl tyr
   return (final_subs, res)
-has ctx (TFun l r) (TUFun l' r') = has ctx (TFun l r) (TFun l' r')
-has ctx a@(TUFun l r) b@(TFun l' r') = throwError $ BadHas a b
-has ctx (TUFun l r) (TUFun l' r') = do
-  (s1, tyl) <- has ctx l l'
-  tmpA <- applySubst s1 r
-  tmpB <- applySubst s1 r'
-  (s2, tyr) <- has ctx tmpA tmpB
-  final_subs <- s2 `composeSubst` s1
-  res <- applySubst final_subs $ TUFun tyl tyr
-  return (final_subs, res)
 has ctx (TPair a b) (TPair a' b') = do
   (s1, tyA) <- has ctx a a'
   tmpA <- applySubst s1 b
@@ -215,7 +197,7 @@ has ctx (TNUVar u) t = do
     Nothing -> do
       res <- varBind u t
       (,) res <$> applySubst res t
-    Just any -> if isUniqueScheme any
+    Just any -> if isEUniqueScheme any
       then throwError BindUniqueNonUniquely
       else do
         resT <- instantiate any
@@ -251,12 +233,6 @@ unify ctx (TFun l r) (TFun l' r') = do
   final_subs <- s2 `composeSubst` s1
   res <- applySubst final_subs $ TFun tyl tyr
   return (final_subs, res)
-unify ctx (TFun l r) (TUFun l' r') = unify ctx (TFun l r) (TFun l' r')
-unify ctx (TUFun l r) (TFun l' r') = unify ctx (TFun l r) (TFun l' r')
-unify ctx (TUFun l r) (TUFun l' r') = do
-  (s, typ) <- unify ctx (TFun l r) (TFun l' r')
-  let TFun l'' r'' = typ
-  return (s, TUFun l'' r'')
 unify ctx (TPair a b) (TPair a' b') = do
   (s1, tyA) <- unify ctx a a'
   tmpA <- applySubst s1 b
@@ -285,7 +261,7 @@ unify ctx (TNUVar u) t = do
     Nothing -> do
       res <- varBind u t
       (,) res <$> applySubst res t
-    Just any -> if isUniqueScheme any
+    Just any -> if isEUniqueScheme any
       then throwError BindUniqueNonUniquely
       else do
         resT <- instantiate any
@@ -393,30 +369,22 @@ infer ctx exp = case exp of
     return (final_subst, outputTyp res)
     where
       inputTyp (TFun a b) = a
-      inputTyp (TUFun a b) = a
       outputTyp (TFun a b) = b
-      outputTyp (TUFun a b) = b
-  ELam pattern body -> do
-    (ctx_p, tyP) <- inferPattern True ctx pattern
-    let tmpCtx = Map.union ctx_p ctx
-    (s1, tyBody) <- infer tmpCtx body
-    res <- applySubst s1 tyP
-    return (s1, TFun res tyBody)
-  EULam pattern body -> do
+  EFun pattern body -> do
     (ctx_p, tyP) <- inferPattern False ctx pattern
     let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
     res <- applySubst s1 tyP
-    return (s1, TUFun res tyBody)
+    return (s1, TFun res tyBody)
   m@(EMatch a b) -> do
     foo_type <- TFun <$> newTyVar False <*> newTyVar False
     (s1, tyA) <- infer ctx a
-    if not $ isFun tyA
+    if not $ isTFun tyA
       then err
     else do
       res <- applySubstCtx s1 ctx
       (s2, tyB) <- infer res b
-      if not $ isFun tyB
+      if not $ isTFun tyB
         then err
       else do
         res2 <- applySubst s2 tyA
@@ -431,28 +399,15 @@ infer ctx exp = case exp of
             ; (subs_x, tyX) <- unifyJoin ax bx
             ; (subs_y, tyY) <- unifyJoin ay by
             ; res_subs <- subs_x `composeSubst` subs_y
-            ; if isUniqueT tyX || isUniqueT tyY
-                then return (res_subs, if u1 && u2 then TUnique (TUFun tyX tyY) else TUnique (TFun tyX tyY))
-                else return (res_subs, if u1 && u2 then TUFun tyX tyY else TFun tyX tyY)
+            ; if isTUnique tyX || isTUnique tyY
+                then return (res_subs, TUnique (TFun tyX tyY))
+                else return (res_subs, TFun tyX tyY)
           })
     where
       err = throwError $ MatchWithNonFunction m
       unifyJoin a b = unify ctx a b `catchError` (\e -> return (emptySubst, TSum a b))
       tFunArgs (TFun a b) = (False,a,b)
-      tFunArgs (TUFun a b) = (True,a,b)
   ELet pattern binding body -> do
-    (s1, tyBinder) <- infer ctx binding
-    (ctx_p, tyP) <- inferPattern True ctx pattern
-    let newCtx = Map.union ctx_p ctx
-    res <- applySubst s1 tyBinder
-    (s2, typB) <- unify newCtx tyP res
-    tmpA <- s2 `composeSubst` s1
-    res2 <- applySubstCtx tmpA ctx_p
-    let patCtx = Map.map (generalizeScheme ctx) res2
-    finalCtx <- applySubstCtx tmpA $ Map.union patCtx ctx
-    (s3, tyBody) <- infer finalCtx body
-    (,) <$> s3 `composeSubst` tmpA <*> pure tyBody
-  EULet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
     (ctx_p, tyP) <- inferPattern False ctx pattern
     let newCtx = Map.union ctx_p ctx
@@ -470,26 +425,26 @@ infer ctx exp = case exp of
     (s2, tyB) <- infer tmp b
     res <- s2 `composeSubst` s1
     subs <- applySubst s2 tyA
-    if isUniqueT tyA || isUniqueT tyB
+    if isTUnique tyA || isTUnique tyB
       then return (res, TUnique $ TPair subs tyB)
       else return (res, TPair subs tyB)
   ELabel id x -> do
     (s1, typ) <- infer ctx x
-    if isUniqueT typ
+    if isTUnique typ
       then return (s1, TUnique $ TLabel id typ)
       else return (s1, TLabel id typ)
   EAnnot typ x -> do
     (s1, typx) <- infer ctx x
     (fs, u_type) <- has ctx typ typx
     res <- fs `composeSubst` s1
-    if isUniqueT typ || isUniqueT u_type
+    if isTUnique typ || isTUnique u_type
       then return (res, TUnique u_type)
       else return (res, u_type)
   ERec id (EAnnot typ x) -> do
     let scheme = Scheme [] typ
     let tmpCtx = Map.insert id scheme ctx
     (subs, x) <- infer tmpCtx x
-    if isUniqueT x
+    if isTUnique x
       then throwError $ ThisShouldBeNotUnique exp
       else return (subs, x)
   ERec id other -> throwError $ RecursiveWithNoTypeAnnotation other

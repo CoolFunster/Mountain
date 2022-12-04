@@ -28,22 +28,22 @@ spec = do
       describe "Lambda" $ do
         it "Should parse simple function" $ do
           let res = parseExpr "a -> b"
-          res `shouldBe` Right (EULam (PVar "a") (EVar "b"))
+          res `shouldBe` Right (EFun (PVar "a") (EVar "b"))
         it "Should parse long chain function" $ do
           let res = parseExpr "a -> b -> c -> d -> e"
-          res `shouldBe` Right (EULam (PVar "a") (EULam (PVar "b") (EULam (PVar "c") (EULam (PVar "d") (EVar "e")))))
+          res `shouldBe` Right (EFun (PVar "a") (EFun (PVar "b") (EFun (PVar "c") (EFun (PVar "d") (EVar "e")))))
         it "Should parse close function" $ do
           let res = parseExpr "a->b"
-          res `shouldBe` Right (EULam (PVar "a") (EVar "b"))
+          res `shouldBe` Right (EFun (PVar "a") (EVar "b"))
       describe "Sum" $ do
         it "Should parse simple sum" $ do
           let res = parseExpr "a -> b || c -> d"
-          res `shouldBe` Right (EMatch (EULam (PVar "a") (EVar "b")) (EULam (PVar "c") (EVar "d")))
+          res `shouldBe` Right (EMatch (EFun (PVar "a") (EVar "b")) (EFun (PVar "c") (EVar "d")))
         it "Should parse simple sum with parens" $ do
           let res = parseExpr "(a -> b) || (c -> d)"
           case res of
             Left e -> error e
-            Right x -> x `shouldBe` EMatch (EULam (PVar "a") (EVar "b")) (EULam (PVar "c") (EVar "d"))
+            Right x -> x `shouldBe` EMatch (EFun (PVar "a") (EVar "b")) (EFun (PVar "c") (EVar "d"))
       describe "Literal" $ do
         it "Should parse int" $ do
           let res = parseExpr "3"
@@ -77,57 +77,54 @@ spec = do
           res `shouldBe` Right (EApp (EVar "a") (EVar "b"))
         it "Should parse a function" $ do
           let res = parseExpr "a -> b c"
-          res `shouldBe` Right (EULam (PVar "a") (EApp (EVar "b") (EVar "c")))
+          res `shouldBe` Right (EFun (PVar "a") (EApp (EVar "b") (EVar "c")))
       describe "Let" $ do
         it "Should parse a let" $ do
           let res = parseExpr "def a = b; a"
           res `shouldBe` Right (ELet (PVar "a") (EVar "b") (EVar "a"))
         it "Should parse a let in a function" $ do
           let res = parseExpr "x -> def a = b; a"
-          res `shouldBe` Right (EULam (PVar "x") (ELet (PVar "a") (EVar "b") (EVar "a")))
-        it "Should parse a Unique let" $ do
-          let res = parseExpr "def a *= b; a"
-          res `shouldBe` Right (EULet (PVar "a") (EVar "b") (EVar "a"))
+          res `shouldBe` Right (EFun (PVar "x") (ELet (PVar "a") (EVar "b") (EVar "a")))
         it "Should parse this let" $ do
           let res = parseExpr "def id = x -> x; id"
-          res `shouldBe` Right (ELet (PVar "id") (EULam (PVar "x") (EVar "x")) (EVar "id"))
+          res `shouldBe` Right (ELet (PVar "id") (EFun (PVar "x") (EVar "x")) (EVar "id"))
         it "Should parse this let2" $ do
           let res = parseExpr "def id = x -> x; (id(3), id(\"s\"))"
-          res `shouldBe` Right (ELet (PVar "id") (EULam (PVar "x") (EVar "x")) (EPair (EApp (EVar "id") (ELit (LInt 3))) (EApp (EVar "id") (ELit (LString "s")))))
+          res `shouldBe` Right (ELet (PVar "id") (EFun (PVar "x") (EVar "x")) (EPair (EApp (EVar "id") (ELit (LInt 3))) (EApp (EVar "id") (ELit (LString "s")))))
       describe "Label" $ do
         it "Should parse a label" $ do
           let res = parseExpr "temp:3"
           res `shouldBe` Right (ELabel "temp" (ELit (LInt 3)))
         it "Should parse a label foo" $ do
           let res = parseExpr "temp:x -> x"
-          res `shouldBe` Right (EULam (PLabel "temp" (PVar "x")) (EVar "x"))
+          res `shouldBe` Right (EFun (PLabel "temp" (PVar "x")) (EVar "x"))
       describe "Annot" $ do
         it "should parse a basic type" $ do
           let res = parseExprWith pType "Int"
           res `shouldBe` Right TInt
         it "should parse a basic type foo" $ do
           let res = parseExprWith pType "Int -> String"
-          res `shouldBe` Right (TUFun TInt TString)
+          res `shouldBe` Right (TFun TInt TString)
         it "should parse an Annot" $ do
           let res = parseExpr "Int :: 3"
           res `shouldBe` Right (EAnnot TInt (ELit (LInt 3)))
         it "should parse an Annot foo" $ do
           let res = parseExpr "Int -> String :: 3"
-          res `shouldBe` Right (EAnnot (TUFun TInt TString) (ELit (LInt 3)))
+          res `shouldBe` Right (EAnnot (TFun TInt TString) (ELit (LInt 3)))
         it "should parse a nested Annot" $ do
           let res = parseExpr "Int -> String :: Int :: 3"
-          res `shouldBe` Right (EAnnot (TUFun TInt TString) (EAnnot TInt (ELit (LInt 3))))
+          res `shouldBe` Right (EAnnot (TFun TInt TString) (EAnnot TInt (ELit (LInt 3))))
         it "should parse a pattern annotation" $ do
           let res = parseExpr "(*Int :: x) -> x"
-          res `shouldBe` Right (EULam (PAnnot (TUnique TInt) (PVar "x")) (EVar "x"))
+          res `shouldBe` Right (EFun (PAnnot (TUnique TInt) (PVar "x")) (EVar "x"))
       describe "Recursion" $ do
         it "should parse a recursive function" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
-          res `shouldBe` Right (ERec "x" (EAnnot (TUFun TInt TInt) (EULam (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
+          res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (EFun (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
       describe "TypeDefs" $ do
         it "should handle typedefs" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
-          res `shouldBe` Right (ERec "x" (EAnnot (TUFun TInt TInt) (EULam (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
+          res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (EFun (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
         it "should handle simple typedef" $ do
           let res = parseExpr "*Int :: x"
           res `shouldBe` Right (EAnnot (TUnique TInt) (EVar "x"))

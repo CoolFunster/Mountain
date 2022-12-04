@@ -79,7 +79,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "|-=;`[]{}()<>#\".:,~*$"
+restrictedIdChars = "|-=;`[]{}()<>#\".:,~*$+"
 
 identifier :: Parser Id
 identifier = do
@@ -103,8 +103,7 @@ pBinExp :: Parser Exp
 pBinExp = makeExprParser pAnnot [
     [binaryR (try pColon) (varLTerm ELabel)],
     [binaryR (try $ pWrapWS "~") (varLTerm ERec)],
-    [binaryR (try $ pWrapWS "-->") (ELam . expAsPattern),
-     binaryR (try $ pWrapWS "->") (EULam . expAsPattern)],
+    [binaryR (try $ pWrapWS "->") (EFun . expAsPattern)],
     [binaryR (try $ pWrapWS "||") EMatch]
   ]
   where
@@ -154,13 +153,10 @@ pLet :: Parser Exp
 pLet = do
   _ <- symbol "def" <* sc
   var <- pPattern
-  b <- choice [try $ pWrapWS "*=", try $ pWrapWS "="]
+  _ <- try $ pWrapWS "="
   expr1 <- pExpr
-  _ <- rword ";" <* sc
-  case b of
-    "*=" -> EULet var expr1 <$> pExpr
-    "=" -> ELet var expr1 <$> pExpr
-    other -> error "should never reach here"
+  _ <- symbol ";" <* sc
+  ELet var expr1 <$> pExpr
 
 pTDef :: Parser Exp
 pTDef = do
@@ -248,8 +244,7 @@ pBinTyp :: Parser Type
 pBinTyp = makeExprParser pTCall [
     [binaryR (try pColon) pLabel],
     [prefix (try $ symbol "*") TUnique],
-    [binaryR (try $ pWrapWS "-->") TFun,
-     binaryR (try $ pWrapWS "->") TUFun],
+    [binaryR (try $ pWrapWS "->") TFun],
     [binaryR (try $ pWrapWS "|") TSum]
   ]
   where
@@ -321,7 +316,7 @@ pKind = pBinKind
 pBinKind :: Parser Kind
 pBinKind = makeExprParser pKindAtom [
     [binaryR (optional sc) KApp],
-    [binaryR (try $ pWrapWS "-->") KFun]
+    [binaryR (try $ pWrapWS "->") KFun]
   ]
 
 pKindAtom :: Parser Kind

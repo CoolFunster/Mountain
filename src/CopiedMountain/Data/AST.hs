@@ -15,11 +15,9 @@ type Env = M.Map Id Exp
 data Exp =
   -- calculus
     EVar Id
-  | ELam Pattern Exp
-  | EULam Pattern Exp
+  | EFun Pattern Exp
   | EApp Exp Exp
   | ELet Pattern Exp Exp
-  | EULet Pattern Exp Exp
   | EAnnot Type Exp
   -- type statements
   | ETDef Id Type Exp
@@ -58,7 +56,6 @@ data Type
   | TVar Id
   | TNUVar Id -- non unique var
   | TFun Type Type
-  | TUFun Type Type
   -- Data Structures
   | TPair Type Type
   | TSum Type Type
@@ -89,29 +86,27 @@ data Pattern =
 data Scheme = Scheme [Id] Type deriving (Show, Eq)
 
 -- Ignore from here onwards
-isFun :: Type -> Bool
-isFun ty = case ty of
+isTFun :: Type -> Bool
+isTFun ty = case ty of
   TFun _ _ -> True
-  TUFun _ _ -> True
   _ -> False
 
-isLam :: Exp -> Bool
-isLam (ELam _ _) = True
-isLam (EULam _ _) = True
-isLam _ = False
+isEFun :: Exp -> Bool
+isEFun (EFun _ _) = True
+isEFun _ = False
 
-isUnique :: Exp -> Bool
-isUnique (EUnique _ _) = True
-isUnique (EToken _ _) = True
-isUnique other = False
+isEUnique :: Exp -> Bool
+isEUnique (EUnique _ _) = True
+isEUnique (EToken _ _) = True
+isEUnique other = False
 
-isUniqueT :: Type -> Bool
-isUniqueT (TUnique _) = True
-isUniqueT (TToken _) = True
-isUniqueT other = False
+isTUnique :: Type -> Bool
+isTUnique (TUnique _) = True
+isTUnique (TToken _) = True
+isTUnique other = False
 
-isUniqueScheme :: Scheme -> Bool
-isUniqueScheme (Scheme _ t) = isUniqueT t
+isEUniqueScheme :: Scheme -> Bool
+isEUniqueScheme (Scheme _ t) = isTUnique t
 
 renameVar :: Type -> (Id, Id) -> Type
 renameVar ty (old, new) = case ty of
@@ -125,7 +120,6 @@ renameVar ty (old, new) = case ty of
   TVar var -> TVar (if var == old then new else var)
   TNUVar var -> TVar (if var == old then new else var)
   TFun t1 t2 -> TFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
-  TUFun t1 t2 -> TUFun (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TSum t1 t2 -> TSum (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TLabel id t1 -> TLabel id (renameVar t1 (old, new))
@@ -143,10 +137,8 @@ expAsPattern (ELabel id exp) = PLabel id (expAsPattern exp)
 expAsPattern (EAnnot typ exp) = PAnnot typ (expAsPattern exp)
 expAsPattern (EUnique _ a) = PUnique (expAsPattern a)
 expAsPattern t@ETDef {} = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
-expAsPattern t@(ELam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
-expAsPattern t@(EULam _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
+expAsPattern t@(EFun _ _) = error $ "bad parse! must be var or lit on a function lhs: " ++ show t
 expAsPattern t@ELet {} = error $ "bad parse! must be var or lit on a function lhs" ++ show t
-expAsPattern t@EULet {} = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EMatch _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(EApp _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
 expAsPattern t@(ERec _ _) = error $ "bad parse! must be var or lit on a function lhs" ++ show t
@@ -157,21 +149,13 @@ freeRefs x = M.keysSet (freeRefWithCounts x)
 
 freeRefWithCounts :: Exp -> M.Map Id Int
 freeRefWithCounts (EVar id) = M.singleton id 1
-freeRefWithCounts (ELam pat b) = let
+freeRefWithCounts (EFun pat b) = let
     b_refs = freeRefWithCounts b
     p_refs = patFreeVars pat
   in
     M.withoutKeys b_refs p_refs
-freeRefWithCounts (EULam pat b) = freeRefWithCounts (ELam pat b)
 freeRefWithCounts (EApp a b) = M.unionWith (+) (freeRefWithCounts a) (freeRefWithCounts b)
 freeRefWithCounts (ELet pat a b) = let
-    a_refs = freeRefWithCounts a
-    b_refs = freeRefWithCounts b
-    p_refs = patFreeVars pat
-    free_keys = S.difference (M.keysSet b_refs) p_refs
-  in
-    M.unionWith (+) a_refs (M.withoutKeys b_refs p_refs)
-freeRefWithCounts (EULet pat a b) = let
     a_refs = freeRefWithCounts a
     b_refs = freeRefWithCounts b
     p_refs = patFreeVars pat

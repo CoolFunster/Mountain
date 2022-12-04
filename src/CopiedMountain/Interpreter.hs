@@ -32,10 +32,8 @@ replace env e@(EVar id) =
     Nothing -> e
     Just x -> x
 replace env (EApp a b) = EApp (replace env a) (replace env b)
-replace env (ELam p b) = ELam p (replace env b)
-replace env (EULam p b) = ELam p (replace env b)
+replace env (EFun p b) = EFun p (replace env b)
 replace env (ELet id a b) = ELet id (replace env a) (replace env b)
-replace env (EULet id a b) = ELet id (replace env a) (replace env b)
 replace env (EMatch a b) = EMatch (replace env a) (replace env b)
 replace env (EPair a b) = EPair (replace env a) (replace env b)
 replace env (ELabel id x) = ELabel id (replace env x)
@@ -70,120 +68,48 @@ uniquify t@(EVar _) = return t
 uniquify t@(EApp a b) = do
   a' <- uniquify a
   b' <- uniquify b
-  if any isUnique [a',b']
+  if any isEUnique [a',b']
     then EUnique <$> randHash <*> pure (EApp a' b')
     else return (EApp a' b')
-uniquify t@(ELam p e) = do
+uniquify t@(EFun p e) = do
   e' <- uniquify e
-  return (ELam p e')
-uniquify t@(EULam p e) = do
-  e' <- uniquify e
-  return (EULam p e')
+  return (EFun p e')
 uniquify t@(ELet id a b) = do
   a' <- uniquify a
   b' <- uniquify b
   return (ELet id a' b')
-uniquify t@(EULet id a b) = do
-  a' <- uniquify a
-  b' <- uniquify b
-  return (EULet id a' b')
 uniquify (EAnnot t e) = do
   e' <- uniquify e
-  if isUnique e
+  if isEUnique e
     then EUnique <$> randHash <*> pure (EAnnot t e')
     else return (EAnnot t e')
 uniquify t@(ETDef _ _ _) = return t
 uniquify t@(ELit l) = return t
 uniquify t@(ERec id e) = do
   e' <- uniquify e
-  if isUnique e
+  if isEUnique e
     then EUnique <$> randHash <*> pure (ERec id e')
     else return (ERec id e')
 uniquify t@(EMatch a b) = do
   a' <- uniquify a
   b' <- uniquify b
-  if any isUnique [a',b']
+  if any isEUnique [a',b']
     then EUnique <$> randHash <*> pure (EMatch a' b')
     else return (EMatch a' b')
 uniquify t@(EPair a b) = do
   a' <- uniquify a
   b' <- uniquify b
-  if any isUnique [a',b']
+  if any isEUnique [a',b']
     then EUnique <$> randHash <*> pure (EPair a' b')
     else return (EPair a' b')
 uniquify t@(ELabel id e) = do
   e' <- uniquify e
-  if isUnique e
+  if isEUnique e
     then EUnique <$> randHash <*> pure (ELabel id e')
     else return (ELabel id e')
 uniquify t@(EUnique Unset e) = EUnique <$> randHash <*> pure e
 uniquify t@(EUnique h e) = return t
 uniquify t@(EToken _ _) = return t
-
-validate :: (Monad m) => Exp -> ContextT m Exp
-validate t@(EVar _) = return t
-validate t@(ELam pat x) = do
-  _ <- validate x
-  let pat_vars :: S.Set Id = patFreeVars pat
-  let freeRefs :: M.Map Id Int = freeRefWithCounts x
-  let has_non_u_use = any (\id ->
-        case M.lookup id freeRefs of
-            Nothing -> False
-            Just n -> n > 1) pat_vars
-  if has_non_u_use
-    then return t
-    else throwError $ ThisShouldBeUnique t
-validate t@(EULam pat x) = do
-  _ <- validate x
-  let pat_vars :: S.Set Id = patFreeVars pat
-  let freeRefs :: M.Map Id Int = freeRefWithCounts x
-  let has_non_u_use = any (\id ->
-        case M.lookup id freeRefs of
-            Nothing -> False
-            Just n -> n > 1) pat_vars
-  if has_non_u_use
-    then throwError $ ThisShouldBeNotUnique t
-    else return t
-validate t@(EApp a b) = EApp <$> validate a <*> validate b
-validate t@(ELet pat a b) = do
-  _ <- validate a
-  _ <- validate b
-  let pat_vars :: S.Set Id = patFreeVars pat
-  let freeRefs :: M.Map Id Int = freeRefWithCounts b
-  let has_non_u_use = any (\id ->
-        case M.lookup id freeRefs of
-            Nothing -> False
-            Just n -> n > 1) pat_vars
-  if has_non_u_use
-    then return t
-    else throwError $ ThisShouldBeUnique t
-validate t@(EULet pat a b) = do
-  _ <- validate a
-  _ <- validate b
-  let pat_vars :: S.Set Id = patFreeVars pat
-  let freeRefs :: M.Map Id Int = freeRefWithCounts b
-  let has_non_u_use = any (\id ->
-        case M.lookup id freeRefs of
-            Nothing -> False
-            Just n -> n > 1) pat_vars
-  if has_non_u_use
-    then throwError $ ThisShouldBeNotUnique t
-    else return t
-validate (EAnnot t x) = EAnnot t <$> validate x
-validate (ETDef id t e) = ETDef id t <$> validate e
-validate t@(ELit l) = return t
-validate t@(ERec id x) = do
-  _ <- validate x
-  if not (S.member id (freeRefs x))
-    then throwError $ RecursiveBindNotUsed t
-  else if isUnique x
-    then throwError $ ThisShouldBeNotUnique t
-    else return t
-validate (EMatch a b) = EMatch <$> validate a <*> validate b
-validate (EPair a b) = EPair <$> validate a <*> validate b
-validate (ELabel id x) = ELabel id <$> validate x
-validate (EUnique h x) = EUnique h <$> validate x
-validate t@(EToken _ _) = return t
 
 step :: Exp -> ContextT IO Exp
 step x = do
@@ -193,8 +119,7 @@ step x = do
     step' :: (Monad m) => Exp -> ContextT m Exp
     step' t@(ELit _) = return t
     step' t@(EVar id) = getDef id
-    step' t@(ELam _ _) = return t
-    step' t@(EULam _ _) = return t
+    step' t@(EFun _ _) = return t
     step' t@(EMatch x y) = return t
     step' t@(ERec x y) = return t
     step' t@(EUnique h x) = EUnique h <$> step' x
@@ -208,16 +133,7 @@ step x = do
       markChanged
       let res = unrollRec x
       return $ EApp res y
-    step' t@(EApp a@(ELam pat y) b) = do
-      res <- step' b
-      c <- isChanged
-      if c
-        then return $ EApp a res
-        else do
-          pat_e <- bind pat b
-          markChanged
-          return $ replace pat_e y
-    step' t@(EApp a@(EULam pat y) b) = do
+    step' t@(EApp a@(EFun pat y) b) = do
       res <- step' b
       c <- isChanged
       if c
@@ -246,15 +162,6 @@ step x = do
           then return $ EApp a res'
           else error "Should not reach here, bad typechecking of calls"
     step' t@(ELet pat x y) = do
-      res_x <- step' x
-      c <- isChanged
-      if c
-        then return $ ELet pat res_x y
-        else do
-          pat_e <- bind pat x
-          markChanged
-          return (replace pat_e y)
-    step' t@(EULet pat x y) = do
       res_x <- step' x
       c <- isChanged
       if c
@@ -293,6 +200,4 @@ evaluate count t
         else return res
 
 preprocess :: Exp -> ContextT IO Exp
-preprocess x = do
-  ux <- lift (uniquify x)
-  validate ux
+preprocess x = lift (uniquify x)

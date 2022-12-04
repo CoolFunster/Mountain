@@ -33,27 +33,26 @@ prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
 prettyExp (EVar id) = id
 prettyExp (EApp a b) = "(" ++ prettyExp a ++ ")(" ++ prettyExp b ++ ")"
-prettyExp (ELam id e) = prettyPattern id ++ "-->" ++ prettyExp e
-prettyExp (EULam id e) = prettyPattern id ++ "->" ++ prettyExp e
+prettyExp (EFun id e) = prettyPattern id ++ "->" ++ prettyExp e
 prettyExp (ELet pat a b) = prettyPattern pat ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
-prettyExp (EULet pat a b) = prettyPattern pat ++ "*=" ++ prettyExp a ++ ";" ++ prettyExp b
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 prettyExp (EPair a b) = "(" ++ prettyExp a ++ "," ++ prettyExp b ++ ")"
 prettyExp (ELabel id a) = id ++ ":" ++ prettyExp a
 prettyExp (EAnnot typ a) = "(" ++ prettyType typ ++ ")::(" ++ prettyExp a ++ ")"
 prettyExp (ERec id a) = "(" ++ id ++ "~" ++ prettyExp a ++ ")"
 prettyExp (ETDef id typ rest) = "type " ++ id ++ " = " ++ prettyType typ ++ ";" ++ prettyExp rest
-prettyExp (EUnique h x) = "*" <> (if isLam x then "(" <> prettyExp x <> ")" else prettyExp x)
+prettyExp (EUnique h x) = "*" <> (if isEFun x then "(" <> prettyExp x <> ")" else prettyExp x)
 prettyExp (EToken id _) = "#" <> id
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
-prettyKind (KFun a b) = prettyKind a  ++ "-->" ++ prettyKind b
+prettyKind (KFun a b) = prettyKind a  ++ "->" ++ prettyKind b
 prettyKind (KApp a b) = "(" ++ prettyKind a ++ ")(" ++ prettyKind b ++ ")"
 
 prettyType :: Type -> String
 prettyType ty = case ty of
   TVar var -> var
+  TNUVar var -> "+" ++ var
   TInt -> "Int"
   TBool -> "Bool"
   TChar -> "Char"
@@ -62,17 +61,14 @@ prettyType ty = case ty of
   TThing -> "Thing"
   TUnit -> "()"
   TFun ty1 ty2 ->
-    (if isFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
-    <> " --> " <> prettyType ty2
-  TUFun ty1 ty2 ->
-    (if isFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
+    (if isTFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
     <> " -> " <> prettyType ty2
   TPair ty1 ty2 -> "(" <> prettyType ty1 <> "," <> prettyType ty2 <> ")"
   TSum ty1 ty2 -> "(" <> prettyType ty1 <> "|" <> prettyType ty2 <> ")"
   TLabel id x -> id <> ":" <> prettyType x
   TType kind -> prettyKind kind
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
-  TUnique t -> "*" <> (if isFun t then "(" <> prettyType t <> ")" else prettyType t)
+  TUnique t -> "*" <> (if isTFun t then "(" <> prettyType t <> ")" else prettyType t)
   TToken id -> "$" <> id
 
 prettyScheme :: Scheme -> String
