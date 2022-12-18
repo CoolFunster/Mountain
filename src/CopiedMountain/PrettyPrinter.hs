@@ -25,8 +25,7 @@ prettyPattern (PLit i) = prettyLit i
 prettyPattern (PVar v) = v
 prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
 prettyPattern (PLabel id x) = id ++ ":" ++ prettyPattern x
-prettyPattern (PAnnot typ x) = "(" ++ prettyType typ ++ "::" ++ prettyPattern x ++ ")"
-prettyPattern (PUnique x) = "*" ++ prettyPattern x
+prettyPattern (PAnnot typ x) = "(" ++ prettyUseType typ ++ "::" ++ prettyPattern x ++ ")"
 prettyPattern PWildcard = "?"
 
 prettyExp :: Exp -> String
@@ -41,7 +40,6 @@ prettyExp (ELabel id a) = id ++ ":" ++ prettyExp a
 prettyExp (EAnnot typ a) = "(" ++ prettyType typ ++ ")::(" ++ prettyExp a ++ ")"
 prettyExp (ERec id a) = "(" ++ id ++ "~" ++ prettyExp a ++ ")"
 prettyExp (ETDef id typ rest) = "type " ++ id ++ " = " ++ prettyType typ ++ ";" ++ prettyExp rest
-prettyExp (EUnique h x) = "*" <> (if isEFun x then "(" <> prettyExp x <> ")" else prettyExp x)
 prettyExp (EToken id _) = "#" <> id
 
 prettyKind :: Kind -> String
@@ -49,10 +47,22 @@ prettyKind KType = "Type"
 prettyKind (KFun a b) = prettyKind a  ++ "->" ++ prettyKind b
 prettyKind (KApp a b) = "(" ++ prettyKind a ++ ")(" ++ prettyKind b ++ ")"
 
+prettyUseCount :: UseCount -> String
+prettyUseCount CSingle = "?"
+prettyUseCount CMany = "+"
+prettyUseCount CAny = ""
+
+
+prettyUseType :: (Usage, Type) -> String
+prettyUseType (ULit uc, t) = prettyUseCount uc <> prettyType t
+prettyUseType (UPair uc a b, TPair a' b') = prettyUseCount uc <> "(" <> prettyUseType (a, a') <> ", " <> prettyUseType (b, b') <> ")"
+prettyUseType (UPair uc a b, k) = error "should not reach pretty pair bad"
+prettyUseType (USum a b, TSum a' b') = "(" <> prettyUseType (a, a') <> " | " <> prettyUseType (b, b') <> ")"
+prettyUseType (USum a b, k) = error "should not reach pretty sum bad"
+
 prettyType :: Type -> String
 prettyType ty = case ty of
   TVar var -> var
-  TNUVar var -> "+" ++ var
   TInt -> "Int"
   TBool -> "Bool"
   TChar -> "Char"
@@ -61,15 +71,13 @@ prettyType ty = case ty of
   TThing -> "Thing"
   TUnit -> "()"
   TFun ty1 ty2 ->
-    (if isTFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
+    (if isTFun (snd ty1) then "(" <> prettyUseType ty1 <> ")" else prettyUseType ty1)
     <> " -> " <> prettyType ty2
   TPair ty1 ty2 -> "(" <> prettyType ty1 <> "," <> prettyType ty2 <> ")"
   TSum ty1 ty2 -> "(" <> prettyType ty1 <> "|" <> prettyType ty2 <> ")"
   TLabel id x -> id <> ":" <> prettyType x
   TType kind -> prettyKind kind
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
-  TUnique t -> "*" <> (if isTFun t then "(" <> prettyType t <> ")" else prettyType t)
-  TCopied t -> "+" <> (if isTFun t then "(" <> prettyType t <> ")" else prettyType t)
   TToken id -> "$" <> id
 
 prettyScheme :: Scheme -> String

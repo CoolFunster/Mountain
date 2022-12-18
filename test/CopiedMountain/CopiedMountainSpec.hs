@@ -60,7 +60,7 @@ spec = do
             res `shouldBe` ELit (LInt 7)
       it "Should handle this case 3" $ do
         let ast = parseExpr "(String -> Int :: \"hello\" -> 1) (\"hello\")"
-        ast `shouldBe` Right (EApp (EAnnot (TFun TString TInt) (EFun (PLit (LString "hello")) (ELit (LInt 1)))) (ELit (LString "hello")))
+        ast `shouldBe` Right (EApp (EAnnot (TFun (ULit CAny, TString) TInt) (EFun (PLit (LString "hello")) (ELit (LInt 1)))) (ELit (LString "hello")))
         (raw_res, log) <- runWith initialState $ process (Just 20) (fromRight (error "") ast)
         case raw_res of
           Left e -> error $ prettyError e
@@ -76,7 +76,7 @@ spec = do
             res `shouldBe` ELit (LInt 3)
       it "Should handle this case 5" $ do
         let ast = parseExpr "(x ~ (Int -> Int) :: (2 -> (x 3) ||  3 -> 4)) (2)"
-        ast `shouldBe` Right (EApp (ERec "x" (EAnnot (TFun TInt TInt) (EMatch (EFun (PLit (LInt 2)) (EApp (EVar "x") (ELit (LInt 3)))) (EFun (PLit (LInt 3)) (ELit (LInt 4)))))) (ELit (LInt 2)))
+        ast `shouldBe` Right (EApp (ERec "x" (EAnnot (TFun (ULit CAny, TInt) TInt) (EMatch (EFun (PLit (LInt 2)) (EApp (EVar "x") (ELit (LInt 3)))) (EFun (PLit (LInt 3)) (ELit (LInt 4)))))) (ELit (LInt 2)))
         (raw_res, log) <- runWith initialState $ process (Just 20) (fromRight (error "") ast)
         case raw_res of
           Left e -> error $ prettyError e

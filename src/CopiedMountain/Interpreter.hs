@@ -19,7 +19,7 @@ import Control.Monad.Extra (firstJustM, ifM)
 import qualified Data.Set as S
 import qualified Data.Map as M
 import Debug.Trace (trace)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 
 unrollRec :: Exp -> Exp
 unrollRec t@(ERec id x) = replace (M.singleton id t) x
@@ -27,10 +27,7 @@ unrollRec other = error $ "Cannot unroll non recursive obj " ++ show other
 
 replace :: Env -> Exp -> Exp
 replace env e@(ELit _) = e
-replace env e@(EVar id) =
-  case M.lookup id env of
-    Nothing -> e
-    Just x -> x
+replace env e@(EVar id) = fromMaybe e (M.lookup id env)
 replace env (EApp a b) = EApp (replace env a) (replace env b)
 replace env (EFun p b) = EFun p (replace env b)
 replace env (ELet id a b) = ELet id (replace env a) (replace env b)
@@ -41,8 +38,7 @@ replace env (EAnnot t x) = EAnnot t (replace env x)
 replace env (ERec id x) = do
   let env' = M.withoutKeys env (S.singleton id)
   ERec id (replace env' x)
-replace _ t@(ETDef _ _ _) = t
-replace env (EUnique h a) = EUnique h (replace env a)
+replace _ t@ETDef {} = t
 replace env t@(EToken id h) = t
 
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
@@ -60,129 +56,74 @@ bind a@(PLabel id x) b@(ELabel id2 y) = do
     then bind x y
     else throwError $ BadBind a b
 bind a@(PAnnot typ x) b = bind x b -- only used during typechecking
-bind a@(PUnique pat) (EUnique h x) = bind pat x
 bind a b = throwError $ BadBind a b
 
-uniquify :: Exp -> IO Exp
-uniquify t@(EVar _) = return t
-uniquify t@(EApp a b) = do
-  a' <- uniquify a
-  b' <- uniquify b
-  if any isEUnique [a',b']
-    then EUnique <$> randHash <*> pure (EApp a' b')
-    else return (EApp a' b')
-uniquify t@(EFun p e) = do
-  e' <- uniquify e
-  return (EFun p e')
-uniquify t@(ELet id a b) = do
-  a' <- uniquify a
-  b' <- uniquify b
-  return (ELet id a' b')
-uniquify (EAnnot t e) = do
-  e' <- uniquify e
-  if isEUnique e
-    then EUnique <$> randHash <*> pure (EAnnot t e')
-    else return (EAnnot t e')
-uniquify t@(ETDef _ _ _) = return t
-uniquify t@(ELit l) = return t
-uniquify t@(ERec id e) = do
-  e' <- uniquify e
-  if isEUnique e
-    then EUnique <$> randHash <*> pure (ERec id e')
-    else return (ERec id e')
-uniquify t@(EMatch a b) = do
-  a' <- uniquify a
-  b' <- uniquify b
-  if any isEUnique [a',b']
-    then EUnique <$> randHash <*> pure (EMatch a' b')
-    else return (EMatch a' b')
-uniquify t@(EPair a b) = do
-  a' <- uniquify a
-  b' <- uniquify b
-  if any isEUnique [a',b']
-    then EUnique <$> randHash <*> pure (EPair a' b')
-    else return (EPair a' b')
-uniquify t@(ELabel id e) = do
-  e' <- uniquify e
-  if isEUnique e
-    then EUnique <$> randHash <*> pure (ELabel id e')
-    else return (ELabel id e')
-uniquify t@(EUnique Unset e) = EUnique <$> randHash <*> pure e
-uniquify t@(EUnique h e) = return t
-uniquify t@(EToken _ _) = return t
-
-step :: Exp -> ContextT IO Exp
-step x = do
-  res <- step' x
-  lift $ uniquify res
-  where
-    step' :: (Monad m) => Exp -> ContextT m Exp
-    step' t@(ELit _) = return t
-    step' t@(EVar id) = getDef id
-    step' t@(EFun _ _) = return t
-    step' t@(EMatch x y) = return t
-    step' t@(ERec x y) = return t
-    step' t@(EUnique h x) = EUnique h <$> step' x
-    step' (ETDef _ _ t) = do
+step :: (Monad m) => Exp -> ContextT m Exp
+step t@(ELit _) = return t
+step t@(EVar id) = getDef id
+step t@(EFun _ _) = return t
+step t@(EMatch x y) = return t
+step t@(ERec x y) = return t
+step (ETDef _ _ t) = do
+  markChanged
+  return t
+step t@(EAnnot _ x) = do
+  markChanged
+  return x
+step t@(EApp x@(ERec _ _) y) = do
+  markChanged
+  let res = unrollRec x
+  return $ EApp res y
+step t@(EApp a@(EFun pat y) b) = do
+  res <- step b
+  c <- isChanged
+  if c
+    then return $ EApp a res
+    else do
+      pat_e <- bind pat b
       markChanged
-      return t
-    step' t@(EAnnot _ x) = do
+      return $ replace pat_e y
+step t@(EApp a@(EMatch x y) b) = do
+  step (EApp x b)
+  `catchError` (\case
+    BadBind _ _ -> do
       markChanged
-      return x
-    step' t@(EApp x@(ERec _ _) y) = do
+      return $ EApp y b
+    other -> throwError other
+  )
+step t@(EApp a b) = do
+  res <- step a
+  c <- isChanged
+  if c
+    then return $ EApp res b
+  else do
+    res' <- step b
+    c' <- isChanged
+    if c'
+      then return $ EApp a res'
+      else error "Should not reach here, bad typechecking of calls"
+step t@(ELet pat x y) = do
+  res_x <- step x
+  c <- isChanged
+  if c
+    then return $ ELet pat res_x y
+    else do
+      pat_e <- bind pat x
       markChanged
-      let res = unrollRec x
-      return $ EApp res y
-    step' t@(EApp a@(EFun pat y) b) = do
-      res <- step' b
-      c <- isChanged
-      if c
-        then return $ EApp a res
-        else do
-          pat_e <- bind pat b
-          markChanged
-          return $ replace pat_e y
-    step' t@(EApp a@(EMatch x y) b) = do
-      step' (EApp x b)
-      `catchError` (\case
-        BadBind _ _ -> do
-          markChanged
-          return $ EApp y b
-        other -> throwError other
-      )
-    step' t@(EApp a b) = do
-      res <- step' a
-      c <- isChanged
-      if c
-        then return $ EApp res b
-      else do
-        res' <- step' b
-        c' <- isChanged
-        if c'
-          then return $ EApp a res'
-          else error "Should not reach here, bad typechecking of calls"
-    step' t@(ELet pat x y) = do
-      res_x <- step' x
-      c <- isChanged
-      if c
-        then return $ ELet pat res_x y
-        else do
-          pat_e <- bind pat x
-          markChanged
-          return (replace pat_e y)
-    step' t@(EPair a b) = do
-      res <- step' a
-      c <- isChanged
-      if c
-        then return $ EPair res b
-      else do
-        res' <- step' b
-        c' <- isChanged
-        if c'
-          then return $ EPair a res'
-          else return t
-    step' t@(ELabel id exp) = ELabel id <$> step' exp
-    step' t@(EToken _ _) = return t
+      return (replace pat_e y)
+step t@(EPair a b) = do
+  res <- step a
+  c <- isChanged
+  if c
+    then return $ EPair res b
+  else do
+    res' <- step b
+    c' <- isChanged
+    if c'
+      then return $ EPair a res'
+      else return t
+step t@(ELabel id exp) = ELabel id <$> step exp
+step t@(EToken _ _) = return t
 
 evaluate :: Maybe Int -> Exp -> ContextT IO Exp
 evaluate (Just 0) x = return x
@@ -200,4 +141,4 @@ evaluate count t
         else return res
 
 preprocess :: Exp -> ContextT IO Exp
-preprocess x = lift (uniquify x)
+preprocess = return
