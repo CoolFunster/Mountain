@@ -1,3 +1,5 @@
+ - finish unique type checking
+ - recursive lets
  - tokens
  - fix type schemes
  - Structures & Signatures

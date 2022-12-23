@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
 {-# language OverloadedStrings #-}
 module CopiedMountain.Typechecker where
 
@@ -21,6 +22,7 @@ import Debug.Trace
 import qualified Data.Text as T
 import CopiedMountain.Context
 import qualified Data.Set as S
+import Data.Foldable (foldrM)
 
 type Substitution = Map String Type
 
@@ -294,28 +296,57 @@ inferLiteral lit =
     LFloat _ -> TFloat
     LUnit -> TUnit)
 
-inferPattern :: (Monad m) => Context -> Pattern -> ContextT m (Context, Type)
-inferPattern _ (PLit binder) = do
-  (_, tyBinder) <- inferLiteral binder
-  return (Map.empty, tyBinder)
-inferPattern _ (PVar binder) = do
-  tyBinder <- newTyVar
-  return (Map.singleton binder (Scheme [] tyBinder), tyBinder)
-inferPattern ctx (PPair a b) = do
-  (ctxa, tya) <- inferPattern ctx a
-  (ctxb, tyb) <- inferPattern ctx b
-  return (Map.union ctxa ctxb, TPair tya tyb)
-inferPattern ctx (PLabel id x) = do
-  (new_ctx, typ) <- inferPattern ctx x
-  return (new_ctx, TLabel id typ)
-inferPattern ctx (PAnnot (u,typ) x) = do
-  (s1, typx) <- inferPattern ctx x
-  (s2, final_typ) <- has ctx typ typx
-  res <- applySubstCtx s2 s1
-  return (res, final_typ)
-inferPattern ctx PWildcard = do
-  res <- newTyVar
-  return (ctx, res)
+unionUseCount :: (Monad m) => UseCount -> UseCount -> ContextT m UseCount
+unionUseCount CSingle CMany = throwError $ BadUseCount CSingle CMany
+unionUseCount CSingle _ = return CSingle
+unionUseCount CMany CSingle = throwError $ BadUseCount CSingle CMany
+unionUseCount CMany _ = return CMany
+unionUseCount CAny other = return other
+
+unionUsage :: (Monad m) => Usage -> Usage -> ContextT m Usage
+unionUsage x y = case (x,y) of
+  (ULit uca,ULit ucb) -> ULit <$> unionUseCount uca ucb
+  (UPair uc x y,UPair uc' x' y') -> do
+    xn <- unionUsage x x'
+    yn <- unionUsage y y'
+    ucn <- unionUseCount uc uc'
+    let counts = [getUseCount xn, getUseCount yn]
+    UPair <$> foldrM unionUseCount CAny [uc, uc', useCountPair counts] <*> pure xn <*> pure yn
+  (ULit uc, UPair uc' x y) -> UPair <$> unionUseCount uc uc' <*> pure x <*> pure y
+  (UPair uc' x y, ULit uc) -> UPair <$> unionUseCount uc uc' <*> pure x <*> pure y
+  (a,b) -> throwError $ UnhandledUsage a b
+  `catchError` (\e -> case e of
+      BadUseCount us us' -> throwError $ BadUsage x y
+      other -> throwError other)
+
+
+inferPattern :: (Monad m) => Context -> S.Set Id -> Pattern -> ContextT m (Context, (Usage, Type))
+inferPattern ctx copied pat = case pat of
+  (PLit binder) -> do
+    (_, tyBinder) <- inferLiteral binder
+    return (Map.empty, (ULit CAny, tyBinder))
+  (PVar binder) -> do
+    tyBinder <- newTyVar
+    let usage = if binder `elem` copied then ULit CMany else ULit CSingle
+    return (Map.singleton binder (Scheme [] tyBinder), (usage,tyBinder))
+  (PPair a b) -> do
+    (ctxa, (ua, tya)) <- inferPattern ctx copied a
+    (ctxb, (ub, tyb)) <- inferPattern ctx copied b
+    let counts = map getUseCount [ua, ub]
+    let usage = UPair (useCountPair counts) ua ub
+    return (Map.union ctxa ctxb, (usage, TPair tya tyb))
+  (PLabel id x) -> do
+    (new_ctx, (u,typ)) <- inferPattern ctx copied x
+    return (new_ctx, (u,TLabel id typ))
+  (PAnnot (u,typ) x) -> do
+    (s1, (ux, typx)) <- inferPattern ctx copied x
+    (s2, final_typ) <- has ctx typ typx
+    res <- applySubstCtx s2 s1
+    un <- unionUsage u ux
+    return (res, (un, final_typ))
+  PWildcard -> do
+    res <- newTyVar
+    return (ctx, (ULit CAny, res))
 
 infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
 infer ctx exp = case exp of
@@ -338,11 +369,11 @@ infer ctx exp = case exp of
       inputTyp (TFun (u,a) b) = a
       outputTyp (TFun a b) = b
   EFun pattern body -> do
-    (ctx_p, tyP) <- inferPattern ctx pattern
+    (ctx_p, (usage, tyP)) <- inferPattern ctx (copiedFreeRef body) pattern
     let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
     res <- applySubst s1 tyP
-    return (s1, TFun (ULit CAny, res) tyBody)
+    return (s1, TFun (usage, res) tyBody)
   m@(EMatch a b) -> do
     res <- newTyVar
     foo_type <- TFun (ULit CAny, res) <$> newTyVar
@@ -375,7 +406,7 @@ infer ctx exp = case exp of
       tFunArgs (TFun a b) = (a,b)
   ELet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
-    (ctx_p, tyP) <- inferPattern ctx pattern
+    (ctx_p, (_, tyP)) <- inferPattern ctx (copiedFreeRef body) pattern
     let newCtx = Map.union ctx_p ctx
     res <- applySubst s1 tyBinder
     (s2, typB) <- unify newCtx tyP res

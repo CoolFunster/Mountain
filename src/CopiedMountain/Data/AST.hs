@@ -160,3 +160,23 @@ patFreeVars (PPair a b) = S.union (patFreeVars a) (patFreeVars b)
 patFreeVars (PLabel id a) = patFreeVars a
 patFreeVars (PAnnot t p) = patFreeVars p
 patFreeVars PWildcard = S.empty
+
+getUseCount :: Usage -> UseCount
+getUseCount (ULit c) = c
+getUseCount (UPair c _ _) = c
+getUseCount (USum a b) = minimum [getUseCount a, getUseCount b]
+
+useCountPair :: [UseCount] -> UseCount
+useCountPair counts 
+  | CSingle `elem` counts = CSingle
+  | CAny `elem` counts = CAny
+  | otherwise = CMany
+
+updateUsage :: Usage -> Usage
+updateUsage (ULit c) = ULit c
+updateUsage (UPair c a b) = do
+  let a' = updateUsage a
+  let b' = updateUsage b
+  let usages = c:map getUseCount [a,b]
+  UPair (minimum usages) a' b'
+updateUsage (USum a b) = USum (updateUsage a) (updateUsage b)
