@@ -97,7 +97,7 @@ spec = do
           let res = parseExprWith pLet "def (?Int :: x) = 3; x"
           case res of
             Left s -> error s
-            Right exp -> exp `shouldBe` ELet (PAnnot (ULit CSingle,TInt) (PVar "x")) (ELit (LInt 3)) (EVar "x")
+            Right exp -> exp `shouldBe` ELet (PAnnot (TUsage CSingle TInt) (PVar "x")) (ELit (LInt 3)) (EVar "x")
       describe "Label" $ do
         it "Should parse a label" $ do
           let res = parseExpr "temp:3"
@@ -111,29 +111,29 @@ spec = do
           res `shouldBe` Right TInt
         it "should parse a basic type foo" $ do
           let res = parseExprWith pType "Int -> String"
-          res `shouldBe` Right (TFun (ULit CAny, TInt) TString)
+          res `shouldBe` Right (TFun TInt TString)
         it "should parse an Annot" $ do
           let res = parseExpr "Int :: 3"
           res `shouldBe` Right (EAnnot TInt (ELit (LInt 3)))
         it "should parse an Annot foo" $ do
           let res = parseExpr "Int -> String :: 3"
-          res `shouldBe` Right (EAnnot (TFun (ULit CAny, TInt) TString) (ELit (LInt 3)))
+          res `shouldBe` Right (EAnnot (TFun TInt TString) (ELit (LInt 3)))
         it "should parse a nested Annot" $ do
           let res = parseExpr "Int -> String :: Int :: 3"
-          res `shouldBe` Right (EAnnot (TFun (ULit CAny, TInt) TString) (EAnnot TInt (ELit (LInt 3))))
+          res `shouldBe` Right (EAnnot (TFun TInt TString) (EAnnot TInt (ELit (LInt 3))))
         it "should parse a pattern annotation" $ do
           let res = parseExpr "(Int :: x) -> x"
           case res of
             Left s -> error s
-            Right exp -> exp `shouldBe` EFun (PAnnot (ULit CAny, TInt) (PVar "x")) (EVar "x")
+            Right exp -> exp `shouldBe` EFun (PAnnot TInt (PVar "x")) (EVar "x")
       describe "Recursion" $ do
         it "should parse a recursive function" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
-          res `shouldBe` Right (ERec "x" (EAnnot (TFun (ULit CAny, TInt) TInt) (EFun (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
+          res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (EFun (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
       describe "TypeDefs" $ do
         it "should handle typedefs" $ do
           let res = parseExpr "x ~ (Int -> Int) :: 3 -> (x 3)"
-          res `shouldBe` Right (ERec "x" (EAnnot (TFun (ULit CAny, TInt) TInt) (EFun (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
+          res `shouldBe` Right (ERec "x" (EAnnot (TFun TInt TInt) (EFun (PLit (LInt 3)) (EApp (EVar "x") (ELit (LInt 3))))))
         it "should handle simple typedef" $ do
           let res = parseExpr "Int :: x"
           res `shouldBe` Right (EAnnot TInt (EVar "x"))

@@ -105,16 +105,16 @@ pMatch = makeExprParser pFun [
   ]
 
 pFun :: Parser Exp
-pFun = 
+pFun =
       EFun <$> try (pPattern <* pWrapWS "->") <*> pFun
   <|> pBinExp
 
 pBinExp :: Parser Exp
-pBinExp = 
+pBinExp =
       ELabel <$> try (identifier <* pWrapWS ":") <*> pBinExp
   <|> ERec <$> try (identifier <* pWrapWS "~") <*> pBinExp
   <|> pAnnot
-  
+
 pAnnot :: Parser Exp
 pAnnot =
       EAnnot <$> try (pType <* pWrapWS "::") <*> pExpr
@@ -180,7 +180,7 @@ pPattern :: Parser Pattern
 pPattern = choice [
     try $ pTuple (PLit LUnit) PPair pPattern,
     PLabel <$> try (identifier <* pWrapWS ":") <*> pPattern,
-    PAnnot <$> try (pUsageType <* pWrapWS "::") <*> pPattern,
+    PAnnot <$> try (pType <* pWrapWS "::") <*> pPattern,
     PLit <$> try pLiteral,
     PWildcard <$ symbol "_",
     PVar <$> try identifier
@@ -239,63 +239,15 @@ pUseCount :: Parser UseCount
 pUseCount = choice [
     try $ symbol "+" $> CMany,
     try $ symbol "?" $> CSingle,
-    try $ symbol "*" $> CAny,
-    return CAny
+    try $ symbol "*" $> CAny
   ]
-
-pUsageType :: Parser (Usage,Type)
-pUsageType = pUseSum
-
-pUseSum :: Parser (Usage, Type)
-pUseSum = do
-  inner <- sepBy1 pUseTerm (pWrapWS "|")
-  return $ _fold inner
-  where
-    _fold :: [(Usage, Type)] -> (Usage, Type)
-    _fold [x] = x
-    _fold [(ux, tx),(uy, ty)] = (USum ux uy, TSum tx ty)
-    _fold ((ux, tx):xs) = do
-      let (uy, ty) = _fold xs
-      (USum ux uy, TSum tx ty)
-    _fold other = error "should not reach"
-
-pUseTerm :: Parser (Usage, Type)
-pUseTerm = choice [
-    try pUsePair,
-    try pUseLiteral
-  ]
-
-pUsePair :: Parser (Usage, Type)
-pUsePair = do
-  count <- pUseCount
-  _ <- symbol "(" <* optional sc
-  inner <- sepEndBy pUsageType (pWrapWS ",")
-  _ <- optional sc *> symbol ")"
-  case inner of
-    [] -> return (ULit count, TUnit)
-    [x] -> return x
-    other -> return $ _fold count other
-  where
-    _fold :: UseCount -> [(Usage, Type)] -> (Usage, Type)
-    _fold _ [x] = x
-    _fold uc [(ux, tx),(uy, ty)] = (UPair uc ux uy, TPair tx ty)
-    _fold uc ((ux, tx):xs) = do
-      let (uy, ty) = _fold uc xs
-      (UPair uc ux uy, TPair tx ty)
-    _fold uc other = error "should not reach"
-
-pUseLiteral :: Parser (Usage, Type)
-pUseLiteral = do
-  count <- pUseCount
-  typ <- pTypeAtom
-  return (ULit count, typ)
 
 pType :: Parser Type
 pType = pTFun
 
 pTFun :: Parser Type
 pTFun = choice [
-    TFun <$> try (pUsageType <* pWrapWS "->") <*> pType,
+    TFun <$> try (pBinTyp <* pWrapWS "->") <*> pType,
     pBinTyp
   ]
 
@@ -327,12 +279,16 @@ pTCallNormal = do
   return (`TCall` struct)
 
 pTypeAtom :: Parser Type
-pTypeAtom =
-      pBuiltInType
-  <|> pTTuple
-  <|> pTVar
-  <|> TType <$> try pKind
-  <|> pTToken
+pTypeAtom = do
+  uc <- optional (try $ pUseCount <* sc)
+  typ <- pBuiltInType
+          <|> pTTuple
+          <|> pTVar
+          <|> TType <$> try pKind
+          <|> pTToken
+  case uc of
+    Nothing -> return typ
+    Just x -> return $ TUsage x typ
 
 pTToken :: Parser Type
 pTToken = do

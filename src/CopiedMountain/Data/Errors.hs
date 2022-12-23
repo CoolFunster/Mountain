@@ -16,7 +16,6 @@ data Error =
   | RecursiveWithNoTypeAnnotation Exp
   | RecursiveBindNotUsed Exp
   | OccursCheck String Type
-  | BadUseCount UseCount UseCount
-  | BadUsage Usage Usage
-  | UnhandledUsage Usage Usage
+  | BadUnifyUseCount UseCount UseCount
+  | BadHasUseCount UseCount UseCount
   deriving (Show, Eq)

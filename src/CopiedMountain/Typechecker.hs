@@ -38,9 +38,9 @@ applySubst subst ty = do
     TVar var -> return $ case Map.lookup var subst of
       Nothing -> TVar var
       Just x -> x
-    TFun (u, arg) res -> do
+    TFun arg res -> do
       arg' <- applySubst subst arg
-      TFun (u, arg') <$> applySubst subst res
+      TFun arg' <$> applySubst subst res
     TInt -> return TInt
     TBool -> return TBool
     TChar -> return TChar
@@ -51,15 +51,16 @@ applySubst subst ty = do
     TUnit -> return TUnit
     TCall a b -> TCall <$> applySubst subst a <*> applySubst subst b
     TToken id -> return $ TToken id
+    TUsage u t -> TUsage u <$> applySubst subst t
 
 applySubstOnPattern :: (Monad m) => Substitution -> Pattern -> ContextT m Pattern
 applySubstOnPattern s (PLit l) = return $ PLit l
 applySubstOnPattern s (PVar id) = return $ PVar id
 applySubstOnPattern s (PPair a b) = PPair <$> applySubstOnPattern s a <*> applySubstOnPattern s b
 applySubstOnPattern s (PLabel id b) = PLabel id <$> applySubstOnPattern s b
-applySubstOnPattern s (PAnnot (u, typ) b) = do
+applySubstOnPattern s (PAnnot typ b) = do
   res <- applySubst s typ
-  PAnnot (u,res) <$> applySubstOnPattern s b
+  PAnnot res <$> applySubstOnPattern s b
 applySubstOnPattern s PWildcard = pure PWildcard
 
 applySubstOnExpr :: (Monad m) => Substitution -> Exp -> ContextT m Exp
@@ -89,7 +90,7 @@ freeTypeVars :: Type -> Set Id
 freeTypeVars ty = case ty of
  TVar var ->
    Set.singleton var
- TFun (u,t1) t2 -> Set.union (freeTypeVars t1) (freeTypeVars t2)
+ TFun t1 t2 -> Set.union (freeTypeVars t1) (freeTypeVars t2)
  TPair a b -> Set.union (freeTypeVars a) (freeTypeVars b)
  TSum a b -> Set.union (freeTypeVars a) (freeTypeVars b)
  TLabel _ b -> freeTypeVars b
@@ -103,6 +104,7 @@ freeTypeVars ty = case ty of
  TFloat -> Set.empty
  TThing -> Set.empty
  TUnit -> Set.empty
+ TUsage _ t -> freeTypeVars t
 
 
 freeTypeVarsScheme :: Scheme -> Set Id
@@ -123,7 +125,7 @@ evalTCall ctx (TCall (TVar id) b) = do
     Just any -> do
       res <- instantiate any
       evalTCall ctx (TCall res b)
-evalTCall ctx (TCall (TFun (u,x) y) b) = do
+evalTCall ctx (TCall (TFun x y) b) = do
   (subs, typX) <- has ctx x b
   applySubst subs y
 evalTCall ctx (TCall somethin b) = error $ "what is this case?: " ++ show somethin
@@ -155,14 +157,14 @@ has ctx a@(TSum x y) b = do
   where
     tryHas :: (Monad m) => Type -> Type -> ContextT m (Maybe (Substitution, Type))
     tryHas a b = (Just <$> has ctx a b) `catchError` (\e -> return Nothing)
-has ctx (TFun (u,l) r) (TFun (u',l') r') = do
+has ctx (TFun l r) (TFun l' r') = do
   (s1, tyl) <- has ctx l l'
   tmpA <- applySubst s1 r
   tmpB <- applySubst s1 r'
   (s2, tyr) <- has ctx tmpA tmpB
   final_subs <- s2 `composeSubst` s1
   tfun_input <- applySubst final_subs l
-  res <- applySubst final_subs $ TFun (u, tfun_input) tyr
+  res <- applySubst final_subs $ TFun tfun_input tyr
   return (final_subs, res)
 has ctx (TPair a b) (TPair a' b') = do
   (s1, tyA) <- has ctx a a'
@@ -197,6 +199,12 @@ has ctx t1@(TToken id) t2@(TToken id2) =
   if id /= id2
     then throwError $ BadHas t1 t2
     else return (emptySubst, TToken id)
+has ctx (TUsage u1 t1) (TUsage u2 t2) = do
+  (subst, typ) <- has ctx t1 t2
+  usage <- hasUseCount u1 u2
+  return (subst, TUsage usage typ)
+has ctx (TUsage u1 t1) t2 = has ctx (TUsage u1 t1) (TUsage CAny t2)
+has ctx t1 (TUsage u2 t2)  = has ctx (TUsage CAny t1) (TUsage u2 t2)
 has _ t1 t2 = throwError $ BadHas t1 t2
 
 
@@ -208,14 +216,14 @@ unify _ TChar TChar = return (emptySubst, TChar)
 unify _ TString TString = return (emptySubst, TString)
 unify _ TFloat TFloat = return (emptySubst, TFloat)
 unify _ TThing TThing = return (emptySubst, TThing)
-unify ctx (TFun (u,l) r) (TFun (u',l') r') = do
+unify ctx (TFun l r) (TFun l' r') = do
   (s1, tyl) <- unify ctx l l'
   tmpA <- applySubst s1 r
   tmpB <- applySubst s1 r'
   (s2, tyr) <- unify ctx tmpA tmpB
   final_subs <- s2 `composeSubst` s1
   tfun_input <- applySubst final_subs l
-  res <- applySubst final_subs $ TFun (u, tfun_input) tyr
+  res <- applySubst final_subs $ TFun tfun_input tyr
   return (final_subs, res)
 unify ctx (TPair a b) (TPair a' b') = do
   (s1, tyA) <- unify ctx a a'
@@ -261,7 +269,39 @@ unify ctx t1@(TToken id) t2@(TToken id2) =
   if id /= id2
     then throwError $ BadUnify t1 t2
     else return (emptySubst, TToken id)
+unify ctx (TUsage u1 t1) (TUsage u2 t2) = do
+  (subst, typ) <- unify ctx t1 t2
+  usage <- unifyUseCount u1 u2
+  return (subst, TUsage usage typ)
+unify ctx (TUsage u1 t1) t2 = do
+  usage_t2 <- inferUseCount t2
+  unify ctx (TUsage u1 t1) (TUsage usage_t2 t2)
+unify ctx t1 (TUsage u2 t2)  = unify ctx (TUsage CAny t1) (TUsage u2 t2)
 unify _ t1 t2 = throwError $ BadUnify t1 t2
+
+inferUseCount :: (Monad m) => Type -> ContextT m UseCount
+inferUseCount x = case x of
+  TInt -> return CAny
+  TBool -> return CAny
+  TChar -> return CAny
+  TString -> return CAny
+  TFloat -> return CAny
+  TThing -> return CAny
+  TUnit -> return CAny
+  TVar s -> return CAny
+  TFun ty ty' -> return CAny
+  TPair ty ty' -> do
+    uc <- inferUseCount ty
+    uc' <- inferUseCount ty'
+    return $ useCountPair [uc,uc']
+  TSum ty ty' -> do
+    res <- mapM inferUseCount [ty, ty']
+    return $ maximum res
+  TLabel s ty -> inferUseCount ty
+  TToken s -> return CSingle
+  TUsage uc ty -> inferUseCount ty >>= unifyUseCount uc
+  TType ki -> return CAny
+  TCall ty ty' -> return CAny
 
 type Context = Map String Scheme
 
@@ -296,57 +336,47 @@ inferLiteral lit =
     LFloat _ -> TFloat
     LUnit -> TUnit)
 
-unionUseCount :: (Monad m) => UseCount -> UseCount -> ContextT m UseCount
-unionUseCount CSingle CMany = throwError $ BadUseCount CSingle CMany
-unionUseCount CSingle _ = return CSingle
-unionUseCount CMany CSingle = throwError $ BadUseCount CSingle CMany
-unionUseCount CMany _ = return CMany
-unionUseCount CAny other = return other
+unifyUseCount :: (Monad m) => UseCount -> UseCount -> ContextT m UseCount
+unifyUseCount CSingle CMany = throwError $ BadUnifyUseCount CSingle CMany
+unifyUseCount CSingle _ = return CSingle
+unifyUseCount CMany CSingle = throwError $ BadUnifyUseCount CSingle CMany
+unifyUseCount CMany _ = return CMany
+unifyUseCount CAny other = return other
 
-unionUsage :: (Monad m) => Usage -> Usage -> ContextT m Usage
-unionUsage x y = case (x,y) of
-  (ULit uca,ULit ucb) -> ULit <$> unionUseCount uca ucb
-  (UPair uc x y,UPair uc' x' y') -> do
-    xn <- unionUsage x x'
-    yn <- unionUsage y y'
-    ucn <- unionUseCount uc uc'
-    let counts = [getUseCount xn, getUseCount yn]
-    UPair <$> foldrM unionUseCount CAny [uc, uc', useCountPair counts] <*> pure xn <*> pure yn
-  (ULit uc, UPair uc' x y) -> UPair <$> unionUseCount uc uc' <*> pure x <*> pure y
-  (UPair uc' x y, ULit uc) -> UPair <$> unionUseCount uc uc' <*> pure x <*> pure y
-  (a,b) -> throwError $ UnhandledUsage a b
-  `catchError` (\e -> case e of
-      BadUseCount us us' -> throwError $ BadUsage x y
-      other -> throwError other)
+hasUseCount :: (Monad m) => UseCount -> UseCount -> ContextT m UseCount
+hasUseCount CSingle CMany = throwError $ BadHasUseCount CSingle CMany
+hasUseCount CSingle _ = return CSingle
+hasUseCount CMany _ = return CMany
+hasUseCount CAny other = return other
 
-
-inferPattern :: (Monad m) => Context -> S.Set Id -> Pattern -> ContextT m (Context, (Usage, Type))
+inferPattern :: (Monad m) => Context -> S.Set Id -> Pattern -> ContextT m (Context, Type)
 inferPattern ctx copied pat = case pat of
   (PLit binder) -> do
     (_, tyBinder) <- inferLiteral binder
-    return (Map.empty, (ULit CAny, tyBinder))
+    return (Map.empty, TUsage CSingle tyBinder)
   (PVar binder) -> do
     tyBinder <- newTyVar
-    let usage = if binder `elem` copied then ULit CMany else ULit CSingle
-    return (Map.singleton binder (Scheme [] tyBinder), (usage,tyBinder))
+    let usage = if binder `elem` copied then CMany else CSingle
+    return (Map.singleton binder (Scheme [] tyBinder), TUsage usage tyBinder)
   (PPair a b) -> do
-    (ctxa, (ua, tya)) <- inferPattern ctx copied a
-    (ctxb, (ub, tyb)) <- inferPattern ctx copied b
-    let counts = map getUseCount [ua, ub]
-    let usage = UPair (useCountPair counts) ua ub
-    return (Map.union ctxa ctxb, (usage, TPair tya tyb))
+    (ctxa, tya) <- inferPattern ctx copied a
+    (ctxb, tyb) <- inferPattern ctx copied b
+    counts <- mapM inferUseCount [tya, tyb]
+    let usage = useCountPair counts
+    case usage of
+      CAny -> return (Map.union ctxa ctxb, TPair tya tyb)
+      other -> return (Map.union ctxa ctxb, TUsage other $ TPair tya tyb)
   (PLabel id x) -> do
-    (new_ctx, (u,typ)) <- inferPattern ctx copied x
-    return (new_ctx, (u,TLabel id typ))
-  (PAnnot (u,typ) x) -> do
-    (s1, (ux, typx)) <- inferPattern ctx copied x
+    (new_ctx, typ) <- inferPattern ctx copied x
+    return (new_ctx, TLabel id typ)
+  (PAnnot typ x) -> do
+    (s1, typx) <- inferPattern ctx copied x
     (s2, final_typ) <- has ctx typ typx
     res <- applySubstCtx s2 s1
-    un <- unionUsage u ux
-    return (res, (un, final_typ))
+    return (res, final_typ)
   PWildcard -> do
     res <- newTyVar
-    return (ctx, (ULit CAny, res))
+    return (ctx, res)
 
 infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
 infer ctx exp = case exp of
@@ -366,17 +396,17 @@ infer ctx exp = case exp of
     res <- applySubst final_subst tyFun
     return (final_subst, outputTyp res)
     where
-      inputTyp (TFun (u,a) b) = a
+      inputTyp (TFun a b) = a
       outputTyp (TFun a b) = b
   EFun pattern body -> do
-    (ctx_p, (usage, tyP)) <- inferPattern ctx (copiedFreeRef body) pattern
+    (ctx_p, tyP) <- inferPattern ctx (copiedFreeRef body) pattern
     let tmpCtx = Map.union ctx_p ctx
     (s1, tyBody) <- infer tmpCtx body
     res <- applySubst s1 tyP
-    return (s1, TFun (usage, res) tyBody)
+    return (s1, TFun res tyBody)
   m@(EMatch a b) -> do
     res <- newTyVar
-    foo_type <- TFun (ULit CAny, res) <$> newTyVar
+    foo_type <- TFun res <$> newTyVar
     (s1, tyA) <- infer ctx a
     if not $ isTFun tyA
       then err
@@ -393,12 +423,12 @@ infer ctx exp = case exp of
           other -> err
         `catchError` (\e -> do {
               res3 <- applySubst s2 tyA
-            ; let ((u1,ax), ay) = tFunArgs res3
-            ; let ((u2,bx), by) = tFunArgs tyB
+            ; let (ax, ay) = tFunArgs res3
+            ; let (bx, by) = tFunArgs tyB
             ; (subs_x, tyX) <- unifyJoin ax bx
             ; (subs_y, tyY) <- unifyJoin ay by
             ; res_subs <- subs_x `composeSubst` subs_y
-            ; return (res_subs, TFun (u1, tyX) tyY)
+            ; return (res_subs, TFun tyX tyY)
           })
     where
       err = throwError $ MatchWithNonFunction m
@@ -406,7 +436,7 @@ infer ctx exp = case exp of
       tFunArgs (TFun a b) = (a,b)
   ELet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
-    (ctx_p, (_, tyP)) <- inferPattern ctx (copiedFreeRef body) pattern
+    (ctx_p, tyP) <- inferPattern ctx (copiedFreeRef body) pattern
     let newCtx = Map.union ctx_p ctx
     res <- applySubst s1 tyBinder
     (s2, typB) <- unify newCtx tyP res

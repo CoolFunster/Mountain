@@ -49,16 +49,16 @@ spec = do
     describe "TypeAnnotations" $ do
       it "case 1" $ do
         let Right x = parseExpr "(String :: x) -> 3"
-        x `shouldBe` EFun (PAnnot (ULit CAny, TString) (PVar "x")) (ELit (LInt 3))
+        x `shouldBe` EFun (PAnnot TString (PVar "x")) (ELit (LInt 3))
         (raw_res, _) <- runWith dummyState (typeInference primitives x)
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme [] (TFun (ULit CSingle, TString) TInt)
+            res `shouldBe` Scheme [] (TFun (TUsage CSingle TString) TInt)
     describe "Type Calls" $ do
       it "case 1" $ do
         let Right x = parseExpr "type PairWith = a -> (a, Int); PairWith(Int) :: (3, 4)"
-        x `shouldBe` ETDef "PairWith" (TFun (ULit CAny, TVar "a") (TPair (TVar "a") TInt)) (EAnnot (TCall (TVar "PairWith") TInt) (EPair (ELit (LInt 3)) (ELit (LInt 4))))
+        x `shouldBe` ETDef "PairWith" (TFun (TVar "a") (TPair (TVar "a") TInt)) (EAnnot (TCall (TVar "PairWith") TInt) (EPair (ELit (LInt 3)) (ELit (LInt 4))))
         (raw_res, _) <- runWith dummyState (typeInference primitives x)
         case raw_res of
           Left e -> error (show e)
@@ -90,7 +90,7 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u0","u1"] (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair ((TVar "u0")) ((TVar "u1"))) (TPair (TVar "u0") (TVar "u0")))
+            res `shouldBe` Scheme ["u0","u1"] (TFun (TPair (TUsage CMany (TVar "u0")) (TVar "u1")) (TPair (TVar "u0") (TVar "u0")))
     describe "Unique" $ do
       it "Should infer a literal" $ do
         let x = ELit (LInt 3)
@@ -105,14 +105,14 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u0"] (TFun (ULit CSingle, (TVar "u0")) (TVar "u0"))
+            res `shouldBe` Scheme ["u0"] (TFun (TUsage CSingle (TVar "u0")) (TVar "u0"))
       it "Should infer a unique function" $ do
         let x = EFun (PVar "x") (EVar "x")
         (raw_res, _) <- runWith dummyState (typeInference primitives x)
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u0"] (TFun (ULit CSingle, (TVar "u0")) (TVar "u0"))
+            res `shouldBe` Scheme ["u0"] (TFun (TUsage CSingle (TVar "u0")) (TVar "u0"))
       it "Should infer a pair" $ do
         let x = EPair (ELit (LInt 3)) (ELit (LFloat 3.0))
         (raw_res, _) <- runWith dummyState (typeInference primitives x)
@@ -127,15 +127,23 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u3"] (TFun (ULit CSingle, (TVar "u3")) ((TVar "u3")))
+            res `shouldBe` Scheme ["u3"] (TFun (TUsage CSingle (TVar "u3")) ((TVar "u3")))
       it "Should infer a mix match" $ do
-        let x = parseExpr "(x -> (x,x) || x -> (3,x))"
-        x `shouldBe` Right (EMatch (EFun (PVar "x") (EPair (EVar "x") (EVar "x"))) (EFun (PVar "x") (EPair (ELit (LInt 3)) (EVar "x"))))
+        let x = parseExpr "(String :: x -> (x,x) || Int :: x -> (3,x))"
+        x `shouldBe` Right (EMatch (EFun (PAnnot TString (PVar "x")) (EPair (EVar "x") (EVar "x"))) (EFun (PAnnot TInt (PVar "x")) (EPair (ELit (LInt 3)) (EVar "x"))))
         (raw_res, _) <- runWith dummyState (typeInference primitives (fromRight (error "") x))
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme [] (TFun (ULit CMany, TInt) (TPair TInt TInt))
+            res `shouldBe` Scheme [] (TFun (TSum (TUsage CMany TString) (TUsage CSingle TInt)) (TSum (TPair TString TString) (TPair TInt TInt)))
+      it "Should infer a mix match usage" $ do
+        let x = parseExpr "(Int :: x -> (x,x) || Int :: x -> (3,x))"
+        x `shouldBe` Right (EMatch (EFun (PAnnot TInt (PVar "x")) (EPair (EVar "x") (EVar "x"))) (EFun (PAnnot TInt (PVar "x")) (EPair (ELit (LInt 3)) (EVar "x"))))
+        (raw_res, _) <- runWith dummyState (typeInference primitives (fromRight (error "") x))
+        case raw_res of
+          Left e -> error (show e)
+          Right (res, _) ->
+            res `shouldBe` Scheme [] (TFun (TSum (TUsage CMany TInt) (TUsage CSingle TInt)) (TPair TInt TInt))
       it "Should infer a app" $ do
         let x = parseExpr "(3 -> 5)(3)"
         x `shouldBe` Right (EApp (EFun (PLit (LInt 3)) (ELit (LInt 5))) (ELit (LInt 3)))
@@ -159,7 +167,7 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u0"] (TFun (ULit CSingle, (TVar "u0")) TInt)
+            res `shouldBe` Scheme ["u0"] (TFun (TUsage CSingle (TVar "u0")) TInt)
       it "Should infer a unique app" $ do
         let x = parseExpr "x -> (3,x)"
         x `shouldBe` Right (EFun (PVar "x") (EPair (ELit (LInt 3)) (EVar "x")))
@@ -167,7 +175,7 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u0"] (TFun (ULit CSingle, (TVar "u0")) (TPair TInt (TVar "u0")))
+            res `shouldBe` Scheme ["u0"] (TFun (TUsage CSingle (TVar "u0")) (TPair TInt (TVar "u0")))
       it "Should infer this unique type" $ do
         let x = parseExpr "(3,3)"
         x `shouldBe` Right (EPair (ELit (LInt 3)) (ELit (LInt 3)))
@@ -187,43 +195,43 @@ spec = do
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme ["u0"] (TFun (ULit CSingle, (TVar "u0")) (TVar "u0"))
+            res `shouldBe` Scheme ["u0"] (TFun (TUsage CSingle (TVar "u0")) (TVar "u0"))
       it "Should handle unique pattern types" $ do
         let x = parseExpr "(+Int :: x) -> (x,x)"
-        x `shouldBe` Right (EFun (PAnnot (ULit CMany, TInt) (PVar "x")) (EPair (EVar "x") (EVar "x")))
+        x `shouldBe` Right (EFun (PAnnot (TUsage CMany TInt) (PVar "x")) (EPair (EVar "x") (EVar "x")))
         let x' = (fromRight (error "") x)
         prettyExp x' `shouldBe` "(+Int::x)->(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
         case raw_res of
           Left e -> error (show e)
-          Right (res, _) -> res `shouldBe` Scheme [] (TFun (ULit CMany,TInt) (TPair TInt TInt))
+          Right (res, _) -> res `shouldBe` Scheme [] (TFun (TUsage CMany TInt) (TPair TInt TInt))
       it "Should handle unique pattern types" $ do
         let x = parseExpr "(?Int :: x) -> (x,x)"
-        x `shouldBe` Right (EFun (PAnnot (ULit CSingle, TInt) (PVar "x")) (EPair (EVar "x") (EVar "x")))
+        x `shouldBe` Right (EFun (PAnnot (TUsage CSingle TInt) (PVar "x")) (EPair (EVar "x") (EVar "x")))
         let x' = (fromRight (error "") x)
         prettyExp x' `shouldBe` "(?Int::x)->(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
-        raw_res `shouldBe` Left (BadUsage (ULit CSingle) (ULit CMany))
+        raw_res `shouldBe` Left (BadHasUseCount CSingle CMany)
       it "Should handle unique type annotations" $ do
-        let x = parseExpr "(+Int, String) -> (Int, Int) :: (x,_) -> (x,x)"
-        x `shouldBe` Right (EAnnot (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt)) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
+        let x = parseExpr "(+Int, String) -> (Int, Int) :: ((x,_) -> (x,x))"
+        x `shouldBe` Right (EAnnot (TFun (TPair (TUsage CMany TInt) TString) (TPair TInt TInt)) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
         let x' = (fromRight (error "") x)
-        prettyExp x' `shouldBe` "((+Int, String) -> (Int,Int))::((x,_)->(x,x))"
+        prettyExp x' `shouldBe` "((+Int,String) -> (Int,Int))::((x,_)->(x,x))"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme [] (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt))
+            res `shouldBe` Scheme [] (TFun (TPair (TUsage CMany TInt) TString) (TPair TInt TInt))
       it "Should handle pattern lets error" $ do
         let x = parseExpr "(def (?Int :: x) = 3; (x,x))"
-        x `shouldBe` Right (ELet (PAnnot (ULit CSingle,TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
+        x `shouldBe` Right (ELet (PAnnot (TUsage CSingle TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
         let x' = fromRight (error "") x
         prettyExp x' `shouldBe` "(?Int::x)=3;(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
-        raw_res `shouldBe` Left (BadUsage (ULit CSingle) (ULit CMany))
+        raw_res `shouldBe` Left (BadHasUseCount  CSingle CMany)
       it "Should handle pattern lets correct" $ do
         let x = parseExpr "(def (+Int :: x) = 3; (x,x))"
-        x `shouldBe` Right (ELet (PAnnot (ULit CMany,TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
+        x `shouldBe` Right (ELet (PAnnot (TUsage CMany TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
         let x' = fromRight (error "") x
         prettyExp x' `shouldBe` "(+Int::x)=3;(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
@@ -233,7 +241,7 @@ spec = do
             res `shouldBe` Scheme [] (TPair TInt TInt)
       it "Should handle patter lets inferred" $ do
         let x = parseExpr "(def (Int :: x) = 3; (x,x))"
-        x `shouldBe` Right (ELet (PAnnot (ULit CAny,TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
+        x `shouldBe` Right (ELet (PAnnot TInt (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
         let x' = fromRight (error "") x
         prettyExp x' `shouldBe` "(Int::x)=3;(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')

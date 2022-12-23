@@ -25,7 +25,7 @@ prettyPattern (PLit i) = prettyLit i
 prettyPattern (PVar v) = v
 prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
 prettyPattern (PLabel id x) = id ++ ":" ++ prettyPattern x
-prettyPattern (PAnnot typ x) = "(" ++ prettyUseType typ ++ "::" ++ prettyPattern x ++ ")"
+prettyPattern (PAnnot typ x) = "(" ++ prettyType typ ++ "::" ++ prettyPattern x ++ ")"
 prettyPattern PWildcard = "_"
 
 prettyExp :: Exp -> String
@@ -52,14 +52,6 @@ prettyUseCount CSingle = "?"
 prettyUseCount CMany = "+"
 prettyUseCount CAny = ""
 
-
-prettyUseType :: (Usage, Type) -> String
-prettyUseType (ULit uc, t) = prettyUseCount uc <> prettyType t
-prettyUseType (UPair uc a b, TPair a' b') = prettyUseCount uc <> "(" <> prettyUseType (a, a') <> ", " <> prettyUseType (b, b') <> ")"
-prettyUseType (UPair uc a b, k) = error "should not reach pretty pair bad"
-prettyUseType (USum a b, TSum a' b') = "(" <> prettyUseType (a, a') <> " | " <> prettyUseType (b, b') <> ")"
-prettyUseType (USum a b, k) = error "should not reach pretty sum bad"
-
 prettyType :: Type -> String
 prettyType ty = case ty of
   TVar var -> var
@@ -71,7 +63,7 @@ prettyType ty = case ty of
   TThing -> "Thing"
   TUnit -> "()"
   TFun ty1 ty2 ->
-    (if isTFun (snd ty1) then "(" <> prettyUseType ty1 <> ")" else prettyUseType ty1)
+    (if isTFun ty1 then "(" <> prettyType ty1 <> ")" else prettyType ty1)
     <> " -> " <> prettyType ty2
   TPair ty1 ty2 -> "(" <> prettyType ty1 <> "," <> prettyType ty2 <> ")"
   TSum ty1 ty2 -> "(" <> prettyType ty1 <> "|" <> prettyType ty2 <> ")"
@@ -79,6 +71,7 @@ prettyType ty = case ty of
   TType kind -> prettyKind kind
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
   TToken id -> "$" <> id
+  TUsage u t -> prettyUseCount u <> prettyType t
 
 prettyScheme :: Scheme -> String
 prettyScheme (Scheme [] ty) = prettyType ty

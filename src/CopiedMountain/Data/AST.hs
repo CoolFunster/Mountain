@@ -53,12 +53,14 @@ data Type
   | TUnit
   -- Calculus
   | TVar Id
-  | TFun (Usage, Type) Type
+  | TFun Type Type
   -- Data Structures
   | TPair Type Type
   | TSum Type Type
   | TLabel Id Type
   | TToken Id
+  -- Usage Types
+  | TUsage UseCount Type
   -- Kinds
   | TType Kind
   | TCall Type Type
@@ -76,7 +78,7 @@ data Pattern =
   | PWildcard
   | PPair Pattern Pattern
   | PLabel Id Pattern
-  | PAnnot (Usage,Type) Pattern
+  | PAnnot Type Pattern
   deriving (Eq, Ord, Show)
 
 data UseCount
@@ -84,13 +86,6 @@ data UseCount
     CSingle
   | CMany
   | CAny
-  deriving (Show, Ord, Eq)
-
--- The type of patterns
-data Usage =
-    ULit UseCount
-  | UPair UseCount Usage Usage
-  | USum Usage Usage
   deriving (Show, Ord, Eq)
 
 data Scheme = Scheme [Id] Type deriving (Show, Eq)
@@ -115,13 +110,14 @@ renameVar ty (old, new) = case ty of
   TFloat -> TFloat
   TThing -> TThing
   TVar var -> TVar (if var == old then new else var)
-  TFun (u,t) t2 -> TFun (u,renameVar t (old, new)) (renameVar t2 (old, new))
+  TFun t t2 -> TFun (renameVar t (old, new)) (renameVar t2 (old, new))
   TPair t1 t2 -> TPair (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TSum t1 t2 -> TSum (renameVar t1 (old, new)) (renameVar t2 (old, new))
   TLabel id t1 -> TLabel id (renameVar t1 (old, new))
   TType x -> TType x
   TCall a b -> TCall a b
   TToken id -> TToken id
+  TUsage a t -> TUsage a (renameVar t (old, new))
 
 freeRefs :: Exp -> S.Set Id
 freeRefs x = M.keysSet (freeRefWithCounts x)
@@ -161,22 +157,8 @@ patFreeVars (PLabel id a) = patFreeVars a
 patFreeVars (PAnnot t p) = patFreeVars p
 patFreeVars PWildcard = S.empty
 
-getUseCount :: Usage -> UseCount
-getUseCount (ULit c) = c
-getUseCount (UPair c _ _) = c
-getUseCount (USum a b) = minimum [getUseCount a, getUseCount b]
-
 useCountPair :: [UseCount] -> UseCount
 useCountPair counts 
   | CSingle `elem` counts = CSingle
   | CAny `elem` counts = CAny
   | otherwise = CMany
-
-updateUsage :: Usage -> Usage
-updateUsage (ULit c) = ULit c
-updateUsage (UPair c a b) = do
-  let a' = updateUsage a
-  let b' = updateUsage b
-  let usages = c:map getUseCount [a,b]
-  UPair (minimum usages) a' b'
-updateUsage (USum a b) = USum (updateUsage a) (updateUsage b)
