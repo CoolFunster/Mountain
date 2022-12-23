@@ -93,6 +93,11 @@ spec = do
         it "Should parse this let2" $ do
           let res = parseExpr "def id = x -> x; (id(3), id(\"s\"))"
           res `shouldBe` Right (ELet (PVar "id") (EFun (PVar "x") (EVar "x")) (EPair (EApp (EVar "id") (ELit (LInt 3))) (EApp (EVar "id") (ELit (LString "s")))))
+        it "Should parse usage lets" $ do
+          let res = parseExprWith pLet "def (?Int :: x) = 3; x"
+          case res of
+            Left s -> error s
+            Right exp -> exp `shouldBe` ELet (PAnnot (ULit CSingle,TInt) (PVar "x")) (ELit (LInt 3)) (EVar "x")
       describe "Label" $ do
         it "Should parse a label" $ do
           let res = parseExpr "temp:3"

@@ -214,16 +214,33 @@ spec = do
           Left e -> error (show e)
           Right (res, _) ->
             res `shouldBe` Scheme [] (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt))
-      it "Should handle lets" $ do
-        let x = parseExpr "(def x = 3; (x,x))"
-        x `shouldBe` Right (EAnnot (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt)) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
-        let x' = (fromRight (error "") x)
-        prettyExp x' `shouldBe` "((+Int, String) -> (Int,Int))::((x,_)->(x,x))"
+      it "Should handle pattern lets error" $ do
+        let x = parseExpr "(def (?Int :: x) = 3; (x,x))"
+        x `shouldBe` Right (ELet (PAnnot (ULit CSingle,TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
+        let x' = fromRight (error "") x
+        prettyExp x' `shouldBe` "(?Int::x)=3;(x,x)"
+        (raw_res, _) <- runWith dummyState (typeInference primitives x')
+        raw_res `shouldBe` Left (BadUsage (ULit CSingle) (ULit CMany))
+      it "Should handle pattern lets correct" $ do
+        let x = parseExpr "(def (+Int :: x) = 3; (x,x))"
+        x `shouldBe` Right (ELet (PAnnot (ULit CMany,TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
+        let x' = fromRight (error "") x
+        prettyExp x' `shouldBe` "(+Int::x)=3;(x,x)"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
         case raw_res of
           Left e -> error (show e)
           Right (res, _) ->
-            res `shouldBe` Scheme [] (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt))
+            res `shouldBe` Scheme [] (TPair TInt TInt)
+      it "Should handle patter lets inferred" $ do
+        let x = parseExpr "(def (Int :: x) = 3; (x,x))"
+        x `shouldBe` Right (ELet (PAnnot (ULit CAny,TInt) (PVar "x")) (ELit (LInt 3)) (EPair (EVar "x") (EVar "x")))
+        let x' = fromRight (error "") x
+        prettyExp x' `shouldBe` "(Int::x)=3;(x,x)"
+        (raw_res, _) <- runWith dummyState (typeInference primitives x')
+        case raw_res of
+          Left e -> error (show e)
+          Right (res, _) ->
+            res `shouldBe` Scheme [] (TPair TInt TInt)
     describe "lets" $ do
       it "Should handle polymorphic functions" $ do
         let x = parseExpr "def id = x -> x; (id(3), id(\"s\"))"
