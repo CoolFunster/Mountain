@@ -79,7 +79,7 @@ reservedIds = [
 
 restrictedIdChars :: [Char]
 -- restrictedIdChars = "!~?$*#.,=:;@`[]{}()<>|&']-\\%"
-restrictedIdChars = "|-=;`[]{}()<>#\".:,~*$+"
+restrictedIdChars = "|-=;`[]{}()<>#\".:,~*$+?_"
 
 identifier :: Parser Id
 identifier = do
@@ -182,7 +182,7 @@ pPattern = choice [
     PLabel <$> try (identifier <* pWrapWS ":") <*> pPattern,
     PAnnot <$> try (pUsageType <* pWrapWS "::") <*> pPattern,
     PLit <$> try pLiteral,
-    PWildcard <$ symbol "?",
+    PWildcard <$ symbol "_",
     PVar <$> try identifier
   ]
 

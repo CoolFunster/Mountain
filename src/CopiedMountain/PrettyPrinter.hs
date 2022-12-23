@@ -26,7 +26,7 @@ prettyPattern (PVar v) = v
 prettyPattern (PPair a b) = "(" ++ prettyPattern a ++ "," ++ prettyPattern b ++ ")"
 prettyPattern (PLabel id x) = id ++ ":" ++ prettyPattern x
 prettyPattern (PAnnot typ x) = "(" ++ prettyUseType typ ++ "::" ++ prettyPattern x ++ ")"
-prettyPattern PWildcard = "?"
+prettyPattern PWildcard = "_"
 
 prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l

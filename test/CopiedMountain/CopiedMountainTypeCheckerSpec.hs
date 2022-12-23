@@ -84,7 +84,7 @@ spec = do
         raw_res  `shouldBe` Left (BadUnify TUnit TInt)
     describe "Copied" $ do
       it "should infer a copied type" $ do
-        let x = parseExpr "(x,?) -> (x,x)"
+        let x = parseExpr "(x,_) -> (x,x)"
         x `shouldBe` Right (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x")))
         (raw_res, _) <- runWith dummyState (typeInference primitives (fromRight (error "") x))
         case raw_res of
@@ -205,10 +205,10 @@ spec = do
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
         raw_res `shouldBe` Left (BadUsage (ULit CSingle) (ULit CMany))
       it "Should handle unique type annotations" $ do
-        let x = parseExpr "(+Int, String) -> (Int, Int) :: (x,?) -> (x,x)"
+        let x = parseExpr "(+Int, String) -> (Int, Int) :: (x,_) -> (x,x)"
         x `shouldBe` Right (EAnnot (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt)) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
         let x' = (fromRight (error "") x)
-        prettyExp x' `shouldBe` "((+Int, String) -> (Int,Int))::((x,?)->(x,x))"
+        prettyExp x' `shouldBe` "((+Int, String) -> (Int,Int))::((x,_)->(x,x))"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
         case raw_res of
           Left e -> error (show e)
@@ -218,7 +218,7 @@ spec = do
         let x = parseExpr "(def x = 3; (x,x))"
         x `shouldBe` Right (EAnnot (TFun (UPair CAny (ULit CMany) (ULit CAny), TPair TInt TString) (TPair TInt TInt)) (EFun (PPair (PVar "x") PWildcard) (EPair (EVar "x") (EVar "x"))))
         let x' = (fromRight (error "") x)
-        prettyExp x' `shouldBe` "((+Int, String) -> (Int,Int))::((x,?)->(x,x))"
+        prettyExp x' `shouldBe` "((+Int, String) -> (Int,Int))::((x,_)->(x,x))"
         (raw_res, _) <- runWith dummyState (typeInference primitives x')
         case raw_res of
           Left e -> error (show e)

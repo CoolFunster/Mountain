@@ -20,11 +20,11 @@ spec = do
           let res = parseExpr "x"
           res `shouldBe` Right (EVar "x")
         it "Should parse underscore var" $ do
-          let res = parseExpr "some_var"
-          res `shouldBe` Right (EVar "some_var")
+          let res = parseExpr "someVar"
+          res `shouldBe` Right (EVar "someVar")
         it "Should parse quoted var" $ do
-          let res = parseExpr "some_var'"
-          res `shouldBe` Right (EVar "some_var'")
+          let res = parseExpr "someVar'"
+          res `shouldBe` Right (EVar "someVar'")
       describe "Lambda" $ do
         it "Should parse simple function" $ do
           let res = parseExpr "a -> b"

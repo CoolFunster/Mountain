@@ -34,7 +34,7 @@ spec :: Spec
 spec = do
     describe "Wildcards" $ do
       it "Should handle a wildcard" $ do
-        let ast = parseExpr "(? -> 4)3"
+        let ast = parseExpr "(_ -> 4)3"
         ast `shouldBe` Right (EApp (EFun PWildcard (ELit (LInt 4))) (ELit (LInt 3)))
         (raw_res, log) <- runWith initialState $ process (Just 20) (fromRight (error "") ast)
         case raw_res of
