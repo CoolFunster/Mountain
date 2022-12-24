@@ -82,19 +82,21 @@ spec = do
           res `shouldBe` Right (EFun (PVar "a") (EApp (EVar "b") (EVar "c")))
       describe "Let" $ do
         it "Should parse a let" $ do
-          let res = parseExpr "def a = b; a"
+          let res = parseExpr "let a = b; a"
           res `shouldBe` Right (ELet (PVar "a") (EVar "b") (EVar "a"))
         it "Should parse a let in a function" $ do
-          let res = parseExpr "x -> def a = b; a"
-          res `shouldBe` Right (EFun (PVar "x") (ELet (PVar "a") (EVar "b") (EVar "a")))
+          let res = parseExpr "x -> let a = b; a"
+          case res of
+            Left e -> error e
+            Right x -> x `shouldBe` EFun (PVar "x") (ELet (PVar "a") (EVar "b") (EVar "a"))
         it "Should parse this let" $ do
-          let res = parseExpr "def id = x -> x; id"
+          let res = parseExpr "let id = x -> x; id"
           res `shouldBe` Right (ELet (PVar "id") (EFun (PVar "x") (EVar "x")) (EVar "id"))
         it "Should parse this let2" $ do
-          let res = parseExpr "def id = x -> x; (id(3), id(\"s\"))"
+          let res = parseExpr "let id = x -> x; (id(3), id(\"s\"))"
           res `shouldBe` Right (ELet (PVar "id") (EFun (PVar "x") (EVar "x")) (EPair (EApp (EVar "id") (ELit (LInt 3))) (EApp (EVar "id") (ELit (LString "s")))))
         it "Should parse usage lets" $ do
-          let res = parseExprWith pLet "def (?Int :: x) = 3; x"
+          let res = parseExprWith pLet "let (?Int :: x) = 3; x"
           case res of
             Left s -> error s
             Right exp -> exp `shouldBe` ELet (PAnnot (TUsage CSingle TInt) (PVar "x")) (ELit (LInt 3)) (EVar "x")

@@ -157,7 +157,7 @@ incr3 3
 ```
 both will call incr3 with 3, returning 4 
 
-### Type Annotations
+## Type Annotations
 
 take the form \<Type> :: \<Term>
 ```javascript
@@ -200,7 +200,7 @@ The "+" would still need to be added
 
 types are automatically inferred in the language, but can be helpful to have as documentation, or in ambiguous cases.
 
-### Modules & Intefaces
+## Modules & Intefaces
 
 Modules are groups of data, types and functions.
 

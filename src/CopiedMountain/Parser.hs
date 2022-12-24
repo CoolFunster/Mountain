@@ -146,7 +146,7 @@ pExprAtom =
 
 pLet :: Parser Exp
 pLet = do
-  _ <- symbol "def" <* sc
+  _ <- symbol "let" <* sc
   var <- pPattern
   _ <- try $ pWrapWS "="
   expr1 <- pExpr
