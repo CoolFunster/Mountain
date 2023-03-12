@@ -1,5 +1,5 @@
  - finish unique type checking
- - recursive lets
+ - Lets are visually recursive by default, and parser determines whether its a recursive or not
  - tokens
  - fix type schemes
  - Structures & Signatures

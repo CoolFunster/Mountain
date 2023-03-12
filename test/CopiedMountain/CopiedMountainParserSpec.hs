@@ -139,5 +139,50 @@ spec = do
         it "should handle simple typedef" $ do
           let res = parseExpr "Int :: x"
           res `shouldBe` Right (EAnnot TInt (EVar "x"))
+      describe "Module" $ do
+        it "should handle a basic module" $ do
+          let res = parseExpr "<{ val id = x -> x; }>"
+          case res of
+            Left s -> error s
+            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x"))]
+        it "should handle a multiple statements" $ do
+          let res = parseExpr "\
+            \<{\ 
+                \val id = x -> x; \
+                \val id2 = y -> y; \
+              \}>"
+          case res of
+            Left s -> error s
+            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
+        it "should handle open" $ do
+          let res = parseExpr "\
+            \<{\ 
+                \open Base.Data.String; \
+                \val id = x -> x; \
+              \}>"
+          case res of
+            Left s -> error s
+            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
+        it "should handle let, import, and load" $ do
+          let res = parseExpr "\
+            \<{\ 
+                \let str = import Base.Data.String; \
+                \load str;\
+                \val id = x -> x; \
+              \}>"
+          case res of
+            Left s -> error s
+            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
+        it "should handle selection" $ do
+          let res = parseExpr "\
+            \<{\ 
+                \let str = import Base.Data.String; \
+                \load str;\
+                \val id = x -> x; \
+              \}>"
+          case res of
+            Left s -> error s
+            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
+
 
 

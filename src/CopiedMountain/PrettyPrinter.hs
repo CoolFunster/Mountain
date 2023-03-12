@@ -41,6 +41,16 @@ prettyExp (EAnnot typ a) = "(" ++ prettyType typ ++ ")::(" ++ prettyExp a ++ ")"
 prettyExp (ERec id a) = "(" ++ id ++ "~" ++ prettyExp a ++ ")"
 prettyExp (ETDef id typ rest) = "type " ++ id ++ " = " ++ prettyType typ ++ ";" ++ prettyExp rest
 prettyExp (EToken id _) = "#" <> id
+prettyExp (EModule stmts) = "<{" <> concatMap ((++) ";" . prettyModuleStmt) stmts <> "}>"
+
+prettyModuleStmt :: ModuleStmt -> [Char]
+prettyModuleStmt stmt = case stmt of 
+  MTypeDec s ki -> "tdec " <> s <> " = " <> prettyKind ki 
+  MTypeDef s ty -> "type " <> s <> " = " <> prettyType ty
+  MValDec s ty -> "dec " <> s <> " = " <> prettyType ty
+  MValDef s exp -> "val " <> s <> " = " <> prettyExp exp
+  MImport s -> "import " <> s
+  MLoad exp -> "import " <> prettyExp exp
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
@@ -72,6 +82,7 @@ prettyType ty = case ty of
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
   TToken id -> "$" <> id
   TUsage u t -> prettyUseCount u <> prettyType t
+  TInterface stmts -> "<{" <> concatMap ((++) ";" . prettyModuleStmt) stmts <> "}>"
 
 prettyScheme :: Scheme -> String
 prettyScheme (Scheme [] ty) = prettyType ty

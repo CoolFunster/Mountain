@@ -204,66 +204,66 @@ types are automatically inferred in the language, but can be helpful to have as 
 
 Modules are groups of data, types and functions.
 
-All files in mountain are modules. Modules are maps of names to values and types. the keywords val and type are specifically only used for modules. 
+All files in mountain are modules. Modules are maps of names to values and types. the keywords def and type are specifically only used for modules. 
 
 ```javascript
-val tupleize = a -> b -> (a,b) :: x -> y -> (x,y);
+def tupleize = a -> b -> (a,b) :: x -> y -> (x,y);
 type Numeric = Float | Int;
 type Point = a -> b -> (x:a, y:b); // types can be parameterized
 // Ex: Point Int Float would be a type like (x:Int, y:Float)
-val a_three = 3.0;
+def a_three = 3.0;
 ```
 Modules are sequential defs
 ```
-val x = 3.0;
-val y = x + 2.5;
-val tuple = (x,y);
+def x = 3.0;
+def y = x + 2.5;
+def tuple = (x,y);
 ```
 Modules are first class objects in Mountain. Nest modules like so
 ```
-val module1 = <{
-  val a = "something";
+def module1 = <{
+  def a = "something";
 }>;
-val module2 = <{
-  val a = "something_else";
+def module2 = <{
+  def a = "something_else";
 }>
 ```
 Modules are selectable
 ```
-val module1 = <{
+def module1 = <{
   type TYPE_OF_X = Int
-  val x = 2;
+  def x = 2;
 }>;
-val an_x = module1.TYPE_OF_X :: module1.x
+def an_x = module1.TYPE_OF_X :: module1.x
 ```
 Selecting multiple ids returns another module with those ids
 ```
-val module1 = <{
+def module1 = <{
   type TYPE_OF_X = Int
-  val x = 2;
-  val y = 3;
+  def x = 2;
+  def y = 3;
 }>;
-val module2 = module1.[TYPE_OF_X, x]
+def module2 = module1.[TYPE_OF_X, x]
 ```
 Modules are loadable, which puts their contents in current scope of the module
 ```
-val module1 = <{
+def module1 = <{
   type TYPE_OF_X = Int
-  val x = 2;
+  def x = 2;
 }>;
 load module1;
-val an_x = TYPE_OF_X :: x;
+def an_x = TYPE_OF_X :: x;
 ```
 Since files are modules, you can import them which creates a module
 object for you to manipulate. Note the dot notation. Its relative to the Repository root which you will specify via a config TBD. 
 ```
 my_module = import path.to.above;
 load my_module;
-val = some_value_loaded_from_module;
+def = some_value_loaded_from_module;
 ```
 ```
 load (import path.to.above);
-val = some_value_loaded_from_module;
+def = some_value_loaded_from_module;
 ```
 if you import a directory, it creates a module with names pointing to each of the contents. It will ignore any files not ending with .mtn
 
@@ -278,10 +278,10 @@ Dir
     c.mtn
 ```
 ```javascript
-val module = import Dir;
-val a = module.root.sub1.a
-// val b does not exist
-val c = module.root.c
+def module = import Dir;
+def a = module.root.sub1.a
+// def b does not exist
+def c = module.root.c
 ```
 
 Modules have types. The type of a Module is an interface. For example, the type (aka interface) of the first module would be
@@ -289,8 +289,8 @@ Modules have types. The type of a Module is an interface. For example, the type 
 type Above = <{
   type Point;
   type Numeric;
-  val tupleize = a -> b -> (a,b);
-  val a_three = Int;
+  def tupleize = a -> b -> (a,b);
+  def a_three = Int;
 }>;
 ```
 It declares what types will be declared, and the types of any values contained within. It is not order dependent. 
@@ -300,9 +300,9 @@ This is also a type for the first module
 ```javascript
 type Above = <{
   type Point;
-  val a_three = Int;
+  def a_three = Int;
 }>;
-val double_three = (Above :: x) -> (x.a_three * 2)
+def double_three = (Above :: x) -> (x.a_three * 2)
 ```
 
 When calling mountain from the commandline
@@ -312,16 +312,16 @@ $ mountain /path/to/my/file.mtn
 file.mtn is assumed to be a member of the Console interface
 ```
 type Console = <{
-  val main = (@Console, Tuple String) -> (@Console, Int);
+  def main = (@Console, Tuple String) -> (@Console, Int);
 }>
 ```
 
 In summary, within a module are a few keywords:
-* val \<name> = \<expr> : denotes a concrete value or function
+* def \<name> = \<expr> : denotes a concrete value or function
 * type \<name> = \<expr>: denotes a type for use in annotations
+* dec \<name> @ \<type> : denotes that a particular name has a particular type within this module
 * load \<expr>: takes a module and opens it in the context
 * import \<expr>: takes a file and creates a module from it
-* dec \<name> :: \<type> : denotes that a particular name has a particular type within this module
 
 ## Builtin Types
 

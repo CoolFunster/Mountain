@@ -40,7 +40,12 @@ replace env (ERec id x) = do
   ERec id (replace env' x)
 replace _ t@ETDef {} = t
 replace env t@(EToken id h) = t
-
+replace env t@(EModule stmts) = EModule (map (replaceStmts env) stmts)
+  where
+    replaceStmts :: Env -> ModuleStmt -> ModuleStmt
+    replaceStmts env stmt = case stmt of
+      MValDef s exp -> MValDef s (replace env exp)
+      other -> other
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind PWildcard x = return M.empty
 bind a@(PVar id) x = return $ M.singleton id x
@@ -124,6 +129,7 @@ step t@(EPair a b) = do
       else return t
 step t@(ELabel id exp) = ELabel id <$> step exp
 step t@(EToken _ _) = return t
+step t@(EModule _) = return t
 
 evaluate :: Maybe Int -> Exp -> ContextT IO Exp
 evaluate (Just 0) x = return x

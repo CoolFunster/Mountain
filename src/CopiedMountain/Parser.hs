@@ -20,10 +20,13 @@ import CopiedMountain.Hash
 parseFile :: FilePath -> IO Exp
 parseFile fp = do
   fc <- readFile fp
-  let result = parseExpr fc
+  let result = parseFileModule fc
   case result of
     Left err_str -> error err_str
     Right term -> return term
+
+parseFileModule :: String -> Either String Exp
+parseFileModule = parseExprWith (between sc eof pModuleFile)
 
 parseExpr :: String -> Either String Exp
 parseExpr = parseExprWith (between sc eof pExpr)
@@ -96,6 +99,25 @@ identifier = do
 pWrapWS :: [Char] -> Parser String
 pWrapWS input_str = try $ optional sc *> symbol input_str <* notFollowedBy (symbol input_str) <* optional sc
 
+pModuleFile :: Parser Exp
+pModuleFile = EModule <$> some (pModuleStmt <* optional sc)
+
+pBasicModuleStmt :: (Id -> a -> ModuleStmt) -> Parser a -> Parser ModuleStmt
+pBasicModuleStmt constr p = do
+  name <- optional sc *> identifier <* sc
+  body <- p <* sc <* symbol ";"
+  return $ constr name body
+
+pModuleStmt :: Parser ModuleStmt
+pModuleStmt = choice [
+    try (symbol "tdec" <* sc) *> pBasicModuleStmt MTypeDec pKind,
+    try (symbol "type" <* sc) *> pBasicModuleStmt MTypeDef pType,
+    try (symbol "dec" <* sc) *> pBasicModuleStmt MValDec pType,
+    try (symbol "val" <* sc) *> pBasicModuleStmt MValDef pExpr,
+    try (symbol "import" <* sc) *> (MImport <$> someTill anySingle sc),
+    try (symbol "load" <* sc) *> (MLoad <$> pExpr)
+  ] <* optional sc <* symbol ";"
+
 pExpr :: Parser Exp
 pExpr = pMatch
 
@@ -139,10 +161,14 @@ pCallNormal = do
 pExprAtom :: Parser Exp
 pExprAtom =
       try $ pTuple (ELit LUnit) EPair pExpr
+  <|> try pModule
   <|> try pLet
   <|> try pTDef
   <|> try (ELit <$> pLiteral)
   <|> EVar <$> identifier
+
+pModule :: Parser Exp
+pModule = between (symbol "<{" <* sc) (sc *> symbol "}>") $ EModule <$> some (pModuleStmt <* optional sc)
 
 pLet :: Parser Exp
 pLet = do
@@ -283,6 +309,7 @@ pTypeAtom = do
   uc <- optional (try $ pUseCount <* sc)
   typ <- pBuiltInType
           <|> pTTuple
+          <|> pInterface
           <|> pTVar
           <|> TType <$> try pKind
           <|> pTToken
@@ -322,6 +349,9 @@ pTTuple = do
       _fold [x,y] = TPair x y
       _fold (x:xs) = TPair x (_fold xs)
       _fold other = error "should not reach"
+
+pInterface :: Parser Type
+pInterface = between (symbol "<{" <* sc) (sc *> symbol "}>") $ TInterface <$> some (pModuleStmt <* optional sc)
 
 pKind :: Parser Kind
 pKind = pBinKind
