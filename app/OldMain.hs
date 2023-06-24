@@ -1,4 +1,4 @@
-module Main where
+module OldMain where
 
 import AST
 import Interpreter

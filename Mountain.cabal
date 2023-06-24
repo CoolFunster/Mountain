@@ -24,20 +24,15 @@ source-repository head
 
 library
   exposed-modules:
-      CopiedMountain.Context
-      CopiedMountain.Data.AST
-      CopiedMountain.Data.Errors
-      CopiedMountain.Data.Log
-      CopiedMountain.Hash
-      CopiedMountain.Interpreter
-      CopiedMountain.Parser
-      CopiedMountain.PrettyPrinter
-      CopiedMountain.Typechecker
+      AST
+      Context
+      Errors
       Hash
-      Mountain
-      MountainParser
-      SimpleMountain.SimpleMountain
-      SimpleMountain.SimpleMountainParser
+      Interpreter
+      Log
+      Parser
+      PrettyPrinter
+      Typechecker
   other-modules:
       Paths_Mountain
   hs-source-dirs:
@@ -72,6 +67,8 @@ library
 
 executable mountain
   main-is: Main.hs
+  other-modules:
+      OldMain
   hs-source-dirs:
       app
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
@@ -108,14 +105,9 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      CopiedMountain.CopiedMountainParserSpec
-      CopiedMountain.CopiedMountainSpec
-      CopiedMountain.CopiedMountainTypeCheckerSpec
-      MountainParserSpec
       MountainSpec
-      MountainTestsSpec
-      SimpleMountain.SimpleMountainParserSpec
-      SimpleMountain.SimpleMountainTestsSpec
+      ParserSpec
+      TypeCheckerSpec
       Paths_Mountain
   hs-source-dirs:
       test

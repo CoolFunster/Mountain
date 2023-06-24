@@ -1,4 +1,6 @@
-# Mountain Cheatsheet
+# Mountain Spec
+
+The language is called Mountain
 
 ## Whitespace
 
@@ -6,11 +8,11 @@ Whitespace like tabs, newlines, and spaces are insignificant
 
 ## Comments
 
-```javascript
+```
 // is a line comment
 ```
 
-```javascript
+```
 /*
 
 This is a block comment
@@ -18,41 +20,78 @@ This is a block comment
 */
 ```
 
-## Literals
+## Expressions
 
-Any [builtin value](#builtin-types).
+The core of this language is that it is a simply typed lambda calculus
 
-```javascript
-3.0 
-```
-```javascript
-4 
-```
-```javascript
-"hello world" 
-```
-```javascript
-{1,2,3}
-```
+## Builtin Types
 
-etc.
+These types are included in mountain. k and v represent any type in the language.
+
+The format of below is
+* type
+  * example 1
+  * example 2
+
+* Bool
+  * True
+  * False
+* Int
+  * 1
+  * 100
+* Float
+  * 1\. 
+  * 2.0
+* String
+  * "hello"
+  * "hello \" w\'o\'rld"
+* Char
+  * 'c'
+  * '\n'
+
+
+* Set k
+  * {1,2,3}
+* Map k v
+  * {k1:v1, k2:v2}
+* Tuple k
+  * (2.0, 3.0)
+  * (2.0, 3, "hello")
+  * ()
+* Sum 
+  * (3, "hello")
+* Label
+  * Labels a value, case sensitive
+  * Point:(x:Int, y:Int)
+    * Ex: Point(x:3,y:4)
+* Token
+  * Written as $(\<some name here\>)
+  * A built in type that cannot be created in the language
+  * Represents an ability to use an external resource
+* Function
+  * k -> v
+  * Ex: Int -> (Int, Int)
+* Thing
+  * Things are syntactic sugar for labels of the unit.
+  * \#apple means apple:()
+  * \#orange means orange:()
 
 ## Definitions
 
 Definitions are terms as well, and can be used anywhere in the code where a value can be used. They must end with a value, and can be chained. a semicolon must not be used on the last value. The return keyword is optional
 
-```javascript
+```
   x = 3; 
   y = 4; 
   return (x,y)
 ```
 
-```javascript
+```
   x = 3; 
   y = 4; 
   (x,y)
 ```
-```javascript
+```
 (a = 3; a) + (a=4;a)
 ```
 Both of the above would return 7.
@@ -61,12 +100,12 @@ The only place definitions may not appear is on the left side of an arrow.
 
 Definitions can deconstruct labels and tuples
 
-```javascript
+```
 (a,b) = ((1,2), 3);
 (c,?) = a;
 b + c //returns 5
 ```
-```javascript
+```
 x:a = x:3;
 a + 2 // returns 5
 ```
@@ -75,41 +114,41 @@ a + 2 // returns 5
 
 Functions are first class objects
 
-```javascript
+```
 3 -> 4
 ```
 
-```javascript
+```
 x -> x
 ```
 
-```javascript
+```
 (x,y) -> x + y
 ```
 
 _ can match anything. Whatever is matched with a _ is not useable on the rhs of the arrow
-```javascript
+```
 (_,_,x) -> x
 ```
 
-```javascript
+```
 x = 3;
 x -> x // returns 3 -> 3
 ```
 
-```javascript
+```
 // Only matches objects of type Point:(x:Int, y:Int)
 Point:(x:a,y:b) -> (a,b)
 ```
 
 Functions can be chained multiple times
 
-```javascript
+```
 3 -> 4 -> 5 -> 6 
 ```
 
 This is equivalent to 
-```javascript
+```
 3 -> (4 -> (5 -> 6))
 ```
 
@@ -126,7 +165,7 @@ This is equivalent to
 
 Matches are stacks of functions. They are functions themselves. When called the call the first function which matches the argument. 
 
-```javascript
+```
 (
        3 -> 4
    ||  4 -> 5
@@ -135,7 +174,7 @@ Matches are stacks of functions. They are functions themselves. When called the 
 
 ```
 
-```javascript
+```
 (
       4       -> 5
    || "hello" -> "world"
@@ -146,12 +185,12 @@ Matches are stacks of functions. They are functions themselves. When called the 
 ## Function Call
 
 to call a function you simply write two terms immediately following one another with optional whitespace. 
-```javascript
+```
 incr3 = 3 -> 4;
 incr3(3)
 ```
 -- or -- 
-```javascript
+```
 incr3 = 3 -> 4;
 incr3 3
 ```
@@ -160,13 +199,13 @@ both will call incr3 with 3, returning 4
 ## Type Annotations
 
 take the form \<Type> :: \<Term>
-```javascript
+```
 Int :: 4 
 ```
-```javascript
+```
 (Int -> Int) :: 4 -> 5 
 ```
-```javascript
+```
 ((Float, Int) -> Float) :: (x, _) -> x 
 ```
 
@@ -177,7 +216,7 @@ duplicate = +Int -> (Int, Int) :: x -> (x,x)
 ```
 
 Type annotations can be variables, which make the function polymorphic. It can work with any type "a" <br>
-```javascript
+```
 a -> a :: x -> x
 ```
 For example the type of the above could be 
@@ -193,7 +232,7 @@ For example the type of the above could be
  ```
  since those are different types. 
 
-```javascript
+```
 +a -> (a,a,Int) :: x -> (x,x,3)
 ```
 The "+" would still need to be added 
@@ -206,11 +245,19 @@ Modules are groups of data, types and functions.
 
 All files in mountain are modules. Modules are maps of names to values and types. the keywords def and type are specifically only used for modules. 
 
-```javascript
-def tupleize = a -> b -> (a,b) :: x -> y -> (x,y);
-type Numeric = Float | Int;
-type Point = a -> b -> (x:a, y:b); // types can be parameterized
-// Ex: Point Int Float would be a type like (x:Int, y:Float)
+```
+module <{
+  type Numeric = Float | Int
+  type Point = A -> B -> (x:A, y:B) // types can be parameterize
+  // Ex: point Int Float would be a type like (x:Int, y:Float)
+  decl point :: Point Numeric Numeric
+  def  point = a -> b -> (x:a, y:b)
+  import <file_path>
+}>
+
+use <module> in
+
+
 def a_three = 3.0;
 ```
 Modules are sequential defs
@@ -277,7 +324,7 @@ Dir
       b.cpp
     c.mtn
 ```
-```javascript
+```
 def module = import Dir;
 def a = module.root.sub1.a
 // def b does not exist
@@ -285,7 +332,7 @@ def c = module.root.c
 ```
 
 Modules have types. The type of a Module is an interface. For example, the type (aka interface) of the first module would be
-```javascript
+```
 type Above = <{
   type Point;
   type Numeric;
@@ -297,7 +344,7 @@ It declares what types will be declared, and the types of any values contained w
 
 Interfaces can also have fewer types than what are declared.
 This is also a type for the first module
-```javascript
+```
 type Above = <{
   type Point;
   def a_three = Int;
@@ -322,55 +369,6 @@ In summary, within a module are a few keywords:
 * dec \<name> @ \<type> : denotes that a particular name has a particular type within this module
 * load \<expr>: takes a module and opens it in the context
 * import \<expr>: takes a file and creates a module from it
-
-## Builtin Types
-
-These types are included in mountain. k and v represent any type in the language.
-
-* Bool
-  * True
-  * False
-* Int
-  * 1
-  * 100
-* Float
-  * 1\. 
-  * 2.0
-* String
-  * "hello"
-  * "hello \" w\'o\'rld"
-* Char
-  * 'c'
-  * '\n'
-* Set k
-  * {1,2,3}
-* Map k v
-  * TBD
-* Tuple k
-  * (2.0, 3.0)
-  * (2.0, 3, "hello")
-  * ()
-* ()
-  * () is the only term which is both a type and a value
-* Sum 
-  * Combines any two types in an "or" type
-  * Tuple (Int | String)
-    * Ex: (3, "hello")
-* Label
-  * Labels a value, case sensitive
-  * Point:(x:Int, y:Int)
-    * Ex: Point(x:3,y:4)
-* Token
-  * Written as $(\<some name here\>)
-  * A built in type that cannot be created in the language
-  * Represents an ability to use an external resource
-* Function
-  * k -> v
-  * Ex: Int -> (Int, Int)
-* Thing
-  * Things are syntactic sugar for labels of the unit.
-  * \#apple means apple:()
-  * \#orange means orange:()
   
 ## Usage annotations
 

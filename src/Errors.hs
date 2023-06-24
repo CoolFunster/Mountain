@@ -1,6 +1,6 @@
-module CopiedMountain.Data.Errors where
+module Errors where
 
-import CopiedMountain.Data.AST
+import AST
 
 data Error =
     UnboundId Id

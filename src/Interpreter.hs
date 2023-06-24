@@ -2,13 +2,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# language OverloadedStrings #-}
-module CopiedMountain.Interpreter where
+module Interpreter where
 
-import CopiedMountain.Hash
-import CopiedMountain.Data.AST
-import CopiedMountain.Data.Log
-import CopiedMountain.Data.Errors
-import CopiedMountain.Context
+import Hash
+import AST
+import Log
+import Errors
+import Context
 
 import qualified Control.Monad.State.Strict as State
 import Control.Monad.State.Strict hiding (State)

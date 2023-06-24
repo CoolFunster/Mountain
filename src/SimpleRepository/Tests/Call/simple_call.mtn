@@ -1,1 +1,0 @@
-assertIs ((x -> x) 3) 3

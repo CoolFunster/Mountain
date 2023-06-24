@@ -1,9 +1,9 @@
 {-# language OverloadedStrings #-}
-module CopiedMountain.PrettyPrinter where
+module PrettyPrinter where
 
-import CopiedMountain.Data.AST
-import CopiedMountain.Data.Errors
-import CopiedMountain.Data.Log
+import AST
+import Errors
+import Log
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.List as L

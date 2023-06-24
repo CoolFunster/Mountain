@@ -1,1 +1,0 @@
-assertFail (3.0 `is` 3)

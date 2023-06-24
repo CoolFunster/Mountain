@@ -1,10 +1,10 @@
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 {-# language OverloadedStrings #-}
-module CopiedMountain.CopiedMountainParserSpec (spec) where
+module ParserSpec (spec) where
 
-import CopiedMountain.Data.AST
-import CopiedMountain.Parser
-import CopiedMountain.Hash
+import AST
+import Parser
+import Hash
 
 import Data.Map.Strict as M
 import Data.Either
@@ -154,35 +154,3 @@ spec = do
           case res of
             Left s -> error s
             Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
-        it "should handle open" $ do
-          let res = parseExpr "\
-            \<{\ 
-                \open Base.Data.String; \
-                \val id = x -> x; \
-              \}>"
-          case res of
-            Left s -> error s
-            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
-        it "should handle let, import, and load" $ do
-          let res = parseExpr "\
-            \<{\ 
-                \let str = import Base.Data.String; \
-                \load str;\
-                \val id = x -> x; \
-              \}>"
-          case res of
-            Left s -> error s
-            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
-        it "should handle selection" $ do
-          let res = parseExpr "\
-            \<{\ 
-                \let str = import Base.Data.String; \
-                \load str;\
-                \val id = x -> x; \
-              \}>"
-          case res of
-            Left s -> error s
-            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
-
-
-

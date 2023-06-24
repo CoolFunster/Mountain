@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-module CopiedMountain.Data.AST where
+module AST where
 
-import CopiedMountain.Hash
+import Hash
 
 
 import qualified Data.Map as M

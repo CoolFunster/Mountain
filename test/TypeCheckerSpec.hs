@@ -1,14 +1,14 @@
 {-# OPTIONS_GHC -Wno-deferred-out-of-scope-variables #-}
 {-# language OverloadedStrings #-}
-module CopiedMountain.CopiedMountainTypeCheckerSpec (spec) where
+module TypeCheckerSpec (spec) where
 
-import CopiedMountain.Data.AST
-import CopiedMountain.Data.Errors
-import CopiedMountain.Parser
-import CopiedMountain.Typechecker
-import CopiedMountain.Context
-import CopiedMountain.Hash
-import CopiedMountain.PrettyPrinter
+import AST
+import Errors
+import Parser
+import Typechecker
+import Context
+import Hash
+import PrettyPrinter
 
 import Data.Map.Strict as M
 import Data.Either

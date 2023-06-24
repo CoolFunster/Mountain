@@ -1,10 +1,10 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LambdaCase #-}
 {-# language OverloadedStrings #-}
-module CopiedMountain.Typechecker where
+module Typechecker where
 
-import CopiedMountain.PrettyPrinter
-import CopiedMountain.Data.Errors
+import PrettyPrinter
+import Errors
 
 import Control.Monad (replicateM)
 import Control.Monad.State (State, runState, get, put, gets, modify)
@@ -16,11 +16,11 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
-import CopiedMountain.Data.AST
+import AST
 
 import Debug.Trace
 import qualified Data.Text as T
-import CopiedMountain.Context
+import Context
 import qualified Data.Set as S
 import Data.Foldable (foldrM)
 

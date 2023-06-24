@@ -1,4 +1,4 @@
-module CopiedMountain.Parser where
+module Parser where
 
 import Control.Monad (void)
 import Data.Void
@@ -6,7 +6,7 @@ import Data.Bifunctor (first)
 import Text.Megaparsec
 import Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
-import CopiedMountain.Data.AST
+import AST
 import Data.Text (Text, pack)
 import Data.List (isPrefixOf, foldl')
 import Data.Char (isDigit, isAlphaNum, isSpace)
@@ -15,7 +15,7 @@ import Data.Functor (($>))
 import Control.Monad.Combinators.Expr
 import qualified Data.Map as M
 import Debug.Trace
-import CopiedMountain.Hash
+import Hash
 
 parseFile :: FilePath -> IO Exp
 parseFile fp = do
@@ -104,7 +104,7 @@ pModuleFile = EModule <$> some (pModuleStmt <* optional sc)
 
 pBasicModuleStmt :: (Id -> a -> ModuleStmt) -> Parser a -> Parser ModuleStmt
 pBasicModuleStmt constr p = do
-  name <- optional sc *> identifier <* sc
+  name <- optional sc *> identifier <* sc <* symbol "=" <* sc
   body <- p <* sc <* symbol ";"
   return $ constr name body
 
@@ -116,7 +116,7 @@ pModuleStmt = choice [
     try (symbol "val" <* sc) *> pBasicModuleStmt MValDef pExpr,
     try (symbol "import" <* sc) *> (MImport <$> someTill anySingle sc),
     try (symbol "load" <* sc) *> (MLoad <$> pExpr)
-  ] <* optional sc <* symbol ";"
+  ] <* optional sc
 
 pExpr :: Parser Exp
 pExpr = pMatch
