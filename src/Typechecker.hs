@@ -6,7 +6,7 @@ module Typechecker where
 import PrettyPrinter
 import Errors
 
-import Control.Monad (replicateM)
+import Control.Monad (replicateM, foldM)
 import Control.Monad.State (State, runState, get, put, gets, modify)
 import Control.Monad.Except (ExceptT, runExceptT, throwError, MonadError (catchError))
 import Data.Maybe (fromMaybe, fromJust)
@@ -23,13 +23,14 @@ import qualified Data.Text as T
 import Context
 import qualified Data.Set as S
 import Data.Foldable (foldrM)
+import Data.List (groupBy)
 
-type Substitution = Map String Type
+type Substitution a = Map String a
 
-emptySubst :: Substitution
+emptySubst :: Substitution Type
 emptySubst = Map.empty
 
-applySubst :: (Monad m) => Substitution -> Type -> ContextT m Type
+applySubst :: (Monad m) => Substitution Type -> Type -> ContextT m Type
 applySubst subst ty = do
   case ty of
     TPair a b -> TPair <$> applySubst subst a <*> applySubst subst b
@@ -52,8 +53,16 @@ applySubst subst ty = do
     TCall a b -> TCall <$> applySubst subst a <*> applySubst subst b
     TToken id -> return $ TToken id
     TUsage u t -> TUsage u <$> applySubst subst t
+    TInterface stmts -> TInterface <$> mapM applySubstModuleStmt stmts
+      where
+        applySubstModuleStmt :: (Monad m) => ModuleStmt -> ContextT m ModuleStmt
+        applySubstModuleStmt stmt = case stmt of
+          MKind s ki -> return $ MKind s ki
+          d@(MType _ _) -> throwError $ ConcreteTypeOrExprInInterface d
+          MDecl s ty' -> MDecl s <$> applySubst subst ty'
+          d@(MData _ _) -> throwError $ ConcreteTypeOrExprInInterface d
 
-applySubstOnPattern :: (Monad m) => Substitution -> Pattern -> ContextT m Pattern
+applySubstOnPattern :: (Monad m) => Substitution Type -> Pattern -> ContextT m Pattern
 applySubstOnPattern s (PLit l) = return $ PLit l
 applySubstOnPattern s (PVar id) = return $ PVar id
 applySubstOnPattern s (PPair a b) = PPair <$> applySubstOnPattern s a <*> applySubstOnPattern s b
@@ -63,7 +72,7 @@ applySubstOnPattern s (PAnnot typ b) = do
   PAnnot res <$> applySubstOnPattern s b
 applySubstOnPattern s PWildcard = pure PWildcard
 
-applySubstOnExpr :: (Monad m) => Substitution -> Exp -> ContextT m Exp
+applySubstOnExpr :: (Monad m) => Substitution Type -> Exp -> ContextT m Exp
 applySubstOnExpr subst t@(EVar id) = pure t
 applySubstOnExpr s t@(EApp a b) = EApp <$> applySubstOnExpr s a <*> applySubstOnExpr s b
 applySubstOnExpr s t@(EFun a b) = EFun <$> applySubstOnPattern s a <*> applySubstOnExpr s b
@@ -76,14 +85,20 @@ applySubstOnExpr s (EMatch a b) = EMatch <$> applySubstOnExpr s a <*> applySubst
 applySubstOnExpr s (EPair a b) = EPair <$> applySubstOnExpr s a <*> applySubstOnExpr s b
 applySubstOnExpr s (ELabel id b) = ELabel id <$> applySubstOnExpr s b
 applySubstOnExpr s (EToken id h) = pure $ EToken id h
+applySubstOnExpr s (EModule stmts) = EModule <$> mapM applySubstOnExprModStmt stmts
+  where
+    applySubstOnExprModStmt :: (Monad m) => ModuleStmt -> ContextT m ModuleStmt
+    applySubstOnExprModStmt stmt = case stmt of
+      MData str exp -> MData str <$> applySubstOnExpr s exp
+      other -> return other
 
-applySubstScheme :: (Monad m) => Substitution -> Scheme -> ContextT m Scheme
+applySubstScheme :: (Monad m) => Substitution Type -> Scheme -> ContextT m Scheme
 applySubstScheme subst (Scheme vars t) =
   -- The fold takes care of name shadowing
   Scheme vars <$> applySubst (foldr Map.delete subst vars) t
 
 -- | This is much more subtle than it seems. (union is left biased)
-composeSubst :: (Monad m) => Substitution -> Substitution -> ContextT m Substitution
+composeSubst :: (Monad m) => Substitution Type -> Substitution Type -> ContextT m (Substitution Type)
 composeSubst s1 s2 = Map.union <$> mapM (applySubst s1) s2 <*> pure s1
 
 freeTypeVars :: Type -> Set Id
@@ -105,6 +120,14 @@ freeTypeVars ty = case ty of
  TThing -> Set.empty
  TUnit -> Set.empty
  TUsage _ t -> freeTypeVars t
+ TInterface stmts -> foldr (Set.union . freeTypeVarStmts) Set.empty stmts
+  where
+    freeTypeVarStmts :: ModuleStmt -> Set Id
+    freeTypeVarStmts stmt = case stmt of
+      MKind s ki -> S.empty
+      MType s ty' -> freeTypeVars ty'
+      MDecl s ty' -> freeTypeVars ty'
+      MData s exp -> S.empty
 
 
 freeTypeVarsScheme :: Scheme -> Set Id
@@ -112,7 +135,7 @@ freeTypeVarsScheme (Scheme vars t) =
   Set.difference (freeTypeVars t) (Set.fromList vars)
 
 -- | Creates a fresh unification variable and binds it to the given type
-varBind :: (Monad m) => String -> Type -> ContextT m Substitution
+varBind :: (Monad m) => String -> Type -> ContextT m (Substitution Type)
 varBind var ty
   | ty == TVar var = return emptySubst
   | var `Set.member` freeTypeVars ty = throwError $ OccursCheck var ty
@@ -131,7 +154,7 @@ evalTCall ctx (TCall (TFun x y) b) = do
 evalTCall ctx (TCall somethin b) = error $ "what is this case?: " ++ show somethin
 evalTCall _ _ = error "Must Be TCall"
 
-has :: (Monad m) => Context -> Type -> Type -> ContextT m (Substitution, Type)
+has :: (Monad m) => Context -> Type -> Type -> ContextT m (Substitution Type, Type)
 has _ TUnit TUnit = return (emptySubst, TUnit)
 has _ TInt TInt = return (emptySubst, TInt)
 has _ TBool TBool = return (emptySubst, TBool)
@@ -155,7 +178,7 @@ has ctx a@(TSum x y) b = do
         Nothing -> throwError $ BadHas a b
     Just x -> return x
   where
-    tryHas :: (Monad m) => Type -> Type -> ContextT m (Maybe (Substitution, Type))
+    tryHas :: (Monad m) => Type -> Type -> ContextT m (Maybe (Substitution Type, Type))
     tryHas a b = (Just <$> has ctx a b) `catchError` (\e -> return Nothing)
 has ctx (TFun l r) (TFun l' r') = do
   (s1, tyl) <- has ctx l l'
@@ -208,76 +231,103 @@ has ctx t1 (TUsage u2 t2)  = has ctx (TUsage CAny t1) (TUsage u2 t2)
 has _ t1 t2 = throwError $ BadHas t1 t2
 
 
-unify :: (Monad m) => Context -> Type -> Type -> ContextT m (Substitution, Type)
-unify _ TUnit TUnit = return (emptySubst, TUnit)
-unify _ TInt TInt = return (emptySubst, TInt)
-unify _ TBool TBool = return (emptySubst, TBool)
-unify _ TChar TChar = return (emptySubst, TChar)
-unify _ TString TString = return (emptySubst, TString)
-unify _ TFloat TFloat = return (emptySubst, TFloat)
-unify _ TThing TThing = return (emptySubst, TThing)
-unify ctx (TFun l r) (TFun l' r') = do
-  (s1, tyl) <- unify ctx l l'
-  tmpA <- applySubst s1 r
-  tmpB <- applySubst s1 r'
-  (s2, tyr) <- unify ctx tmpA tmpB
-  final_subs <- s2 `composeSubst` s1
-  tfun_input <- applySubst final_subs l
-  res <- applySubst final_subs $ TFun tfun_input tyr
-  return (final_subs, res)
-unify ctx (TPair a b) (TPair a' b') = do
-  (s1, tyA) <- unify ctx a a'
-  tmpA <- applySubst s1 b
-  tmpB <- applySubst s1 b'
-  (s2, tyB) <- unify ctx tmpA tmpB
-  final_subs <- s2 `composeSubst` s1
-  res <- applySubst final_subs (TPair tyA tyB)
-  return (final_subs, res)
-unify ctx a@(TLabel id x) b@(TLabel id2 y) = do
-  if id == id2
-    then do
-      (ctx, ty) <- unify ctx x y
-      return (ctx, TLabel id ty)
-    else throwError $ BadUnify a b
-unify ctx (TVar u) t = do
-  case Map.lookup u ctx of
-    Nothing -> do
-      res <- varBind u t
-      (,) res <$> applySubst res t
-    Just any -> do
-      resT <- instantiate any
-      unify ctx resT t
-unify ctx a b@(TVar u) = unify ctx b a
-unify ctx a@(TCall _ _) c = do
-  res <- evalTCall ctx a
-  unify ctx res c
-unify ctx c a@(TCall _ _) = do
-  res <- evalTCall ctx a
-  unify ctx c res
-unify ctx a@(TSum x y) b@(TSum x' y') =
-  trySumUnify x x' y y' `catchError` (\e -> trySumUnify x y' y x')
-  where
-    trySumUnify :: (Monad m) => Type -> Type -> Type -> Type -> ContextT m (Substitution, Type)
-    trySumUnify x x' y y' = do
-      (sub_x, typX) <- unify ctx x x'
-      (sub_y, typY) <- unify ctx y y'
-      final_subs <- sub_x `composeSubst` sub_y
-      res <- TSum <$> applySubst final_subs typX <*> applySubst final_subs typY
-      return (final_subs, res)
-unify ctx a b@(TSum x' y') = unify ctx b a
-unify ctx t1@(TToken id) t2@(TToken id2) =
-  if id /= id2
-    then throwError $ BadUnify t1 t2
-    else return (emptySubst, TToken id)
-unify ctx (TUsage u1 t1) (TUsage u2 t2) = do
-  (subst, typ) <- unify ctx t1 t2
-  usage <- unifyUseCount u1 u2
-  return (subst, TUsage usage typ)
-unify ctx (TUsage u1 t1) t2 = do
-  usage_t2 <- inferUseCount t2
-  unify ctx (TUsage u1 t1) (TUsage usage_t2 t2)
-unify ctx t1 (TUsage u2 t2)  = unify ctx (TUsage CAny t1) (TUsage u2 t2)
-unify _ t1 t2 = throwError $ BadUnify t1 t2
+unify :: (Monad m) => Context -> Type -> Type -> ContextT m (Substitution Type, Type)
+unify ctx t1 t2 = case (t1, t2) of
+  (TUnit, TUnit) -> return (emptySubst, TUnit)
+  (TInt, TInt) -> return (emptySubst, TInt)
+  (TBool, TBool) -> return (emptySubst, TBool)
+  (TChar, TChar) -> return (emptySubst, TChar)
+  (TString, TString) -> return (emptySubst, TString)
+  (TFloat, TFloat) -> return (emptySubst, TFloat)
+  (TThing, TThing) -> return (emptySubst, TThing)
+  (TUnit, t2') -> throwError $ BadUnify TUnit t2'
+  (TInt, t2') -> throwError $ BadUnify TInt t2'
+  (TBool, t2') -> throwError $ BadUnify TBool t2'
+  (TChar, t2') -> throwError $ BadUnify TChar t2'
+  (TString, t2') -> throwError $ BadUnify TString t2'
+  (TFloat, t2') -> throwError $ BadUnify TFloat t2'
+  (TThing, t2') -> throwError $ BadUnify TThing t2'
+  (TFun l r, TFun l' r') -> do
+    (s1, tyl) <- unify ctx l l'
+    tmpA <- applySubst s1 r
+    tmpB <- applySubst s1 r'
+    (s2, tyr) <- unify ctx tmpA tmpB
+    final_subs <- s2 `composeSubst` s1
+    tfun_input <- applySubst final_subs l
+    res <- applySubst final_subs $ TFun tfun_input tyr
+    return (final_subs, res)
+  (t1'@(TFun _ _), t2') -> throwError $ BadUnify t1' t2'
+  (TPair a b, TPair a' b') -> do
+    (s1, tyA) <- unify ctx a a'
+    tmpA <- applySubst s1 b
+    tmpB <- applySubst s1 b'
+    (s2, tyB) <- unify ctx tmpA tmpB
+    final_subs <- s2 `composeSubst` s1
+    res <- applySubst final_subs (TPair tyA tyB)
+    return (final_subs, res)
+  (t1'@(TPair _ _), t2') -> throwError $ BadUnify t1' t2
+  (TLabel id x, TLabel id2 y) ->
+    if id == id2
+      then do
+        (ctx', ty) <- unify ctx x y
+        return (ctx', TLabel id ty)
+      else throwError $ BadUnify t1 t2
+  (t1'@(TLabel _ _), t2') -> throwError $ BadUnify t1' t2'
+  (TVar u, t) -> do
+    case Map.lookup u ctx of
+      Nothing -> do
+        res <- varBind u t
+        (,) res <$> applySubst res t
+      Just any -> do
+        resT <- instantiate any
+        unify ctx resT t
+  (TCall _ _, t) -> do
+    res <- evalTCall ctx t1
+    unify ctx res t
+  (TSum x y, TSum x' y') ->
+    trySumUnify x x' y y' `catchError` (\e -> trySumUnify x y' y x')
+    where
+      trySumUnify :: (Monad m) => Type -> Type -> Type -> Type -> ContextT m (Substitution Type, Type)
+      trySumUnify x x' y y' = do
+        (sub_x, typX) <- unify ctx x x'
+        (sub_y, typY) <- unify ctx y y'
+        final_subs <- sub_x `composeSubst` sub_y
+        res <- TSum <$> applySubst final_subs typX <*> applySubst final_subs typY
+        return (final_subs, res)
+  (t1'@(TSum _ _), t2') -> throwError $ BadUnify t1' t2'
+  (TToken id, TToken id2) ->
+    if id /= id2
+      then throwError $ BadUnify t1 t2
+      else return (emptySubst, TToken id)
+  (t1'@(TToken _), t2') -> throwError $ BadUnify t1' t2
+  (TUsage u1 t1, TUsage u2 t2) -> do
+    (subst, typ) <- unify ctx t1 t2
+    usage <- unifyUseCount u1 u2
+    return (subst, TUsage usage typ)
+  (TUsage u1 t1, t2) -> do
+    usage_t2 <- inferUseCount t2
+    unify ctx (TUsage u1 t1) (TUsage usage_t2 t2)
+  (t1, TUsage u2 t2) -> unify ctx (TUsage CAny t1) (TUsage u2 t2)
+  (TType k, TType k') -> do
+    result <- unifyKind k k'
+    return (emptySubst, TType result)
+  (g1@(TType k), other) -> throwError $ BadUnify g1 other
+  (TInterface [], TInterface []) -> return (emptySubst, TInterface [])
+  (TInterface (stmt1:stmts1), TInterface (stmt2:stmts2)) -> do
+    (subs, typ) <- unify ctx (TInterface [stmt1]) (TInterface [stmt2])
+    (subs2, typ2) <- unify ctx (TInterface stmts1) (TInterface stmts2)
+    final_subs <- subs `composeSubst` subs2
+    case (typ, typ2) of
+      (TInterface x1, TInterface x2) -> return (final_subs, TInterface (x1 ++ x2))
+      other -> error "should not reach"
+  (t1'@(TInterface _), other) -> throwError $ BadUnify t1' t2
+
+
+unifyKind :: (Monad m) => Kind -> Kind -> ContextT m Kind
+unifyKind k1 k2 = case (k1, k2) of
+  (KType, KType) -> return KType
+  (KFun k1 k2, KFun k1' k2') -> KFun <$> unifyKind k1 k1' <*> unifyKind k2 k2'
+  (k, k') -> throwError $ BadUnifyKind k k'
 
 inferUseCount :: (Monad m) => Type -> ContextT m UseCount
 inferUseCount x = case x of
@@ -302,10 +352,18 @@ inferUseCount x = case x of
   TUsage uc ty -> inferUseCount ty >>= unifyUseCount uc
   TType ki -> return CAny
   TCall ty ty' -> return CAny
+  TInterface stmts -> mapM inferUseCountStmt stmts >>= foldM unifyUseCount CAny
+    where
+      inferUseCountStmt :: (Monad m) => ModuleStmt -> ContextT m UseCount
+      inferUseCountStmt stmt = case stmt of
+        MKind s ki -> return CAny
+        s@(MType _ _) -> throwError $ ConcreteTypeOrExprInInterface s
+        MDecl s ty -> inferUseCount ty
+        s@(MData _ _) -> throwError $ ConcreteTypeOrExprInInterface s
 
 type Context = Map String Scheme
 
-applySubstCtx :: (Monad m) => Substitution -> Context -> ContextT m Context
+applySubstCtx :: (Monad m) => Substitution Type -> Context -> ContextT m Context
 applySubstCtx subst = mapM (applySubstScheme subst)
 
 freeTypeVarsCtx :: Context -> Set String
@@ -325,7 +383,7 @@ instantiate (Scheme vars ty) = do
   let subst = Map.fromList (zip vars newVars)
   applySubst subst ty
 
-inferLiteral :: (Monad m) => Lit -> ContextT m (Substitution, Type)
+inferLiteral :: (Monad m) => Lit -> ContextT m (Substitution Type, Type)
 inferLiteral lit =
   return (emptySubst, case lit of
     LInt _ -> TInt
@@ -378,7 +436,7 @@ inferPattern ctx copied pat = case pat of
     res <- newTyVar
     return (ctx, res)
 
-infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution, Type)
+infer :: (Monad m) => Context -> Exp -> ContextT m (Substitution Type, Type)
 infer ctx exp = case exp of
   EVar var -> case Map.lookup var ctx of
     Nothing -> throwError $ UnboundId var
@@ -397,7 +455,9 @@ infer ctx exp = case exp of
     return (final_subst, outputTyp res)
     where
       inputTyp (TFun a b) = a
+      inputTyp other = error "should not reach"
       outputTyp (TFun a b) = b
+      outputTyp other = error "should not reach"
   EFun pattern body -> do
     (ctx_p, tyP) <- inferPattern ctx (copiedFreeRef body) pattern
     let tmpCtx = Map.union ctx_p ctx
@@ -434,6 +494,7 @@ infer ctx exp = case exp of
       err = throwError $ MatchWithNonFunction m
       unifyJoin a b = unify ctx a b `catchError` (\e -> return (emptySubst, TSum a b))
       tFunArgs (TFun a b) = (a,b)
+      tFunArgs _ = error "should not reach"
   ELet pattern binding body -> do
     (s1, tyBinder) <- infer ctx binding
     (ctx_p, tyP) <- inferPattern ctx (copiedFreeRef body) pattern
@@ -471,6 +532,71 @@ infer ctx exp = case exp of
     let new_ctx = Map.insert id (Scheme [] t) ctx
     applySubstOnExpr (Map.singleton id t) rest >>= infer new_ctx
   EToken id h -> return (emptySubst, TToken id)
+  EModule [] -> return (emptySubst, TInterface [])
+  EModule (stmt:stmts) -> do
+    (subst, out_typ1) <- case stmt of
+          MKind s ki -> throwError $ KindDeclarationInModule stmt
+          MType s ty -> (\val -> (Map.singleton s ty, TInterface [MKind s val])) <$> inferKind ty
+          MDecl s ty -> do
+            case Map.lookup s ctx of
+              Just sc -> do
+                (subs, res) <- instantiate sc >>= unify ctx ty
+                return (Map.insert s res subs, TInterface [MDecl s res])
+              Nothing -> return (Map.singleton s ty, TInterface [MDecl s ty])
+          MData s exp' -> do
+            (subst, ty) <- infer ctx exp'
+            case Map.lookup s ctx of
+              Just sc -> do
+                (subs, res) <- instantiate sc >>= unify ctx ty
+                return (Map.insert s res subst, TInterface [MDecl s res])
+              Nothing -> return (Map.insert s ty subst, TInterface [MDecl s ty])
+    (subst2, out_typ2) <- infer ctx (EModule stmts)
+    case (out_typ1,out_typ2) of
+      (TInterface m_stmt, TInterface m_stmts) -> return (Map.union subst subst2, TInterface (m_stmt ++ m_stmts))
+      other -> error "bad case"
+
+inferKind :: (Monad m) => Type -> ContextT m Kind
+inferKind t = case t of
+  TInt -> return KType
+  TBool -> return KType
+  TChar -> return KType
+  TString -> return KType
+  TFloat -> return KType
+  TThing -> return KType
+  TUnit -> return KType
+  TVar s -> return KType
+  TFun ty ty' -> KFun <$> inferKind ty <*> inferKind ty'
+  TPair ty ty' -> do
+    k1 <- inferKind ty
+    k2 <- inferKind ty'
+    _ <- unifyKind k1 KType
+    _ <- unifyKind k2 KType
+    return KType
+    `catchError` (\e -> throwError $ MustOnlyHaveConcreteTypes t)
+  t@(TSum ty ty') -> do
+    k1 <- inferKind ty
+    k2 <- inferKind ty'
+    _ <- unifyKind k1 KType
+    _ <- unifyKind k2 KType
+    return KType
+    `catchError` (\e -> throwError $ MustOnlyHaveConcreteTypes t)
+  TLabel s ty -> do
+    k1 <- inferKind ty
+    _ <- unifyKind k1 KType
+    return KType
+    `catchError` (\e -> throwError $ MustOnlyHaveConcreteTypes t)
+  TToken s -> return KType
+  TUsage uc ty -> inferKind ty
+  TType ki -> return ki
+  t@(TCall ty ty') -> do
+    k1 <- inferKind ty
+    k2 <- inferKind ty'
+    case k1 of
+      KType -> throwError $ TypeCallOnConcreteType t
+      KFun ki ki' -> do
+        _ <- unifyKind ki k2
+        return ki'
+  TInterface _ -> return KType
 
 typeInference :: (Monad m) => Context -> Exp -> ContextT m Scheme
 typeInference ctx exp = do

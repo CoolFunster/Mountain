@@ -144,7 +144,7 @@ spec = do
           let res = parseExpr "<{ val id = x -> x; }>"
           case res of
             Left s -> error s
-            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x"))]
+            Right exp -> exp `shouldBe` EModule [MData "id" (EFun (PVar "x") (EVar "x"))]
         it "should handle a multiple statements" $ do
           let res = parseExpr "\
             \<{\ 
@@ -153,4 +153,4 @@ spec = do
               \}>"
           case res of
             Left s -> error s
-            Right exp -> exp `shouldBe` EModule [MValDef "id" (EFun (PVar "x") (EVar "x")),MValDef "id2" (EFun (PVar "y") (EVar "y"))]
+            Right exp -> exp `shouldBe` EModule [MData "id" (EFun (PVar "x") (EVar "x")),MData "id2" (EFun (PVar "y") (EVar "y"))]

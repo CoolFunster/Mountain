@@ -53,7 +53,7 @@ symbol :: String -> Parser String
 symbol = L.symbol sc
 
 parens :: Parser a -> Parser a
-parens = between (symbol "(") (symbol ")")
+parens = between (symbol "(" <* optional sc) (optional sc <* symbol ")")
 
 integer :: Parser Integer
 integer = lexeme L.decimal
@@ -104,18 +104,16 @@ pModuleFile = EModule <$> some (pModuleStmt <* optional sc)
 
 pBasicModuleStmt :: (Id -> a -> ModuleStmt) -> Parser a -> Parser ModuleStmt
 pBasicModuleStmt constr p = do
-  name <- optional sc *> identifier <* sc <* symbol "=" <* sc
+  name <- optional sc *> identifier <* optional sc <* symbol "=" <* optional sc
   body <- p <* sc <* symbol ";"
   return $ constr name body
 
 pModuleStmt :: Parser ModuleStmt
 pModuleStmt = choice [
-    try (symbol "tdec" <* sc) *> pBasicModuleStmt MTypeDec pKind,
-    try (symbol "type" <* sc) *> pBasicModuleStmt MTypeDef pType,
-    try (symbol "dec" <* sc) *> pBasicModuleStmt MValDec pType,
-    try (symbol "val" <* sc) *> pBasicModuleStmt MValDef pExpr,
-    try (symbol "import" <* sc) *> (MImport <$> someTill anySingle sc),
-    try (symbol "load" <* sc) *> (MLoad <$> pExpr)
+    try (symbol "kind" <* sc) *> pBasicModuleStmt MKind pKind,
+    try (symbol "type" <* sc) *> pBasicModuleStmt MType pType,
+    try (symbol "dec" <* sc) *> pBasicModuleStmt MDecl pType,
+    try (symbol "val" <* sc) *> pBasicModuleStmt MData pExpr
   ] <* optional sc
 
 pExpr :: Parser Exp
@@ -311,7 +309,6 @@ pTypeAtom = do
           <|> pTTuple
           <|> pInterface
           <|> pTVar
-          <|> TType <$> try pKind
           <|> pTToken
   case uc of
     Nothing -> return typ
@@ -358,10 +355,10 @@ pKind = pBinKind
 
 pBinKind :: Parser Kind
 pBinKind = makeExprParser pKindAtom [
-    [binaryR (optional sc) KApp],
     [binaryR (try $ pWrapWS "->") KFun]
   ]
 
 pKindAtom :: Parser Kind
-pKindAtom = symbol "Type" $> KType
+pKindAtom = 
+      symbol "*" $> KType
   <|> parens pKindAtom

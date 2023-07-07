@@ -44,7 +44,7 @@ replace env t@(EModule stmts) = EModule (map (replaceStmts env) stmts)
   where
     replaceStmts :: Env -> ModuleStmt -> ModuleStmt
     replaceStmts env stmt = case stmt of
-      MValDef s exp -> MValDef s (replace env exp)
+      MData s exp -> MData s (replace env exp)
       other -> other
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind PWildcard x = return M.empty
@@ -145,6 +145,3 @@ evaluate count t
           resetChanged
           evaluate (Just (\x -> x - 1) <*> count) res
         else return res
-
-preprocess :: Exp -> ContextT IO Exp
-preprocess = return

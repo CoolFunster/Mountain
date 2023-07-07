@@ -1,3 +1,5 @@
+ Working on Modules. Need to give them Kind Vars to properly check. 
+ 
  - finish unique type checking
  - Lets are visually recursive by default, and parser determines whether its a recursive or not
  - tokens

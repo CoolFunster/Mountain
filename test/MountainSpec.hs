@@ -27,8 +27,7 @@ initialState = State {
 
 process :: Maybe Int -> Exp -> ContextT IO Exp
 process steps x = do
-  vx <- preprocess x
-  I.evaluate steps vx
+  I.evaluate steps x
 
 spec :: Spec
 spec = do

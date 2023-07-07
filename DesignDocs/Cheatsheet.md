@@ -333,11 +333,10 @@ def c = module.root.c
 
 Modules have types. The type of a Module is an interface. For example, the type (aka interface) of the first module would be
 ```
-type Above = <{
-  type Point;
-  type Numeric;
-  def tupleize = a -> b -> (a,b);
-  def a_three = Int;
+data SomeModule = <{
+  type Point = a -> b -> (x:a, y:b);
+  decl a_point = Point Int Int
+  data a_point = (x:2, y:4);
 }>;
 ```
 It declares what types will be declared, and the types of any values contained within. It is not order dependent. 
@@ -345,11 +344,12 @@ It declares what types will be declared, and the types of any values contained w
 Interfaces can also have fewer types than what are declared.
 This is also a type for the first module
 ```
-type Above = <{
-  type Point;
-  def a_three = Int;
+type SomeModule = <{
+  kind Point = * -> * -> *;
+  decl a_point = Point Int Int;
 }>;
-def double_three = (Above :: x) -> (x.a_three * 2)
+decl double_x = SomeModule -> Int
+data double_x = m -> (m.a_point.x * 2)
 ```
 
 When calling mountain from the commandline

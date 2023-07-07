@@ -64,7 +64,6 @@ data Type
   | TToken Id
   -- Usage Types
   | TUsage UseCount Type
-  -- Kinds
   | TType Kind
   | TCall Type Type
   | TInterface [ModuleStmt]
@@ -73,7 +72,6 @@ data Type
 data Kind =
     KType
   | KFun Kind Kind
-  | KApp Kind Kind
   deriving (Eq, Ord, Show)
 
 data Pattern =
@@ -94,12 +92,10 @@ data UseCount
 
 data ModuleStmt
   =
-    MTypeDec Id Kind
-  | MTypeDef Id Type
-  | MValDec Id Type
-  | MValDef Id Exp
-  | MImport String
-  | MLoad Exp
+    MKind Id Kind
+  | MType Id Type
+  | MDecl Id Type
+  | MData Id Exp
   deriving (Eq, Ord, Show)
 
 data Scheme = Scheme [Id] Type deriving (Show, Eq)
@@ -137,8 +133,8 @@ renameVar ty (old, new) = case ty of
     where
       renameModuleStmt :: (Id, Id) -> ModuleStmt -> ModuleStmt
       renameModuleStmt (old,new) stmt = case stmt of
-        (MTypeDef id t) -> MTypeDef id (renameVar t (old,new))
-        (MValDec id t) -> MValDec id (renameVar t (old,new))
+        (MType id t) -> MType id (renameVar t (old,new))
+        (MDecl id t) -> MDecl id (renameVar t (old,new))
         other -> other
 
 freeRefs :: Exp -> S.Set Id
@@ -175,12 +171,10 @@ freeRefWithCounts (EModule stmts) = do
   where
     moduleStmtFreeRefs :: ModuleStmt -> M.Map Id Int
     moduleStmtFreeRefs stmt = case stmt of
-      MTypeDec s ki -> M.empty
-      MTypeDef s ty -> M.empty
-      MValDec s ty -> M.empty
-      MValDef s exp -> freeRefWithCounts exp
-      MImport s -> M.empty
-      MLoad exp -> M.empty
+      MKind s ki -> M.empty
+      MType s ty -> M.empty
+      MDecl s ty -> M.empty
+      MData s exp -> freeRefWithCounts exp
 
 
 patFreeVars :: Pattern -> S.Set Id

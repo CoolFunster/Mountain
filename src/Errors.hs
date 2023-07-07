@@ -11,6 +11,7 @@ data Error =
   | ThisShouldBeNotUnique Exp
   | BindUniqueNonUniquely
   | BadUnify Type Type
+  | BadUnifyKind Kind Kind
   | BadHas Type Type
   | MatchWithNonFunction Exp
   | RecursiveWithNoTypeAnnotation Exp
@@ -18,4 +19,8 @@ data Error =
   | OccursCheck String Type
   | BadUnifyUseCount UseCount UseCount
   | BadHasUseCount UseCount UseCount
+  | ConcreteTypeOrExprInInterface ModuleStmt
+  | KindDeclarationInModule ModuleStmt
+  | MustOnlyHaveConcreteTypes Type
+  | TypeCallOnConcreteType Type
   deriving (Show, Eq)

@@ -45,17 +45,14 @@ prettyExp (EModule stmts) = "<{" <> concatMap ((++) ";" . prettyModuleStmt) stmt
 
 prettyModuleStmt :: ModuleStmt -> [Char]
 prettyModuleStmt stmt = case stmt of 
-  MTypeDec s ki -> "tdec " <> s <> " = " <> prettyKind ki 
-  MTypeDef s ty -> "type " <> s <> " = " <> prettyType ty
-  MValDec s ty -> "dec " <> s <> " = " <> prettyType ty
-  MValDef s exp -> "val " <> s <> " = " <> prettyExp exp
-  MImport s -> "import " <> s
-  MLoad exp -> "import " <> prettyExp exp
+  MKind s ki -> "kind " <> s <> " = " <> prettyKind ki 
+  MType s ty -> "type " <> s <> " = " <> prettyType ty
+  MDecl s ty -> "dec " <> s <> " = " <> prettyType ty
+  MData s exp -> "val " <> s <> " = " <> prettyExp exp
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
 prettyKind (KFun a b) = prettyKind a  ++ "->" ++ prettyKind b
-prettyKind (KApp a b) = "(" ++ prettyKind a ++ ")(" ++ prettyKind b ++ ")"
 
 prettyUseCount :: UseCount -> String
 prettyUseCount CSingle = "?"

@@ -26,9 +26,8 @@ initialState = State {
 
 processExp :: (Maybe Int) -> Exp -> ContextT IO (Scheme, Exp)
 processExp steps x = do
-  vx <- preprocess x
-  resType <- typeInference primitives vx
-  resExp <- evaluate steps vx
+  resType <- typeInference primitives x
+  resExp <- evaluate steps x
   return (resType, resExp)
 
 main :: IO ()
