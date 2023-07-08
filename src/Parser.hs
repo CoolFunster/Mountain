@@ -29,7 +29,7 @@ parseFileModule :: String -> Either String Exp
 parseFileModule = parseExprWith (between sc eof pModuleFile)
 
 parseExpr :: String -> Either String Exp
-parseExpr = parseExprWith (between sc eof pExpr)
+parseExpr = parseExprWith (between sc (sc *> eof) pExpr)
 
 parseExprWith :: Parser a -> String -> Either String a
 parseExprWith p s = do
@@ -112,8 +112,8 @@ pModuleStmt :: Parser ModuleStmt
 pModuleStmt = choice [
     try (symbol "kind" <* sc) *> pBasicModuleStmt MKind pKind,
     try (symbol "type" <* sc) *> pBasicModuleStmt MType pType,
-    try (symbol "dec" <* sc) *> pBasicModuleStmt MDecl pType,
-    try (symbol "val" <* sc) *> pBasicModuleStmt MData pExpr
+    try (symbol "decl" <* sc) *> pBasicModuleStmt MDecl pType,
+    try (symbol "data" <* sc) *> pBasicModuleStmt MData pExpr
   ] <* optional sc
 
 pExpr :: Parser Exp
@@ -166,7 +166,7 @@ pExprAtom =
   <|> EVar <$> identifier
 
 pModule :: Parser Exp
-pModule = between (symbol "<{" <* sc) (sc *> symbol "}>") $ EModule <$> some (pModuleStmt <* optional sc)
+pModule = between (symbol "<[" <* sc) (sc *> symbol "]>") $ EModule <$> some (pModuleStmt <* optional sc)
 
 pLet :: Parser Exp
 pLet = do

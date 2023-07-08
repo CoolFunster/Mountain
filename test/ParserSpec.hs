@@ -141,16 +141,16 @@ spec = do
           res `shouldBe` Right (EAnnot TInt (EVar "x"))
       describe "Module" $ do
         it "should handle a basic module" $ do
-          let res = parseExpr "<{ val id = x -> x; }>"
+          let res = parseExpr "<[ data id = x -> x; ]>"
           case res of
             Left s -> error s
             Right exp -> exp `shouldBe` EModule [MData "id" (EFun (PVar "x") (EVar "x"))]
         it "should handle a multiple statements" $ do
           let res = parseExpr "\
-            \<{\ 
-                \val id = x -> x; \
-                \val id2 = y -> y; \
-              \}>"
+            \<[\ 
+                \data id = x -> x; \
+                \data id2 = y -> y; \
+              \]>"
           case res of
             Left s -> error s
             Right exp -> exp `shouldBe` EModule [MData "id" (EFun (PVar "x") (EVar "x")),MData "id2" (EFun (PVar "y") (EVar "y"))]

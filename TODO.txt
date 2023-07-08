@@ -1,5 +1,6 @@
- Working on Modules. Need to give them Kind Vars to properly check. 
  
+ - implement imports
+ - update recursive lets
  - finish unique type checking
  - Lets are visually recursive by default, and parser determines whether its a recursive or not
  - tokens
@@ -11,3 +12,5 @@
  - macros
  - type vars start capital, normal are lower
  - fix var names and properly eliminate ? from valid var names
+ - fix module typechecking
+ - fix polymorphism

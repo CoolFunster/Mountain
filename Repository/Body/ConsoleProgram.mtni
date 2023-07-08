@@ -1,0 +1,7 @@
+<{
+  type Actions = <{
+    decl print :: ($Console, String) -> $Console
+    decl input :: ($Console, String) -> ($Console, String)
+  }>;
+  decl main = Actions -> args:[String] -> $Console -> ($Console,Int);
+}>
