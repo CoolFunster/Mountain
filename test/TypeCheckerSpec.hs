@@ -265,6 +265,17 @@ spec = do
           Left e -> error (show e)
           Right (res, _) ->
             res `shouldBe` Scheme [] (TPair TInt TString)
+    describe "structs" $ do
+      it "Should typecheck simple struct" $ do
+        let x = parseExpr "interface {decl anInt = Int;} :: struct {data anInt = 3;}"
+        x `shouldBe` Right (EAnnot (TInterface [MDecl "anInt" TInt]) (EStruct [MData "anInt" (ELit (LInt 3))]))
+        let x' = fromRight (error "") x
+        prettyExp x' `shouldBe` "(interface {decl anInt = Int;})::(struct {data anInt = 3;})"
+        (raw_res, log) <- runWith dummyState (typeInference primitives x')
+        case raw_res of
+          Left e -> error (show e)
+          Right (res, _) ->
+            res `shouldBe` Scheme [] (TInterface [MDecl "anInt" TInt])
 
 
 

@@ -30,7 +30,7 @@ data Exp =
   | EPair Exp Exp
   | ELabel Id Exp
   | EToken Id Hash
-  | EModule [ModuleStmt]
+  | EStruct [StructStmt]
   deriving (Eq, Ord, Show)
 
 data Lit
@@ -66,7 +66,7 @@ data Type
   | TUsage UseCount Type
   | TType Kind
   | TCall Type Type
-  | TInterface [ModuleStmt]
+  | TInterface [StructStmt]
   deriving (Eq, Ord, Show)
 
 data Kind =
@@ -90,7 +90,7 @@ data UseCount
   | CAny
   deriving (Show, Ord, Eq)
 
-data ModuleStmt
+data StructStmt
   =
     MKind Id Kind
   | MType Id Type
@@ -129,10 +129,10 @@ renameVar ty (old, new) = case ty of
   TToken id -> TToken id
   TUsage a t -> TUsage a (renameVar t (old, new))
   TInterface stmts -> do
-    TInterface $ map (renameModuleStmt (old, new)) stmts
+    TInterface $ map (renameStructStmt (old, new)) stmts
     where
-      renameModuleStmt :: (Id, Id) -> ModuleStmt -> ModuleStmt
-      renameModuleStmt (old,new) stmt = case stmt of
+      renameStructStmt :: (Id, Id) -> StructStmt -> StructStmt
+      renameStructStmt (old,new) stmt = case stmt of
         (MType id t) -> MType id (renameVar t (old,new))
         (MDecl id t) -> MDecl id (renameVar t (old,new))
         other -> other
@@ -166,11 +166,11 @@ freeRefWithCounts (EMatch a b) = M.unionWith (+) (freeRefWithCounts a) (freeRefW
 freeRefWithCounts (EPair a b) = M.unionWith (+) (freeRefWithCounts a) (freeRefWithCounts b)
 freeRefWithCounts (ELabel id x) = freeRefWithCounts x
 freeRefWithCounts (EToken h x) = M.empty
-freeRefWithCounts (EModule stmts) = do
-  foldr (M.unionWith (+) . moduleStmtFreeRefs) M.empty stmts
+freeRefWithCounts (EStruct stmts) = do
+  foldr (M.unionWith (+) . structStmtFreeRefs) M.empty stmts
   where
-    moduleStmtFreeRefs :: ModuleStmt -> M.Map Id Int
-    moduleStmtFreeRefs stmt = case stmt of
+    structStmtFreeRefs :: StructStmt -> M.Map Id Int
+    structStmtFreeRefs stmt = case stmt of
       MKind s ki -> M.empty
       MType s ty -> M.empty
       MDecl s ty -> M.empty

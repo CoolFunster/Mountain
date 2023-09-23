@@ -246,17 +246,14 @@ Modules are groups of data, types and functions.
 All files in mountain are modules. Modules are maps of names to values and types. the keywords def and type are specifically only used for modules. 
 
 ```
-module <{
+struct {
   type Numeric = Float | Int
   type Point = A -> B -> (x:A, y:B) // types can be parameterize
   // Ex: point Int Float would be a type like (x:Int, y:Float)
   decl point :: Point Numeric Numeric
-  def  point = a -> b -> (x:a, y:b)
+  data point = a -> b -> (x:a, y:b)
   import <file_path>
 }>
-
-use <module> in
-
 
 def a_three = 3.0;
 ```

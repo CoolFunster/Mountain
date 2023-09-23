@@ -1,3 +1,6 @@
+- bounds of a type on modules (subtyping)
+    beneficial and more expressive not hard
+ 
  
  - implement imports
  - update recursive lets

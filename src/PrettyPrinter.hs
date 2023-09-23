@@ -41,14 +41,14 @@ prettyExp (EAnnot typ a) = "(" ++ prettyType typ ++ ")::(" ++ prettyExp a ++ ")"
 prettyExp (ERec id a) = "(" ++ id ++ "~" ++ prettyExp a ++ ")"
 prettyExp (ETDef id typ rest) = "type " ++ id ++ " = " ++ prettyType typ ++ ";" ++ prettyExp rest
 prettyExp (EToken id _) = "#" <> id
-prettyExp (EModule stmts) = "<{" <> concatMap ((++) ";" . prettyModuleStmt) stmts <> "}>"
+prettyExp (EStruct stmts) = "struct {" <> concatMap ((++ ";") . prettyStructStmt) stmts <> "}"
 
-prettyModuleStmt :: ModuleStmt -> [Char]
-prettyModuleStmt stmt = case stmt of 
-  MKind s ki -> "kind " <> s <> " = " <> prettyKind ki 
-  MType s ty -> "type " <> s <> " = " <> prettyType ty
-  MDecl s ty -> "dec " <> s <> " = " <> prettyType ty
-  MData s exp -> "val " <> s <> " = " <> prettyExp exp
+prettyStructStmt :: StructStmt -> [Char]
+prettyStructStmt stmt = case stmt of
+  MKind s ki  -> "kind " <> s <> " = " <> prettyKind ki
+  MType s ty  -> "type " <> s <> " = " <> prettyType ty
+  MDecl s ty  -> "decl " <> s <> " = " <> prettyType ty
+  MData s exp -> "data " <> s <> " = " <> prettyExp exp
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
@@ -79,7 +79,7 @@ prettyType ty = case ty of
   TCall a b -> "(" <> prettyType a <> ")(" <> prettyType b <> ")"
   TToken id -> "$" <> id
   TUsage u t -> prettyUseCount u <> prettyType t
-  TInterface stmts -> "<{" <> concatMap ((++) ";" . prettyModuleStmt) stmts <> "}>"
+  TInterface stmts -> "interface {" <> concatMap ((++ ";") . prettyStructStmt) stmts <> "}"
 
 prettyScheme :: Scheme -> String
 prettyScheme (Scheme [] ty) = prettyType ty

@@ -53,10 +53,10 @@ applySubst subst ty = do
     TCall a b -> TCall <$> applySubst subst a <*> applySubst subst b
     TToken id -> return $ TToken id
     TUsage u t -> TUsage u <$> applySubst subst t
-    TInterface stmts -> TInterface <$> mapM applySubstModuleStmt stmts
+    TInterface stmts -> TInterface <$> mapM applySubstStructStmt stmts
       where
-        applySubstModuleStmt :: (Monad m) => ModuleStmt -> ContextT m ModuleStmt
-        applySubstModuleStmt stmt = case stmt of
+        applySubstStructStmt :: (Monad m) => StructStmt -> ContextT m StructStmt
+        applySubstStructStmt stmt = case stmt of
           MKind s ki -> return $ MKind s ki
           d@(MType _ _) -> throwError $ ConcreteTypeOrExprInInterface d
           MDecl s ty' -> MDecl s <$> applySubst subst ty'
@@ -85,9 +85,9 @@ applySubstOnExpr s (EMatch a b) = EMatch <$> applySubstOnExpr s a <*> applySubst
 applySubstOnExpr s (EPair a b) = EPair <$> applySubstOnExpr s a <*> applySubstOnExpr s b
 applySubstOnExpr s (ELabel id b) = ELabel id <$> applySubstOnExpr s b
 applySubstOnExpr s (EToken id h) = pure $ EToken id h
-applySubstOnExpr s (EModule stmts) = EModule <$> mapM applySubstOnExprModStmt stmts
+applySubstOnExpr s (EStruct stmts) = EStruct <$> mapM applySubstOnExprModStmt stmts
   where
-    applySubstOnExprModStmt :: (Monad m) => ModuleStmt -> ContextT m ModuleStmt
+    applySubstOnExprModStmt :: (Monad m) => StructStmt -> ContextT m StructStmt
     applySubstOnExprModStmt stmt = case stmt of
       MData str exp -> MData str <$> applySubstOnExpr s exp
       other -> return other
@@ -122,7 +122,7 @@ freeTypeVars ty = case ty of
  TUsage _ t -> freeTypeVars t
  TInterface stmts -> foldr (Set.union . freeTypeVarStmts) Set.empty stmts
   where
-    freeTypeVarStmts :: ModuleStmt -> Set Id
+    freeTypeVarStmts :: StructStmt -> Set Id
     freeTypeVarStmts stmt = case stmt of
       MKind s ki -> S.empty
       MType s ty' -> freeTypeVars ty'
@@ -228,6 +228,8 @@ has ctx (TUsage u1 t1) (TUsage u2 t2) = do
   return (subst, TUsage usage typ)
 has ctx (TUsage u1 t1) t2 = has ctx (TUsage u1 t1) (TUsage CAny t2)
 has ctx t1 (TUsage u2 t2)  = has ctx (TUsage CAny t1) (TUsage u2 t2)
+{- Fix below to properly check subtypes -}
+has ctx t1@(TInterface stmts) (TInterface stmts2) = return (emptySubst, t1)
 has _ t1 t2 = throwError $ BadHas t1 t2
 
 
@@ -354,7 +356,7 @@ inferUseCount x = case x of
   TCall ty ty' -> return CAny
   TInterface stmts -> mapM inferUseCountStmt stmts >>= foldM unifyUseCount CAny
     where
-      inferUseCountStmt :: (Monad m) => ModuleStmt -> ContextT m UseCount
+      inferUseCountStmt :: (Monad m) => StructStmt -> ContextT m UseCount
       inferUseCountStmt stmt = case stmt of
         MKind s ki -> return CAny
         s@(MType _ _) -> throwError $ ConcreteTypeOrExprInInterface s
@@ -532,10 +534,10 @@ infer ctx exp = case exp of
     let new_ctx = Map.insert id (Scheme [] t) ctx
     applySubstOnExpr (Map.singleton id t) rest >>= infer new_ctx
   EToken id h -> return (emptySubst, TToken id)
-  EModule [] -> return (emptySubst, TInterface [])
-  EModule (stmt:stmts) -> do
+  EStruct [] -> return (emptySubst, TInterface [])
+  EStruct (stmt:stmts) -> do
     (subst, out_typ1) <- case stmt of
-          MKind s ki -> throwError $ KindDeclarationInModule stmt
+          MKind s ki -> throwError $ KindDeclarationInStruct stmt
           MType s ty -> (\val -> (Map.singleton s ty, TInterface [MKind s val])) <$> inferKind ty
           MDecl s ty -> do
             case Map.lookup s ctx of
@@ -550,7 +552,7 @@ infer ctx exp = case exp of
                 (subs, res) <- instantiate sc >>= unify ctx ty
                 return (Map.insert s res subst, TInterface [MDecl s res])
               Nothing -> return (Map.insert s ty subst, TInterface [MDecl s ty])
-    (subst2, out_typ2) <- infer ctx (EModule stmts)
+    (subst2, out_typ2) <- infer ctx (EStruct stmts)
     case (out_typ1,out_typ2) of
       (TInterface m_stmt, TInterface m_stmts) -> return (Map.union subst subst2, TInterface (m_stmt ++ m_stmts))
       other -> error "bad case"

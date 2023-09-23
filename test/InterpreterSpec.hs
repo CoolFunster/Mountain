@@ -62,7 +62,7 @@ spec = do
       it "Should handle recursion" $ runTest 10 "(x ~ (2 -> (x 3) || 3 -> 4)) (2)" "4"
       it "Should handle pairs" $ runTest 1 "(3,4)" "(3,4)"
       it "Should handle labels" $ runTest 1 "x:3" "x:3"
-      it "Should handle modules" $ runTest 1 "<[data x = 3;]>" "<[data x = 3;]>" 
+      it "Should handle structs" $ runTest 1 "struct {data x = 3;}" "struct {data x = 3;}" 
       
         
 

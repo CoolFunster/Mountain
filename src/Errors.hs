@@ -19,8 +19,8 @@ data Error =
   | OccursCheck String Type
   | BadUnifyUseCount UseCount UseCount
   | BadHasUseCount UseCount UseCount
-  | ConcreteTypeOrExprInInterface ModuleStmt
-  | KindDeclarationInModule ModuleStmt
+  | ConcreteTypeOrExprInInterface StructStmt
+  | KindDeclarationInStruct StructStmt
   | MustOnlyHaveConcreteTypes Type
   | TypeCallOnConcreteType Type
   deriving (Show, Eq)

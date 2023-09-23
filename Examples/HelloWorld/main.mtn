@@ -1,6 +1,7 @@
-import ConsoleProgram = Body.ConsoleProgram;
-ConsoleProgram :: <[
-  data main = actions -> _ -> ctoken -> (
-    actions.print (ctoken, "Hello World")
-  );
-]>
+import Body.ConsoleProgram;
+
+ConsoleProgram :: struct {
+  data main = actions -> _ -> c_token -> (
+    actions.print (c_token, "Hello World")
+  )
+}
