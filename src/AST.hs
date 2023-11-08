@@ -98,7 +98,7 @@ data StructStmt
   | MData Id Exp
   deriving (Eq, Ord, Show)
 
-data Scheme = Scheme [Id] Type deriving (Show, Eq)
+data AbstractType = AbstractType [Id] Type deriving (Show, Eq)
 
 -- Ignore from here onwards
 isTFun :: Type -> Bool

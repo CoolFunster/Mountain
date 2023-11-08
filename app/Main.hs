@@ -13,6 +13,10 @@ import Control.Monad.State (MonadTrans (lift))
 
 import System.Environment
 
+
+primitives :: AbstractTypeDefinitions
+primitives = Map.empty
+
 initialState :: State
 initialState = State {
     changed=False,
@@ -24,7 +28,7 @@ initialState = State {
     name_counter=0
   }
 
-processExp :: (Maybe Int) -> Exp -> ContextT IO (Scheme, Exp)
+processExp :: (Maybe Int) -> Exp -> ContextT IO (AbstractType, Exp)
 processExp steps x = do
   resType <- typeInference primitives x
   resExp <- evaluate steps x
@@ -44,7 +48,7 @@ main = do
       let (eval_result, log) = raw_eval_result
       case eval_result of
         Right ((resT, resExp), env) -> do
-          putStrLn $ prettyScheme resT ++ " :: " ++ prettyExp resExp
+          putStrLn $ prettyAbstractType resT ++ " :: " ++ prettyExp resExp
         Left e -> do
           putStrLn $ "ERROR: " ++ prettyError e ++ "\n"
           putStrLn "LOG:"

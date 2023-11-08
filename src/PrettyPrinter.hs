@@ -81,9 +81,9 @@ prettyType ty = case ty of
   TUsage u t -> prettyUseCount u <> prettyType t
   TInterface stmts -> "interface {" <> concatMap ((++ ";") . prettyStructStmt) stmts <> "}"
 
-prettyScheme :: Scheme -> String
-prettyScheme (Scheme [] ty) = prettyType ty
-prettyScheme (Scheme vars ty) =
+prettyAbstractType :: AbstractType -> String
+prettyAbstractType (AbstractType [] ty) = prettyType ty
+prettyAbstractType (AbstractType vars ty) =
   let
     -- This means we can only print types with a maximum of 26 type
     -- variables (Should be enough for the talk :D)
