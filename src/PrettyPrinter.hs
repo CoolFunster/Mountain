@@ -32,7 +32,7 @@ prettyExp :: Exp -> String
 prettyExp (ELit l) = prettyLit l
 prettyExp (EVar id) = id
 prettyExp (EApp a b) = "(" ++ prettyExp a ++ ")(" ++ prettyExp b ++ ")"
-prettyExp (EFun id e) = prettyPattern id ++ "->" ++ prettyExp e
+prettyExp (EFun id e) = "fn " ++ prettyPattern id ++ "->" ++ prettyExp e
 prettyExp (ELet pat a b) = prettyPattern pat ++ "=" ++ prettyExp a ++ ";" ++ prettyExp b
 prettyExp (EMatch a b) = "(" ++ prettyExp a ++ "||" ++ prettyExp b ++ ")"
 prettyExp (EPair a b) = "(" ++ prettyExp a ++ "," ++ prettyExp b ++ ")"
@@ -45,10 +45,9 @@ prettyExp (EStruct stmts) = "struct {" <> concatMap ((++ ";") . prettyStructStmt
 
 prettyStructStmt :: StructStmt -> [Char]
 prettyStructStmt stmt = case stmt of
-  MKind s ki  -> "kind " <> s <> " = " <> prettyKind ki
   MType s ty  -> "type " <> s <> " = " <> prettyType ty
   MDecl s ty  -> "decl " <> s <> " = " <> prettyType ty
-  MData s exp -> "data " <> s <> " = " <> prettyExp exp
+  MExpr s exp -> "expr " <> s <> " = " <> prettyExp exp
 
 prettyKind :: Kind -> String
 prettyKind KType = "Type"
@@ -85,8 +84,6 @@ prettyAbstractType :: AbstractType -> String
 prettyAbstractType (AbstractType [] ty) = prettyType ty
 prettyAbstractType (AbstractType vars ty) =
   let
-    -- This means we can only print types with a maximum of 26 type
-    -- variables (Should be enough for the talk :D)
     vars' = zip vars (map (T.unpack . T.singleton) ['a'..'z'])
     renamedTy = foldl renameVar ty vars'
   in

@@ -141,16 +141,16 @@ spec = do
           res `shouldBe` Right (EAnnot TInt (EVar "x"))
       describe "Struct" $ do
         it "should handle a basic struct" $ do
-          let res = parseExpr "struct { data id = x -> x; }"
+          let res = parseExpr "struct { expr id = x -> x; }"
           case res of
             Left s -> error s
-            Right exp -> exp `shouldBe` EStruct [MData "id" (EFun (PVar "x") (EVar "x"))]
+            Right exp -> exp `shouldBe` EStruct [MExpr "id" (EFun (PVar "x") (EVar "x"))]
         it "should handle a multiple statements" $ do
           let res = parseExpr "\
             \struct {\ 
-                \data id = x -> x; \
-                \data id2 = y -> y; \
+                \expr id = x -> x; \
+                \expr id2 = y -> y; \
               \}"
           case res of
             Left s -> error s
-            Right exp -> exp `shouldBe` EStruct [MData "id" (EFun (PVar "x") (EVar "x")),MData "id2" (EFun (PVar "y") (EVar "y"))]
+            Right exp -> exp `shouldBe` EStruct [MExpr "id" (EFun (PVar "x") (EVar "x")),MExpr "id2" (EFun (PVar "y") (EVar "y"))]

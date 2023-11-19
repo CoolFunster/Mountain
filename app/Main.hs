@@ -13,10 +13,6 @@ import Control.Monad.State (MonadTrans (lift))
 
 import System.Environment
 
-
-primitives :: AbstractTypeDefinitions
-primitives = Map.empty
-
 initialState :: State
 initialState = State {
     changed=False,

@@ -23,4 +23,5 @@ data Error =
   | KindDeclarationInStruct StructStmt
   | MustOnlyHaveConcreteTypes Type
   | TypeCallOnConcreteType Type
+  | UndefinedDeclarations Exp [Id]
   deriving (Show, Eq)

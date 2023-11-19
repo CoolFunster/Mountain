@@ -113,10 +113,9 @@ pBasicStructStmt constr p = do
 
 pStructStmt :: Parser StructStmt
 pStructStmt = choice [
-    try (symbol "kind" <* sc) *> pBasicStructStmt MKind pKind,
     try (symbol "type" <* sc) *> pBasicStructStmt MType pType,
     try (symbol "decl" <* sc) *> pBasicStructStmt MDecl pType,
-    try (symbol "data" <* sc) *> pBasicStructStmt MData pExpr
+    try (symbol "expr" <* sc) *> pBasicStructStmt MExpr pExpr
   ] <* optional sc
 
 pExpr :: Parser Exp

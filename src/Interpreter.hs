@@ -44,7 +44,7 @@ replace env t@(EStruct stmts) = EStruct (map (replaceStmts env) stmts)
   where
     replaceStmts :: Env -> StructStmt -> StructStmt
     replaceStmts env stmt = case stmt of
-      MData s exp -> MData s (replace env exp)
+      MExpr s exp -> MExpr s (replace env exp)
       other -> other
 bind :: (Monad m) => Pattern -> Exp -> ContextT m Env
 bind PWildcard x = return M.empty

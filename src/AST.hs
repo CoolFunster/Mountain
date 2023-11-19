@@ -11,8 +11,12 @@ import Data.List (intercalate)
 
 -- Main Lambda Calculus
 type Id = String
-type TEnv = M.Map Id Type
+
 type Env = M.Map Id Exp
+type TEnv = M.Map Id Type
+
+data AbstractType = AbstractType [Id] Type deriving (Show, Eq)
+type AbstractTEnv = M.Map Id AbstractType
 
 data Exp =
   -- calculus
@@ -92,13 +96,11 @@ data UseCount
 
 data StructStmt
   =
-    MKind Id Kind
-  | MType Id Type
+    MType Id Type
   | MDecl Id Type
-  | MData Id Exp
+  | MExpr Id Exp
   deriving (Eq, Ord, Show)
 
-data AbstractType = AbstractType [Id] Type deriving (Show, Eq)
 
 -- Ignore from here onwards
 isTFun :: Type -> Bool
@@ -171,10 +173,9 @@ freeRefWithCounts (EStruct stmts) = do
   where
     structStmtFreeRefs :: StructStmt -> M.Map Id Int
     structStmtFreeRefs stmt = case stmt of
-      MKind s ki -> M.empty
       MType s ty -> M.empty
       MDecl s ty -> M.empty
-      MData s exp -> freeRefWithCounts exp
+      MExpr s exp -> freeRefWithCounts exp
 
 
 patFreeVars :: Pattern -> S.Set Id
