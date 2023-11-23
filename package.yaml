@@ -44,13 +44,14 @@ dependencies:
 - recursion-schemes
 - extra
 - ordered-containers
+- language-c
 
 library:
   source-dirs: src
 
 executables:
   mountain:
-    main:                Main.hs
+    main:                Main.hse
     source-dirs:         app
     ghc-options:
     - -threaded

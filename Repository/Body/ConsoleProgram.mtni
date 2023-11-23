@@ -1,7 +1,10 @@
 interface {
+  type Perception = interface {
+    decl args = String
+  }
   type Actions = interface {
     decl print = ($Console, String) -> $Console
     decl input = ($Console, String) -> ($Console, String)
-  }>;
+  };
   decl main = Actions -> String -> $Console -> $Console;
 }
