@@ -4,7 +4,7 @@ cradle:
       component: "Mountain:lib"
 
     - path: "./app/Main.hs"
-      component: "Mountain:exe:Mountain-exe"
+      component: "Mountain:exe:mountain"
 
     - path: "./test"
       component: "Mountain:test:spec"

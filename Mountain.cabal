@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.34.4.
+-- This file has been generated from package.yaml by hpack version 0.35.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -32,6 +32,7 @@ library
       Log
       Parser
       PrettyPrinter
+      Transpilers.CppTranspiler
       Typechecker
   other-modules:
       Paths_Mountain
@@ -52,6 +53,7 @@ library
     , hspec-core
     , hspec-discover
     , hspec-megaparsec
+    , language-c
     , language-python
     , megaparsec
     , memory
@@ -71,7 +73,7 @@ executable mountain
       OldMain
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -main-is Main.main
   build-depends:
       Mountain
     , QuickCheck
@@ -88,6 +90,7 @@ executable mountain
     , hspec-core
     , hspec-discover
     , hspec-megaparsec
+    , language-c
     , language-python
     , megaparsec
     , memory
@@ -128,6 +131,7 @@ test-suite spec
     , hspec-core
     , hspec-discover
     , hspec-megaparsec
+    , language-c
     , language-python
     , megaparsec
     , memory

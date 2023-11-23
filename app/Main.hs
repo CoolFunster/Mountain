@@ -24,7 +24,7 @@ initialState = State {
     name_counter=0
   }
 
-processExp :: (Maybe Int) -> Exp -> ContextT IO (AbstractType, Exp)
+processExp :: Maybe Int -> Exp -> ContextT IO (AbstractType, Exp)
 processExp steps x = do
   resType <- typeInference primitives x
   resExp <- evaluate steps x
@@ -33,7 +33,7 @@ processExp steps x = do
 main :: IO ()
 main = do
   -- Parse file
-  args <- getArgs  
+  args <- getArgs
   let file_path = head args
   fc <- readFile file_path
   let raw_parsed = parseExpr fc
@@ -48,4 +48,4 @@ main = do
         Left e -> do
           putStrLn $ "ERROR: " ++ prettyError e ++ "\n"
           putStrLn "LOG:"
-          putStrLn $ show log
+          print log

@@ -353,8 +353,6 @@ unify ctx t1 t2 = case (t1, t2) of
       unifyMatchingTypes :: (Monad m) => AbstractTEnv -> TEnv -> TEnv -> ContextT m (Map Id (TEnv, Type))
       unifyMatchingTypes aDefs map1 map2 =
         mapM (\(a,b) -> unify aDefs a b) (createTypePairsMap map1 map2) :: (Monad m) => ContextT m (Map Id (TEnv, Type))
-        
-
   (t1'@(TInterface _), other) -> throwError $ BadUnify t1' t2
 
 
